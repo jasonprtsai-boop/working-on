@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "test": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --runInBand --env=jsdom",
+    "check:system": "powershell.exe -ExecutionPolicy Bypass -File scripts/check_system.ps1",
     "quality": ".venv\\Scripts\\python.exe scripts/quality_gate.py",
     "release:zip": ".venv\\Scripts\\python.exe scripts/build_release_zip.py",
     "smoke:frontend": "node scripts/playwright_smoke.mjs",

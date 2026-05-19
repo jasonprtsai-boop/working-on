@@ -84,11 +84,17 @@ Contract code lives in:
 ## Quality And Release
 
 ```powershell
+npm run check:system
 npm test
 npm run quality
 npm run smoke:frontend
 npm run release:zip
 ```
+
+`npm run check:system` is the preferred pre-demo gate. It checks Git hygiene,
+tracked-file safety, the quality gate, diagnostics, authenticated health, HTTP
+smoke, and frontend Playwright smoke. The `pyModbusTCP not installed` warning is
+expected in fake/simulation robot mode; real robot mode requires that dependency.
 
 The release zip excludes local secrets, dependency folders, runtime databases,
 logs, replay data, reports, Python caches, and Excel artifacts.
