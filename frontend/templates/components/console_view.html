@@ -1,0 +1,211 @@
+<section id="view-console" class="view-console hidden">
+    <div class="console-viewport glass-panel">
+        <main class="main-stage">
+            <header class="stage-header">
+                <div class="sync-metrics">
+                    <span>S.M.A.R.T. Chess Robot Console</span>
+                    <span class="badge secondary" id="state-source-indicator">SSOT_EVENT_BUS</span>
+                    <button id="btn-console-exit" type="button" class="btn-nav-home">
+                        <i class="icon">←</i> <span>返回主畫面</span>
+                    </button>
+                </div>
+            </header>
+
+            <nav class="view-mode-toggle glass">
+                <button id="btn-toggle-board" type="button" class="mode-btn active">棋盤監控</button>
+                <button id="btn-toggle-video" type="button" class="mode-btn">即時影像</button>
+                <button id="btn-toggle-status" type="button" class="mode-btn">目前狀態</button>
+            </nav>
+
+            <div id="pane-board-view" class="view-pane active">
+                <div class="board-unit">
+                    <div class="board-header flex-row">
+                        <h2>即時棋盤狀態</h2>
+                        <div class="timer-group flex-row">
+                            <div class="timer black">B: <span id="clock-black">10:00</span></div>
+                            <div class="timer red">R: <span id="clock-red">10:00</span></div>
+                        </div>
+                        <div id="turn-indicator" class="turn-indicator-pill red">紅方回合</div>
+                    </div>
+                    <div id="thinking-container" class="thinking-bar-container hidden">
+                        <div id="thinking-progress-bar" class="thinking-bar-fill"></div>
+                        <small>Pikafish 分析中</small>
+                    </div>
+                    <div class="board-container-large">
+                        <div class="eval-bar-wrapper">
+                            <div id="eval-bar" class="eval-bar-container">
+                                <div id="eval-bar-fill" class="eval-bar-fill"></div>
+                            </div>
+                            <div class="eval-labels">
+                                <span>黑方優勢</span>
+                                <span>紅方優勢</span>
+                            </div>
+                        </div>
+                        <div id="console-board" class="chess-board">
+                            <div class="board-grid-line"></div>
+                            <div class="river-label"><span>楚河</span><span>漢界</span></div>
+                            <div class="palace-lines">
+                                <svg class="palace-svg" style="top:0; left:37.5%; width:25%; height:22.22%;">
+                                    <line x1="0" y1="0" x2="100%" y2="100%" stroke="var(--border)" stroke-width="1" />
+                                    <line x1="100%" y1="0" x2="0" y2="100%" stroke="var(--border)" stroke-width="1" />
+                                </svg>
+                                <svg class="palace-svg" style="top:77.77%; left:37.5%; width:25%; height:22.22%;">
+                                    <line x1="0" y1="0" x2="100%" y2="100%" stroke="var(--border)" stroke-width="1" />
+                                    <line x1="100%" y1="0" x2="0" y2="100%" stroke="var(--border)" stroke-width="1" />
+                                </svg>
+                            </div>
+                            <div id="console-pieces" class="piece-layer"></div>
+                            <div class="scan-beam"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="pane-video-view" class="view-pane">
+                <div class="stat-card-glass video-monitor-card">
+                    <h4 class="mb-12">即時影像監控</h4>
+                    <div class="video-panel-container glass">
+                        <div class="video-wrapper">
+                            <img id="vision-live-feed"
+                                 src="/static/img/placeholder.png"
+                                 alt="即時影像監控"
+                                 data-src="/api/video_feed">
+                            <canvas id="yolo-canvas" class="vision-overlay-layer"></canvas>
+                        </div>
+                        <div class="video-telemetry-overlay">
+                            <div class="status-pill" id="video-status-pill"><span class="dot"></span> 連線中</div>
+                            <div class="meta-info">
+                                <span id="video-fps">FPS: --</span>
+                                <span id="video-ts">更新：-</span>
+                                <span id="video-cam" class="badge">Camera: --</span>
+                            </div>
+                        </div>
+                        <div class="video-controls-row">
+                            <button type="button" class="admin-btn mini" id="btn-reconnect-video">重新連線</button>
+                            <button type="button" class="admin-btn mini" id="btn-snapshot">擷取畫面</button>
+                        </div>
+                        <div id="video-overlay-coords" class="video-overlay-info">辨識座標：無資料</div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="pane-status-view" class="view-pane" style="overflow-y: auto; padding-right: 8px;">
+                <div class="stat-card-glass detailed-status-card">
+                    <h4 class="panel-title">系統狀態</h4>
+                    <div class="system-status-list industrial">
+                        <div class="status-item"><span>影像 / YOLO</span><span id="stat-camera" class="status-ok">運行中</span></div>
+                        <div class="status-item"><span>Pikafish</span><span id="stat-ai" class="status-ok">自動分析</span></div>
+                        <div class="status-item"><span>Robot</span><span id="stat-robot" class="status-ok">自動同步</span></div>
+                    </div>
+                </div>
+
+                <div class="stat-card-glass metrics-grid mt-16">
+                    <div class="analysis-metric">
+                        <span class="label">影像 FPS</span>
+                        <span class="value danger" id="cons-fps">--</span>
+                    </div>
+                    <div class="analysis-metric">
+                        <span class="label">Latency</span>
+                        <span class="value" id="cons-latency">--ms</span>
+                    </div>
+                    <div class="analysis-metric">
+                        <span class="label">最後更新</span>
+                        <span class="value" id="cons-last-update">--:--:--</span>
+                    </div>
+                </div>
+
+                <div class="stat-card-glass dashboard-card mt-16">
+                    <h4 class="panel-title">Dashboard / 棋盤狀態</h4>
+                    <div class="dashboard-monitor mt-12">
+                        <div class="status-item"><span>當前回合</span><span id="dashboard-board-turn">--</span></div>
+                        <div class="status-item"><span>棋局 FEN</span><span id="dashboard-board-fen">--</span></div>
+                        <div class="status-item"><span>最後棋步</span><span id="dashboard-board-last-move">--</span></div>
+                        <div class="status-item"><span>棋步數</span><span id="dashboard-board-move-count">--</span></div>
+                    </div>
+                </div>
+
+                <div class="stat-card-glass control-hub mt-16">
+                    <h4 class="panel-title">YOLO / FEN Monitor</h4>
+                    <div class="vision-fen-monitor mt-12">
+                        <div class="status-item"><span>Latest FEN</span><span id="vision-fen">--</span></div>
+                        <div class="status-item"><span>UCCI position</span><span id="vision-ucci">--</span></div>
+                        <div class="status-item"><span>Detections</span><span id="vision-detections-count">0</span></div>
+                        <div class="status-item"><span>Avg / Min Confidence</span><span id="vision-confidence">-- / --</span></div>
+                        <div class="status-item"><span>YOLO Latency</span><span id="vision-yolo-latency">--ms</span></div>
+                        <div class="status-item"><span>Latest Recognition</span><span id="vision-recognition-time">--:--:--</span></div>
+                        <div class="status-item"><span>Detection Summary</span><span id="vision-detection-summary">--</span></div>
+                    </div>
+                </div>
+
+                <div class="stat-card-glass control-hub mt-16">
+                    <h4 class="panel-title">AI 分析結果</h4>
+                    <div class="engine-live-grid mt-12">
+                        <div class="analysis-metric"><span class="label">評分</span><span class="value" id="eval-score">0.00</span></div>
+                        <div class="analysis-metric"><span class="label">建議棋步</span><span class="value" id="best-move">--</span></div>
+                    </div>
+                    <div class="dashboard-monitor mt-12">
+                        <div class="status-item"><span>Depth</span><span id="dashboard-engine-depth">--</span></div>
+                        <div class="status-item"><span>Thinking</span><span id="dashboard-engine-thinking">--</span></div>
+                        <div class="status-item"><span>PV</span><span id="dashboard-engine-pv">--</span></div>
+                    </div>
+                    <div id="multipv-container" class="multipv-list mt-12">
+                        <div class="pv-row empty">等待 Pikafish 分析資料...</div>
+                    </div>
+                    <div class="dashboard-control-block mt-12">
+                        <span class="control-label">AI Depth</span>
+                        <div class="depth-control-grid" id="engine-depth-controls">
+                            <button type="button" class="depth-btn" data-depth="5">5</button>
+                            <button type="button" class="depth-btn" data-depth="10">10</button>
+                            <button type="button" class="depth-btn active" data-depth="15">15</button>
+                            <button type="button" class="depth-btn" data-depth="20">20</button>
+                            <button type="button" class="depth-btn" data-depth="25">25</button>
+                            <button type="button" class="depth-btn" data-depth="30">30</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="stat-card-glass dashboard-card mt-16">
+                    <h4 class="panel-title">Robot / Safety</h4>
+                    <div class="dashboard-monitor mt-12">
+                        <div class="status-item"><span>Robot Status</span><span id="dashboard-robot-status">--</span></div>
+                        <div class="status-item"><span>Busy</span><span id="dashboard-robot-busy">--</span></div>
+                        <div class="status-item"><span>Error</span><span id="dashboard-robot-error">--</span></div>
+                        <div class="status-item"><span>Queue</span><span id="dashboard-robot-queue">--</span></div>
+                        <div class="status-item"><span>Position</span><span id="dashboard-robot-position">--</span></div>
+                        <div class="status-item"><span>E-Stop</span><span id="dashboard-safety-estop">--</span></div>
+                        <div class="status-item"><span>Safe Mode</span><span id="dashboard-safety-safe-mode">未提供</span></div>
+                        <div class="status-item"><span>Camera Ready</span><span id="dashboard-safety-camera-ready">--</span></div>
+                    </div>
+                    <div class="sidebar-control-grid mt-12">
+                        <button id="btn-estop-trigger" type="button" class="btn-remote danger">E-Stop</button>
+                        <label class="sidebar-toggle-row">
+                            <span>Safe Mode</span>
+                            <span class="switch">
+                                <input id="safe-mode-toggle" type="checkbox" checked>
+                                <span class="slider round"></span>
+                            </span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="stat-card-glass dashboard-card mt-16">
+                    <h4 class="panel-title">Experiment</h4>
+                    <div class="dashboard-monitor mt-12">
+                        <div class="status-item"><span>Participant ID</span><span id="dashboard-exp-participant">未設定</span></div>
+                        <div class="status-item"><span>Session ID</span><span id="dashboard-exp-session-id">--</span></div>
+                        <div class="status-item"><span>Session Status</span><span id="dashboard-exp-session-status">待命</span></div>
+                        <div class="status-item"><span>Session Time</span><span id="dashboard-exp-session-time">00:00</span></div>
+                        <div class="status-item"><span>AI Difficulty</span><span id="dashboard-exp-difficulty">未提供</span></div>
+                    </div>
+                    <input id="session-participant-id" class="session-input mt-12" type="text" maxlength="64" placeholder="Participant ID">
+                    <div class="sidebar-control-row mt-8">
+                        <button id="btn-session-start" type="button" class="btn-remote success">Start</button>
+                        <button id="btn-session-end" type="button" class="btn-remote">End</button>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        {% include 'templates/components/sidebar.html' %}
+    </div>
+</section>

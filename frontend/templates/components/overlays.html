@@ -1,0 +1,25 @@
+<!-- SYSTEM OVERLAYS -->
+<div id="pause-overlay" class="overlay hidden">
+    <div class="overlay-card glass">
+        <h1 id="overlay-title">SYSTEM HALTED</h1>
+        <p id="pause-msg">系統目前已暫停，確認安全後可返回監控台。</p>
+        <div id="overlay-actions" class="flex-row mt-24">
+            <button id="btn-resume-overlay" type="button" class="btn-prime flex-1">繼續監控</button>
+        </div>
+    </div>
+</div>
+
+<div id="auth-overlay" class="auth-overlay hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="auth-title">
+    <div class="auth-card glass">
+        <h2 id="auth-title">Admin unlock</h2>
+        <form id="admin-login-form" class="auth-form">
+            <input id="admin-password" name="password" type="password" autocomplete="current-password" aria-label="Admin password">
+            <button type="submit" class="btn-remote success">Unlock</button>
+            <button id="btn-auth-cancel" type="button" class="btn-ghost">Cancel</button>
+            <p id="auth-error" class="small-note" role="alert"></p>
+        </form>
+    </div>
+</div>
+
+<!-- TOAST -->
+<div id="toast-container" class="toast-stack" aria-live="polite"></div>

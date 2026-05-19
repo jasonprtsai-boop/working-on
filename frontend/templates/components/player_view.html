@@ -1,0 +1,33 @@
+<section id="view-player" class="view-player hidden">
+    <nav class="top-nav">
+        <div class="logo">CHESS <span>OS</span></div>
+        <button id="btn-exit" type="button" class="btn-exit" aria-label="Exit system">返回首頁</button>
+    </nav>
+
+    <div id="game-arena" class="arena-layout-centered hidden">
+        <div class="board-col-center">
+            <div class="board-container">
+                <div id="player-board" class="chess-board">
+                    <div class="board-grid-line"></div>
+                    <div class="river-label"><span>楚河</span><span>漢界</span></div>
+                    <div class="palace-lines">
+                        <svg class="palace-svg" style="top:0; left:37.5%; width:25%; height:22.22%;">
+                            <line x1="0" y1="0" x2="100%" y2="100%" stroke="var(--border)" stroke-width="1" />
+                            <line x1="100%" y1="0" x2="0" y2="100%" stroke="var(--border)" stroke-width="1" />
+                        </svg>
+                        <svg class="palace-svg" style="top:77.77%; left:37.5%; width:25%; height:22.22%;">
+                            <line x1="0" y1="0" x2="100%" y2="100%" stroke="var(--border)" stroke-width="1" />
+                            <line x1="100%" y1="0" x2="0" y2="100%" stroke="var(--border)" stroke-width="1" />
+                        </svg>
+                    </div>
+                    <div id="board-pieces" class="piece-layer"></div>
+                    <div class="scan-beam"></div>
+                </div>
+                <div id="board-busy-overlay" class="board-overlay hidden">
+                    <div class="loader-ring"></div>
+                    <p>系統同步中...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>

@@ -1,0 +1,32 @@
+<aside class="sidebar-panel">
+    <nav class="tab-nav" aria-label="Console tabs">
+        <button type="button" class="tab-btn active" data-tab="export">匯出</button>
+        <button type="button" class="tab-btn" data-tab="logs">日誌</button>
+        <div class="tab-indicator" id="tab-indicator"></div>
+    </nav>
+
+    <div class="tab-content" id="tab-viewport">
+
+
+        <div class="tab-pane active" id="pane-export">
+            <div class="stat-card-glass control-hub">
+                <h4 class="panel-title">棋局匯出</h4>
+                <button id="btn-export-excel" type="button" class="btn-remote success mt-12">匯出完整棋局 Excel</button>
+                <button id="btn-export-csv" type="button" class="btn-remote mt-8">匯出事件紀錄 CSV</button>
+                <p class="small-note mt-12">Excel 將彙整影像紀錄、YOLO 效能、辨識結果、玩家與 AI 棋步以及系統狀態。</p>
+            </div>
+        </div>
+
+        <div class="tab-pane" id="pane-logs">
+            <div class="terminal-wrapper flex-col" style="height: 100%;">
+                <div class="terminal-header">
+                    <div class="terminal-dots"><span></span><span></span><span></span></div>
+                    <div class="terminal-title">系統日誌</div>
+                </div>
+                <div class="log-terminal flex-1" id="admin-logs">
+                    <div class="log-line sys">系統日誌已啟動。</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</aside>

@@ -1,0 +1,16 @@
+<!-- GLOBAL SAFETY BAR -->
+<div id="safety-bar" class="safety-status-bar">
+    <div class="status-indicator">
+        <span class="dot pulse-green"></span>
+        <span id="system-status-text">系統待命</span>
+    </div>
+    <div class="safety-message" id="safety-msg">安全鎖已就緒，等待同步資料。</div>
+    <div class="sync-status" id="sync-warning"
+         style="display:none; color:var(--error); font-weight:800; animation: blink 1s infinite;">
+        同步延遲過高：LAT &gt; 500ms
+    </div>
+    <div class="telemetry-mini">
+        <span id="mini-fps">FPS: --</span>
+        <span id="mini-latency">LAT: --</span>
+    </div>
+</div>

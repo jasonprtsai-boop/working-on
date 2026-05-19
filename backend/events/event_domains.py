@@ -1,0 +1,10 @@
+class Domains:
+    """[Production Architecture] Official Event Domains."""
+    GAME = "GAME"
+    ENGINE = "ENGINE"
+    ROBOT = "ROBOT"
+    VISION = "VISION"
+    UI = "UI"
+    SYSTEM = "SYSTEM"
+    REPLAY = "REPLAY"
+    DIAGNOSTICS = "DIAGNOSTICS"

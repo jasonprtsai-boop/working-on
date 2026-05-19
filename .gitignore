@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+.env
+.env.local
+.env.development
+.env.production
+dist/
+.pytest_cache/
+
+# Reports & Logs
+reports/
+analysis_artifacts/
+reports/*.xlsx
+reports/*.csv
+logs/
+data/
+backend/data/
+backend/data/replays/
+snapshots/
+*.log
+chess_robot_experiment.xlsx
+*.before_excel_fix_*.xlsx
+*.corrupt-*
+*.xlsx
+
+# Runtime databases
+*.db
+*.db-shm
+*.db-wal
+
+# System
+.DS_Store
+Thumbs.db
+.gemini/
+
+# Node
+node_modules/
+
+# Engine
+*.nnue
+*.pt
+*.exe
+backend/infrastructure/vision/models/

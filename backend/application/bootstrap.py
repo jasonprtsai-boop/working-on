@@ -1,0 +1,253 @@
+import atexit
+import asyncio
+
+from backend.events.bus.event_bus import bus
+from backend.events.event_types import EventType
+from backend.events.models.base_event import BaseEvent
+from backend.state.store.manager.state_manager import state_manager
+from backend.state.store.state_store import state_store
+from backend.application.container import container
+from backend.runtime.workers import initialize_workers
+from backend.runtime.workers.worker_manager import worker_manager
+from backend.runtime.workers.engine_worker import engine_worker
+from backend.utils import config
+from backend.utils.logger import logger
+from backend.app.task_queue import task_queue
+from backend.infrastructure.robot.queue.robot_queue import robot_queue
+from backend.core.exceptions import FatalBootstrapError, ComponentDegradedError
+
+
+def _register_shutdown_hooks(runtime, vision_system):
+    """Register exactly one best-effort process teardown hook."""
+    if getattr(_register_shutdown_hooks, "_registered", False):
+        return
+
+    def _shutdown():
+        try:
+            worker_manager.shutdown_sync(runtime=runtime, timeout=5.0)
+        except Exception as exc:
+            logger.warning(f"[Bootstrap] worker shutdown degraded: {exc}", exc_info=True)
+        try:
+            engine = container.get("engine")
+            if engine and hasattr(engine, "shutdown"):
+                if getattr(runtime, "_loop", None) and runtime._loop.is_running():
+                    runtime.run_task(engine.shutdown()).result(timeout=8.0)
+                else:
+                    asyncio.run(engine.shutdown())
+            elif engine and hasattr(engine, "close"):
+                if getattr(runtime, "_loop", None) and runtime._loop.is_running():
+                    runtime.run_task(engine.close()).result(timeout=8.0)
+                else:
+                    asyncio.run(engine.close())
+        except Exception as exc:
+            logger.warning(f"[Bootstrap] engine shutdown degraded: {exc}", exc_info=True)
+        try:
+            if vision_system and hasattr(vision_system, "stop"):
+                vision_system.stop()
+        except Exception as exc:
+            logger.warning(f"[Bootstrap] vision shutdown degraded: {exc}", exc_info=True)
+        try:
+            runtime.stop()
+        except Exception as exc:
+            logger.warning(f"[Bootstrap] runtime shutdown degraded: {exc}", exc_info=True)
+
+    atexit.register(_shutdown)
+    _register_shutdown_hooks._registered = True
+
+def bootstrap_system():
+    """
+    [Architectural Authority] Centralized Wiring & Initialization.
+    Follows strict dependency ordering:
+    1. Runtime (Loop, Logging)
+    2. Infrastructure (DB, Modbus, Bus)
+    3. State (SSOT)
+    4. Services (Vision, Engine, Robot)
+    5. Workers (Background tasks)
+    """
+    # Idempotency guard: avoid duplicate booting.
+    if getattr(bootstrap_system, "_booted", False):
+        logger.info("[Bootstrap] Already bootstrapped; skipping.")
+        return
+
+    logger.info("[Bootstrap] Bootstrapping S.M.A.R.T. Chess System...")
+    bootstrap_status = {
+        "booted": False,
+        "ready": False,
+        "errors": [],
+        "runtime_started": False,
+        "engine_registered": False,
+        "vision_registered": False,
+        "robot_registered": False,
+        "robot_connected": False,
+        "workers_started": False,
+        "workflow_started": False,
+        "persistence_started": False,
+        "vision_started": False,
+        "vision_fallback": False,
+        "vision_mode": "unknown",
+        "vision_start_error": None,
+    }
+    container.register("bootstrap_status", bootstrap_status)
+
+    def record_bootstrap_error(component: str, exc: Exception, level: str = "warning"):
+        entry = {"component": component, "error": str(exc), "level": level}
+        bootstrap_status["errors"].append(entry)
+        if level == "error":
+            logger.error(f"[Bootstrap] {component} failed: {exc}", exc_info=True)
+        else:
+            logger.warning(f"[Bootstrap] {component} degraded: {exc}", exc_info=True)
+
+    # 1. Start Async Runtime (The foundation for all async tasks)
+    try:
+        from backend.runtime.async_runtime import runtime
+        runtime.start()
+        bootstrap_status["runtime_started"] = True
+        container.register("runtime", runtime)
+        container.register("loop", runtime._loop)
+        container.register("state", state_store)
+    except Exception as exc:
+        record_bootstrap_error("runtime", exc, level="error")
+        raise FatalBootstrapError(f"Failed to start AsyncRuntime: {exc}") from exc
+
+    # 2. Instantiate minimal services
+    from backend.application.services.engine_service import EngineService
+    from backend.application.services.vision_service import VisionService
+    from backend.application.services.robot_facade import RobotFacade
+
+    engine_service = EngineService()
+    vision_service = VisionService()
+    robot = RobotFacade()
+
+    try:
+        robot_connected = bool(robot.connect())
+        bootstrap_status["robot_connected"] = robot_connected
+        if not robot_connected and not getattr(config, "FAKE_ROBOT", False):
+            record_bootstrap_error("robot.connect", ComponentDegradedError("Robot connection failed in real hardware mode."), level="error")
+    except Exception as exc:
+        record_bootstrap_error("robot.connect", exc)
+
+    # 3. Register in Authoritative Container
+    container.register("bus", bus)
+    container.register("engine", engine_service)
+    container.register("vision", vision_service)
+    container.register("robot", robot)
+    bootstrap_status["engine_registered"] = True
+    bootstrap_status["vision_registered"] = True
+    bootstrap_status["robot_registered"] = True
+    logger.info("[Bootstrap] Core services registered in Container.")
+
+    if getattr(config, "ENGINE_PROBE_ON_BOOT", True) and not getattr(config, "ENGINE_AUTO_ANALYZE", True):
+        try:
+            runtime.run_task(engine_service.probe_compatible_pair())
+            logger.info("[Bootstrap] Scheduled engine/NNUE compatibility probe.")
+        except Exception as exc:
+            record_bootstrap_error("engine.probe", exc)
+
+    # 4. Wire Reducers (DIP)
+    from backend.state.store.manager.reducer_registry import reducer_registry
+    from backend.state.reducers.move_reducer import MoveReducer
+    from backend.state.reducers.engine_reducer import EngineReducer
+    from backend.state.reducers.robot_reducer import RobotReducer
+    from backend.state.reducers.system_reducer import SystemReducer
+
+    reducer_registry.register(EventType.VISION_MOVE_DETECTED, MoveReducer)
+    reducer_registry.register(EventType.MOVE_APPLIED, MoveReducer)
+    reducer_registry.register(EventType.GAME_PLAYER_MOVE, MoveReducer)
+    reducer_registry.register(EventType.ENGINE_ANALYSIS_COMPLETED, EngineReducer)
+    reducer_registry.register(EventType.ROBOT_MOVE_STARTED, RobotReducer)
+    reducer_registry.register(EventType.ROBOT_MOVE_COMPLETED, RobotReducer)
+    reducer_registry.register(EventType.ROBOT_STATUS_UPDATED, RobotReducer)
+    reducer_registry.register(EventType.SYSTEM_RESET, SystemReducer)
+    reducer_registry.register(EventType.SYSTEM_ERROR, SystemReducer)
+    reducer_registry.register(EventType.DIAGNOSTICS_UPDATED, SystemReducer)
+    logger.info("[Bootstrap] Reducers registered in Global Registry.")
+    bootstrap_status["persistence_started"] = True # Re-use index if needed
+
+    # 5. Wire StateManager to EventBus (SSOT)
+    # We use is_async=True to ensure state mutations happen on the background loop
+    try:
+        bus.subscribe_all(state_manager.dispatch, is_async=True)
+        logger.info("[Bootstrap] StateManager wired to EventBus (Async).")
+    except Exception as exc:
+        record_bootstrap_error("state_manager.wire", exc, level="error")
+        raise FatalBootstrapError(f"Failed to wire StateManager: {exc}") from exc
+
+    # 6. Initialize and Start Workers
+    # Start old VisionSystem (legacy MJPEG stream)
+    from backend.infrastructure.vision.vision_system import vision_system
+    _register_shutdown_hooks(runtime, vision_system)
+    bootstrap_status["vision_fallback"] = vision_system.__class__.__name__.lower().startswith("fallback")
+    bootstrap_status["vision_mode"] = "fallback" if bootstrap_status["vision_fallback"] else "real"
+    try:
+        bootstrap_status["vision_started"] = bool(vision_system.start())
+    except Exception as e:
+        bootstrap_status["vision_started"] = False
+        bootstrap_status["vision_start_error"] = str(e)
+        record_bootstrap_error("vision.start", e, level="error")
+    bus.publish(BaseEvent.create(
+        event_type=EventType.DIAGNOSTICS_UPDATED,
+        source="bootstrap",
+        payload={
+            "vision": {
+                "mode": bootstrap_status["vision_mode"],
+                "fallback": bootstrap_status["vision_fallback"],
+                "status": "FALLBACK" if bootstrap_status["vision_fallback"] else "READY",
+                "start_error": bootstrap_status["vision_start_error"],
+            }
+        },
+    ))
+
+    # Register E-Stop clear hooks
+    try:
+        task_queue.register_clear_hook(engine_worker.stop)
+    except Exception as exc:
+        record_bootstrap_error("estop.engine_clear_hook", exc)
+    try:
+        task_queue.register_clear_hook(robot_queue.clear)
+    except Exception as exc:
+        record_bootstrap_error("estop.robot_queue_clear_hook", exc)
+
+    initialize_workers()
+    bootstrap_status["workers_started"] = True
+    logger.info("[Bootstrap] Background workers started via AsyncRuntime.")
+
+    # 6. Start High-Level Workflow Orchestration
+    from backend.application.use_cases.coordinate_workflow import workflow_coordinator
+    workflow_coordinator.start()
+    bootstrap_status["workflow_started"] = True
+    logger.info("[Bootstrap] WorkflowCoordinator started.")
+
+    # 7. Start Observability & Persistence
+    from backend.observability.timeline.timeline_tracer import timeline_tracer
+    timeline_tracer.start()
+    logger.info("[Bootstrap] TimelineTracer started.")
+
+    from backend.runtime.workers.persistence_worker import persistence_worker
+    container.register("persistence_worker", persistence_worker)
+    worker_manager.register_worker("persistence", persistence_worker)
+    try:
+        persistence_worker.start()
+        bootstrap_status["persistence_started"] = True
+        logger.info("[Bootstrap] PersistenceWorker started.")
+    except Exception as exc:
+        record_bootstrap_error("persistence", exc, level="error")
+        # Persistence is critical for research data integrity
+        raise FatalBootstrapError(f"Failed to start PersistenceWorker: {exc}") from exc
+
+    vision_ready = bool(bootstrap_status["vision_started"] or bootstrap_status["vision_fallback"])
+    bootstrap_status["ready"] = all(
+        [
+            bootstrap_status["runtime_started"],
+            bootstrap_status["engine_registered"],
+            bootstrap_status["vision_registered"],
+            bootstrap_status["robot_registered"],
+            bootstrap_status["robot_connected"] or getattr(config, "FAKE_ROBOT", False),
+            bootstrap_status["workers_started"],
+            bootstrap_status["workflow_started"],
+            bootstrap_status["persistence_started"],
+            vision_ready,
+        ]
+    )
+    bootstrap_status["booted"] = True
+    bootstrap_system._booted = True
+    logger.info("[Bootstrap] System bootstrap complete.")

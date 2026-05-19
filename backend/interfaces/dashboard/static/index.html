@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>S.M.A.R.T Observability Dashboard</title>
+    <script src="/static/vendor/socket.io.min.js" defer></script>
+    <script src="/dashboard/static/dashboard.js" defer></script>
+    <style>
+        :root {
+            --bg-dark: #0a0b10;
+            --card-bg: rgba(255, 255, 255, 0.05);
+            --accent-blue: #00d2ff;
+            --accent-purple: #9d50bb;
+            --text-primary: #ffffff;
+            --text-secondary: #a0a0a0;
+            --success: #00f2fe;
+            --warning: #f7971e;
+            --danger: #ff4b2b;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-dark);
+            color: var(--text-primary);
+            overflow-x: hidden;
+            background: radial-gradient(circle at 50% 50%, #1a1b26 0%, #0a0b10 100%);
+            min-height: 100vh;
+        }
+
+        header {
+            padding: 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: 700;
+            background: linear-gradient(to right, var(--accent-blue), var(--accent-purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: 2px;
+        }
+
+        .system-status {
+            display: flex;
+            gap: 1.5rem;
+        }
+
+        .status-badge {
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            background: var(--card-bg);
+            font-size: 0.8rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--success);
+            box-shadow: 0 0 10px var(--success);
+        }
+
+        main {
+            padding: 2rem;
+            display: grid;
+            grid-template-columns: repeat(12, 1fr);
+            gap: 1.5rem;
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+
+        .card {
+            background: var(--card-bg);
+            border-radius: 1.5rem;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 1.5rem;
+            backdrop-filter: blur(5px);
+            transition: transform 0.3s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .card-title {
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            letter-spacing: 1px;
+        }
+
+        /* Health Section */
+        .health-grid {
+            grid-column: span 12;
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 1rem;
+        }
+
+        .metric {
+            text-align: center;
+        }
+
+        .metric-value {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 0.2rem;
+        }
+
+        .metric-label {
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+        }
+
+        /* Event Log */
+        .log-card {
+            grid-column: span 12;
+            display: flex;
+            flex-direction: column;
+            height: 500px;
+        }
+
+        .log-container {
+            flex-grow: 1;
+            overflow-y: auto;
+            padding-right: 0.5rem;
+        }
+
+        .log-entry {
+            padding: 0.8rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            font-size: 0.85rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.3rem;
+            animation: slideIn 0.3s ease-out;
+        }
+
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateX(10px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+
+        .log-header {
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .log-type {
+            font-weight: 600;
+            color: var(--accent-blue);
+            font-size: 0.75rem;
+        }
+
+        .log-time {
+            color: var(--text-secondary);
+            font-size: 0.7rem;
+        }
+
+        .log-payload {
+            color: var(--text-secondary);
+            font-family: monospace;
+            font-size: 0.8rem;
+            word-break: break-all;
+        }
+
+        /* Timeline Card */
+        .timeline-card {
+            grid-column: span 12;
+        }
+
+        .timeline-viz {
+            height: 150px;
+            width: 100%;
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 1rem;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .timeline-marker {
+            position: absolute;
+            bottom: 0;
+            width: 2px;
+            background: var(--accent-blue);
+            transition: left 0.3s ease;
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 4px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 2px;
+        }
+
+        .badge-pulse {
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(0, 210, 255, 0.4); }
+            70% { box-shadow: 0 0 0 10px rgba(0, 210, 255, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(0, 210, 255, 0); }
+        }
+
+        .grid-bg {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image: linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
+                              linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+            background-size: 40px 40px;
+            z-index: -1;
+        }
+    </style>
+</head>
+<body>
+    <div class="grid-bg"></div>
+    <header>
+        <div class="logo">S.M.A.R.T OBSERVABILITY</div>
+        <div class="system-status">
+            <div class="status-badge">
+                <div class="dot badge-pulse"></div>
+                SYSTEM ACTIVE
+            </div>
+            <div class="status-badge">
+                <span id="session-id">SESSION: CHESS-882</span>
+            </div>
+        </div>
+    </header>
+
+    <main>
+        <!-- Health Summary -->
+        <div class="health-grid">
+            <div class="card">
+                <div class="metric">
+                    <div class="metric-value" id="val-fps">0.0</div>
+                    <div class="metric-label">VISION FPS</div>
+                </div>
+            </div>
+            <div class="card">
+                <div class="metric">
+                    <div class="metric-value" id="val-latency">0</div>
+                    <div class="metric-label">PIPELINE LATENCY (ms)</div>
+                </div>
+            </div>
+            <div class="card">
+                <div class="metric">
+                    <div class="metric-value" id="val-cpu">0</div>
+                    <div class="metric-label">CPU USAGE (%)</div>
+                </div>
+            </div>
+            <div class="card">
+                <div class="metric">
+                    <div class="metric-value" id="val-events">0</div>
+                    <div class="metric-label">EVENTS / SEC</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Event Log -->
+        <div class="card log-card">
+            <div class="card-header">
+                <div class="card-title">Live Event Stream</div>
+            </div>
+            <div class="log-container" id="log-container">
+                <!-- Entries added by JS -->
+            </div>
+        </div>
+
+        <!-- Timeline Visualization -->
+        <div class="card timeline-card">
+            <div class="card-header">
+                <div class="card-title">Event Sequence Timeline</div>
+            </div>
+            <div class="timeline-viz" id="timeline-viz">
+                <!-- Markers added by JS -->
+            </div>
+        </div>
+    </main>
+
+</body>
+</html>
