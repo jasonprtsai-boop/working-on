@@ -4,7 +4,7 @@ import time
 from typing import List, Dict, Any, Optional, Sequence
 from backend.utils import config
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 class EventStore:
     """
@@ -84,6 +84,9 @@ class EventStore:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_events_source_sequence ON events(source, sequence_id)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_events_type_sequence ON events(type, sequence_id)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_events_session_type_sequence ON events(session_id, type, sequence_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_events_session_timestamp ON events(session_id, timestamp)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_events_type_timestamp ON events(type, timestamp)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events(timestamp)")
             conn.commit()
         finally:
             conn.close()

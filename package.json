@@ -18,6 +18,7 @@
     "quality": ".venv\\Scripts\\python.exe scripts/quality_gate.py",
     "check:html": "node scripts/html_function_check.mjs",
     "release:zip": ".venv\\Scripts\\python.exe scripts/build_release_zip.py",
+    "share:zip": ".venv\\Scripts\\python.exe scripts/sanitize_for_share.py",
     "smoke:frontend": "node scripts/playwright_smoke.mjs",
     "dev": "echo \"Frontend is served by Flask. Run: python .\\\\main.py\""
   },

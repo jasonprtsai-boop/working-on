@@ -274,6 +274,13 @@ Build release zip:
 npm.cmd run release:zip
 ```
 
+Build a sanitized source-review/share zip without local runtime data or protected
+binary/model assets:
+
+```powershell
+npm.cmd run share:zip
+```
+
 Runtime artifacts are intentionally excluded from Git and release output:
 - `.env`
 - `.venv/`

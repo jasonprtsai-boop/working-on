@@ -48,6 +48,7 @@ def main() -> int:
     run([sys.executable, "scripts/check_artifact_hygiene.py"], "runtime artifact hygiene check")
     run([sys.executable, "scripts/maintenance/cleanup.py", "--dry-run"], "artifact cleanup dry-run")
     run([sys.executable, "scripts/build_release_zip.py", "--dry-run"], "release zip dry-run")
+    run([sys.executable, "scripts/sanitize_for_share.py", "--dry-run"], "share zip sanitize dry-run")
     test_env = os.environ.copy()
     test_env["ENGINE_AUTO_ANALYZE"] = "false"
     test_env["ENGINE_PROBE_ON_BOOT"] = "false"

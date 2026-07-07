@@ -1,4 +1,5 @@
 import os
+import sqlite3
 import tempfile
 import unittest
 
@@ -34,7 +35,7 @@ class TestEventStoreAdapter(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = os.path.join(tmpdir, "events.db")
             store = SqliteEventStore(db_path=db_path)
-            self.assertEqual(store.get_schema_version(), 3)
+            self.assertEqual(store.get_schema_version(), 4)
 
             store.save_event({"session_id": "s1", "trace_id": "t1", "type": "A", "payload": {"v": 1}, "timestamp": 1.0})
             store.save_event({"session_id": "s1", "trace_id": "t2", "type": "B", "payload": {"v": 2}, "timestamp": 2.0})
@@ -70,6 +71,22 @@ class TestEventStoreAdapter(unittest.TestCase):
             history = store.get_events("s1")
             self.assertEqual([event["sequence_id"] for event in history], [1, 2, 3, 4])
             self.assertEqual([event["type"] for event in history], ["A", "B", "META", "LEGACY_SEQUENCE_IGNORED"])
+
+    def test_sqlite_store_creates_query_performance_indexes(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = os.path.join(tmpdir, "events.db")
+            SqliteEventStore(db_path=db_path)
+
+            conn = sqlite3.connect(db_path)
+            try:
+                rows = conn.execute("PRAGMA index_list(events)").fetchall()
+            finally:
+                conn.close()
+            names = {row[1] for row in rows}
+
+            self.assertIn("idx_events_session_timestamp", names)
+            self.assertIn("idx_events_type_timestamp", names)
+            self.assertIn("idx_events_timestamp", names)
 
     def test_query_events_filters_by_trace_session_and_type(self):
         with tempfile.TemporaryDirectory() as tmpdir:
