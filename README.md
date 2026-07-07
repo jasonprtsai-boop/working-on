@@ -34,6 +34,16 @@ Open:
 
 The dashboard requires a bearer token from `POST /api/login` with the configured `ADMIN_PASSWORD`.
 
+Recommended Windows system check:
+
+```powershell
+.\check_system.cmd
+```
+
+Use `.\check_system_strict.cmd` before release packaging or handoff. The `.cmd`
+wrappers intentionally bypass local PowerShell script policy for this project
+only, then call `scripts\check_system.ps1`.
+
 ## Installation And Runbooks
 
 Use these documents when moving the project to a different computer or preparing the lab PC:
@@ -76,7 +86,7 @@ Production preflight:
 
 ## Verified Environment
 
-Last local verification: 2026-06-10 via `npm.cmd run check:system`.
+Last local verification: 2026-07-08 via `.\check_system.cmd`.
 
 Recommended install baseline:
 - Python 3.11 64-bit. Python 3.9-3.12 are supported; Python 3.13 is not supported yet.
@@ -229,13 +239,13 @@ If `npm test` cannot find Jest after copying the folder to another computer, rem
 Full local system check:
 
 ```powershell
-npm.cmd run check:system
+.\check_system.cmd
 ```
 
 Strict clean-tree system check:
 
 ```powershell
-npm.cmd run check:system:strict
+.\check_system_strict.cmd
 ```
 
 The non-strict check intentionally skips the clean Git tree requirement and is useful while the working tree contains active development changes.

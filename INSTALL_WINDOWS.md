@@ -63,6 +63,10 @@ py -3.11 -m venv .venv
 ## Verification
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\quality_gate.py
-npm test
+.\check_system.cmd
 ```
+
+Use `.\check_system_strict.cmd` before release packaging or copying the project
+as a stable baseline. These wrappers call PowerShell with `-ExecutionPolicy
+Bypass`, which avoids lab PCs failing because local script execution is
+disabled.

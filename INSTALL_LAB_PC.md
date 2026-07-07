@@ -41,6 +41,12 @@ Start in simulation-safe mode first:
 .\.venv\Scripts\python.exe main.py
 ```
 
+Before connecting the real robot, run the full software check:
+
+```powershell
+.\check_system.cmd
+```
+
 ## First Setup Flow
 
 1. Log in to the setup page with password `login`.

@@ -30,8 +30,7 @@ Open:
 ## Smoke Test
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\quality_gate.py
-npm test
+.\check_system.cmd
 ```
 
 Expected result:

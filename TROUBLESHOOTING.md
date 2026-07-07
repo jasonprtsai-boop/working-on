@@ -1,5 +1,21 @@
 # Troubleshooting
 
+## PowerShell Blocks .ps1 Scripts
+
+Some Windows lab PCs disable direct `.ps1` execution. Use the project wrappers
+instead of running scripts directly:
+
+```powershell
+.\check_system.cmd
+.\check_system_strict.cmd
+```
+
+For setup:
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File setup_env.ps1
+```
+
 ## Python Version Error
 
 Use Python 3.11 when possible. Python 3.13 is not supported yet.
@@ -96,6 +112,7 @@ Remove trailing spaces, then rerun:
 ```powershell
 .\.venv\Scripts\python.exe scripts\quality_gate.py
 git diff --check
+.\check_system.cmd
 ```
 
 ## Real Robot Moves Too Fast
