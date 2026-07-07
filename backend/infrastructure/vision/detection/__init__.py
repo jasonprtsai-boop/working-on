@@ -4,7 +4,6 @@ from backend.infrastructure.vision.detection.mode_factory import (
     DEFAULT_DETECTION_MODES,
     DETECTION_MODE_CONFIGS,
     DetectorModeFactory,
-    ROIAdjustedDetector,
 )
 from backend.infrastructure.vision.detection.opencv_dnn_detector import Detector
 
@@ -17,5 +16,4 @@ __all__ = [
     "DetectionResult",
     "Detector",
     "DetectorModeFactory",
-    "ROIAdjustedDetector",
 ]

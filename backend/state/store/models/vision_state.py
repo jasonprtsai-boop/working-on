@@ -5,7 +5,7 @@ from typing import List, Dict, Any, Optional
 class VisionState:
     camera_status: str = "OFFLINE"
     mode: str = "unknown"
-    fallback: bool = False
+    simulation: bool = False
     confidence: float = 0.0
     last_detection_time: float = 0.0
     board_mapping: Dict[str, Any] = field(default_factory=dict)

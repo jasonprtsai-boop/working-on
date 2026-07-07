@@ -8,10 +8,10 @@ from backend.interfaces.api.shared import api_bp
 @api_bp.route("/estop/status", methods=["GET"])
 def estop_status():
     from backend.application.services.estop import estop
-    return jsonify({
-        "triggered": bool(estop.is_triggered),
-        "global_stop": bool(estop.GLOBAL_STOP),
-    })
+    snapshot = estop.snapshot()
+    snapshot.setdefault("triggered", bool(estop.is_triggered))
+    snapshot.setdefault("global_stop", bool(estop.GLOBAL_STOP))
+    return jsonify(snapshot)
 
 
 @api_bp.route("/estop/trigger", methods=["POST"])
@@ -19,6 +19,16 @@ def estop_trigger():
     from backend.application.services.estop import estop
     payload = request.get_json(silent=True) or {}
     estop.trigger(reason=str(payload.get("reason", "REST API Trigger")))
+    return jsonify({"ok": True})
+
+
+@api_bp.route("/player/estop", methods=["POST"])
+def player_estop_trigger():
+    """Public player-side emergency stop. Stop commands should remain easy to reach."""
+    from backend.application.services.estop import estop
+
+    payload = request.get_json(silent=True) or {}
+    estop.trigger(reason=str(payload.get("reason", "Player emergency stop")))
     return jsonify({"ok": True})
 
 

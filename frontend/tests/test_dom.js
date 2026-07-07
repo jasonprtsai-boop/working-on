@@ -23,6 +23,7 @@ export function installFakeDom() {
       this._className = '';
       this._textContent = '';
       this.id = '';
+      this.attributes = {};
     }
 
     get parentElement() { return this.parentNode; }
@@ -55,6 +56,11 @@ export function installFakeDom() {
     }
 
     appendChild(child) {
+      if (child.tagName === '#document-fragment') {
+        child.children.slice().forEach(grandchild => this.appendChild(grandchild));
+        child.children = [];
+        return child;
+      }
       child.parentNode = this;
       this.children.push(child);
       if (child.id) elementsById.set(child.id, child);
@@ -79,12 +85,27 @@ export function installFakeDom() {
       this.parentNode = null;
     }
 
+    replaceChildren(...children) {
+      this.children.forEach(child => { child.parentNode = null; });
+      this.children = [];
+      this._textContent = '';
+      children.forEach(child => this.appendChild(child));
+    }
+
     addEventListener(type, handler) {
       if (!this._listeners.has(type)) this._listeners.set(type, []);
       this._listeners.get(type).push(handler);
     }
 
     setPointerCapture() {}
+
+    setAttribute(name, value) {
+      this.attributes[name] = String(value);
+    }
+
+    getAttribute(name) {
+      return this.attributes[name];
+    }
 
     querySelectorAll(selector) {
       const sel = String(selector || '').trim();
@@ -119,6 +140,7 @@ export function installFakeDom() {
     body: new FakeElement('body'),
     createElement: (tag) => new FakeElement(tag),
     createElementNS: (_ns, tag) => new FakeElement(tag),
+    createDocumentFragment: () => new FakeElement('#document-fragment'),
     getElementById: (id) => elementsById.get(id) || null,
     querySelectorAll: (selector) => global.document.body.querySelectorAll(selector),
     querySelector: (selector) => global.document.body.querySelector(selector),

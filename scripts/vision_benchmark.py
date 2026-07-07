@@ -182,11 +182,11 @@ def _safe_filename(value: str) -> str:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run A-D runtime comparison for YOLO/SAHI/ROI vision modes.")
+    parser = argparse.ArgumentParser(description="Run YOLO runtime benchmark for the vision pipeline.")
     parser.add_argument("--input", help="Image file, image directory, or video file. Omit to use camera.")
     parser.add_argument("--camera-index", type=int, default=int(os.environ.get("CAMERA_INDEX", "0")))
     parser.add_argument("--frames", type=int, default=20)
-    parser.add_argument("--modes", default="full_yolo,sahi,roi_yolo,roi_sahi")
+    parser.add_argument("--modes", default="full_yolo")
     parser.add_argument("--model-path", default=os.environ.get("YOLO_MODEL_PATH", ""))
     parser.add_argument("--output", default="")
     parser.add_argument("--save-annotated", default="", help="Optional directory for annotated prediction images and FEN manifest.")

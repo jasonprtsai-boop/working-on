@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from flask import jsonify
+from flask import current_app, jsonify
 
 from backend.interfaces.api.shared import api_bp, game_state
+from backend.observability.error_reporter import publish_error_diagnostic
 
 
 @api_bp.route("/state", methods=["GET"])
@@ -18,8 +19,23 @@ def get_state():
         try:
             from backend.application.services.runtime_control import runtime_control
             ui_payload.update(runtime_control.frontend_ui_payload())
-        except Exception:
-            pass
+        except Exception as exc:
+            current_app.logger.warning("runtime_control UI payload unavailable", exc_info=True)
+            ui_payload.update({
+                "runtime_control_status": "degraded",
+                "runtime_control_error": str(exc),
+            })
+            publish_error_diagnostic(
+                source="api.state",
+                module="health",
+                code="runtime_control_ui_payload_failed",
+                message=str(exc),
+                severity="warning",
+                status="warning",
+                recoverable=True,
+                details={"endpoint": "/api/state"},
+                throttle_seconds=15.0,
+            )
         payload["ui"] = {**dict(payload.get("ui", {}) or {}), **ui_payload}
         payload.setdefault("notation", frontend_contract.get("notation"))
         game = payload.get("game", {}) if isinstance(payload.get("game"), dict) else {}

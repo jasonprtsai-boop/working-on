@@ -1,12 +1,15 @@
-import threading
 import copy
-from typing import List, Dict, Any
+import dataclasses
+import threading
+from typing import List, Dict, Any, Optional
 from backend.state.store.models.system_state import SystemState
 from backend.events.bus.event_bus import bus
 from backend.events.event_types import EventType
 from backend.events.models.base_event import BaseEvent
+from backend.events.adapters.legacy_event_adapter import adapt_legacy_event
 from backend.state.reducers.move_reducer import MoveReducer
 from backend.utils.logger import logger
+
 
 class StateManager:
     """
@@ -26,61 +29,56 @@ class StateManager:
         """Returns the current immutable state."""
         return self._state
 
-    def dispatch(self, event: Any):
+    def dispatch(self, event: BaseEvent):
         """
         Standardized entry point for all state mutations.
         Functional Flow: Dispatch -> Reduce -> Validate -> Commit -> Sync
         """
-        # Accept dict events from legacy producers, but only mutate state for known EventType values.
-        if isinstance(event, dict) and not hasattr(event, "event_type"):
-            raw_type = event.get("event_type") or event.get("type")
-            if isinstance(raw_type, str) and raw_type in {e.value for e in EventType}:
-                event = BaseEvent.create(
-                    event_type=EventType(raw_type),
-                    source=event.get("source", "dict_event"),
-                    payload=event.get("payload") or {},
-                    trace_id=event.get("trace_id"),
-                )
-            else:
-                return
+        if not isinstance(event, BaseEvent):
+            return
 
         # Ignore self-emitted state snapshots to prevent deadlocks/feedback loops.
-        if hasattr(event, "event_type"):
-            et0 = event.event_type.value if hasattr(event.event_type, "value") else event.event_type
-            if et0 == EventType.STATE_UPDATED.value:
-                return
+        et0 = event.event_type.value if hasattr(event.event_type, "value") else event.event_type
+        if et0 == EventType.STATE_UPDATED.value:
+            return
+
+        if isinstance(et0, str) and et0 not in {e.value for e in EventType}:
+            return
 
         snapshot = None
         with self._lock:
             try:
-                # 1. Map Event to Reducer via Global Registry (DIP)
-                from backend.state.store.manager.reducer_registry import reducer_registry
-                reducer = reducer_registry.get_reducer(event.event_type)
+                if et0 == EventType.GAME_UNDO.value:
+                    snapshot = self._undo_last_game_mutation(event)
+                else:
+                    # 1. Map Event to Reducer via Global Registry (DIP)
+                    from backend.state.store.manager.reducer_registry import reducer_registry
+                    reducer = reducer_registry.get_reducer(event.event_type)
 
-                if not reducer:
-                    return
+                    if not reducer:
+                        return
 
-                new_state = reducer.reduce(self._state, event)
+                    new_state = reducer.reduce(self._state, event)
 
-                # No-op guard: do not broadcast if nothing changed.
-                if new_state is self._state:
-                    return
+                    # No-op guard: do not broadcast if nothing changed.
+                    if new_state is self._state:
+                        return
 
-                # 2. Validation (Optional but recommended)
-                if not self._validate(new_state):
-                    logger.warning(
-                        "[StateManager] rejected invalid state mutation from %s",
-                        event.event_type,
-                    )
-                    return
+                    # 2. Validation (Optional but recommended)
+                    if not self._validate(new_state):
+                        logger.warning(
+                            "[StateManager] rejected invalid state mutation from %s",
+                            event.event_type,
+                        )
+                        return
 
-                # 3. Commit and Snapshot
-                self._history.append(self._state)
-                if len(self._history) > self._max_history:
-                    self._history.pop(0)
+                    # 3. Commit and Snapshot
+                    self._history.append(self._state)
+                    if len(self._history) > self._max_history:
+                        self._history.pop(0)
 
-                self._state = new_state
-                snapshot = self._state
+                    self._state = new_state
+                    snapshot = self._state
 
             except Exception as e:
                 logger.error(f"[StateManager] Mutation Error: {e}", exc_info=True)
@@ -88,6 +86,20 @@ class StateManager:
         # 4. Reactive Synchronization (Outside the lock to prevent deadlock)
         if snapshot:
             self._broadcast_change(snapshot)
+
+    def _undo_last_game_mutation(self, event: BaseEvent) -> Optional[SystemState]:
+        current = self._state
+        while self._history:
+            candidate = self._history.pop()
+            if (
+                candidate.game.fen != current.game.fen
+                or candidate.game.move_history != current.game.move_history
+                or candidate.game.current_turn != current.game.current_turn
+            ):
+                restored = dataclasses.replace(candidate, trace_id=event.trace_id)
+                self._state = restored
+                return restored
+        return None
 
     def _validate(self, state: SystemState) -> bool:
         """Ensures state integrity before committing."""

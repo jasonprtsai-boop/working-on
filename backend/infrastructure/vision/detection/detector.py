@@ -9,7 +9,7 @@ logger = get_logger(__name__)
 class BaseDetector(ABC):
     """
     Abstract base class for all vision detectors.
-    Allows swapping between YOLO, SAHI, RT-DETR, etc.
+    The active runtime detector is YOLO.
     """
     @abstractmethod
     def detect(self, frame: np.ndarray) -> List[Detection]:

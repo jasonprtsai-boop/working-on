@@ -1,0 +1,24 @@
+[
+  {
+    "name": "synthetic_homography_and_fen_baseline",
+    "image": {
+      "width": 900,
+      "height": 1000,
+      "board_quad": [[80, 70], [820, 95], [790, 910], [95, 880]]
+    },
+    "grid": {
+      "rows": 10,
+      "cols": 9,
+      "width": 900,
+      "height": 1000
+    },
+    "detections": [
+      {"class_name": "black_king", "confidence": 0.96, "cell": [4, 0]},
+      {"class_name": "black_cannon", "confidence": 0.91, "cell": [1, 2]},
+      {"class_name": "red_soldier", "confidence": 0.88, "cell": [4, 6]},
+      {"class_name": "red_rook", "confidence": 0.93, "cell": [0, 9]},
+      {"class_name": "red_king", "confidence": 0.97, "cell": [4, 9]}
+    ],
+    "expected_fen": "4k4/9/1c7/9/9/9/4P4/9/9/R3K4 w - - 0 1"
+  }
+]

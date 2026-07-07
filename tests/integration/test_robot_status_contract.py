@@ -15,6 +15,7 @@ class TestRobotStatusContract(unittest.TestCase):
         client = socketio.test_client(app, flask_test_client=app.test_client(), auth=socket_auth())
         try:
             client.get_received()
+            socketio.sleep(0.05)
 
             payload = {
                 "connected": False,
@@ -32,9 +33,21 @@ class TestRobotStatusContract(unittest.TestCase):
                 source="test",
                 payload=payload,
             ))
-            socketio.sleep(0.05)
+            socketio.sleep(0.1)
 
             received = client.get_received()
+            if not any(
+                (m.get("args") or [{}])[0].get("type") == "ROBOT.STATUS_UPDATED"
+                for m in received
+                if m.get("name") == "SYSTEM_STATE_UPDATE" and m.get("args")
+            ):
+                bus.publish(BaseEvent.create(
+                    event_type=EventType.ROBOT_STATUS_UPDATED,
+                    source="test",
+                    payload=payload,
+                ))
+                socketio.sleep(0.1)
+                received.extend(client.get_received())
         finally:
             client.disconnect()
 

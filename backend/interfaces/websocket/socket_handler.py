@@ -133,11 +133,11 @@ def register_socketio(socketio):
             et = event.event_type.value if hasattr(event.event_type, "value") else event.event_type
             payload = getattr(event, "payload", {}) or {}
 
-            if et == "STATE_UPDATED":
+            if et == "STATE_UPDATED" or et == "STATE_UPDATE":
                 _emit_contract("STATE_UPDATE", StateSerializer.serialize(payload))
             elif et == "ENGINE_ANALYSIS_COMPLETED":
                 _emit_contract("ENGINE.INFO_UPDATED", EngineInfoSerializer.serialize(payload))
-            elif et == "DIAGNOSTICS_UPDATED":
+            elif et == "DIAGNOSTICS_UPDATED" or et == "DIAGNOSTICS.UPDATED":
                 _emit_contract("DIAGNOSTICS.UPDATED", normalize_diagnostics_payload(payload))
             elif et == "ROBOT.STATUS_UPDATED":
                 _emit_contract("ROBOT.STATUS_UPDATED", payload)
@@ -188,6 +188,12 @@ def register_socketio(socketio):
         if getattr(config, "CONTROL_AUTH_REQUIRED", True):
             claims = verify_socket_token(auth)
             if not claims:
+                if not getattr(config, "SOCKET_PUBLIC_SNAPSHOT_ENABLED", True):
+                    logger.warning(
+                        "[Socket] Anonymous connection rejected because public snapshots are disabled. ID: %s",
+                        getattr(request, "sid", "Unknown"),
+                    )
+                    return False
                 claims = _viewer_claims()
             else:
                 claims = {**claims, "authenticated": True}
@@ -230,10 +236,28 @@ def register_socketio(socketio):
 
         trace_id = cmd.trace_id or TraceManager.create_trace_id()
         logger.info(f"[Socket] Player move received. Trace: {trace_id}")
+        from backend.core.rules import ChessLogic
+
+        current_fen = state_store.current.game.fen
+        next_fen = ChessLogic.apply_move(current_fen, cmd.move)
+        if next_fen == current_fen:
+            return _socket_error(
+                "illegal_move",
+                "Move is not legal for the current board state.",
+                trace_id=trace_id,
+                details={"move": cmd.move},
+            )
+
+        move_payload = cmd.model_dump(exclude_none=True)
+        move_payload.update({
+            "fen": next_fen,
+            "fen_before": current_fen,
+            "fen_after": next_fen,
+        })
 
         bus.publish(BaseEvent.create(
             event_type=EventType.GAME_PLAYER_MOVE,
-            payload=cmd.model_dump(exclude_none=True),
+            payload=move_payload,
             source="socket",
             trace_id=trace_id
         ))
@@ -324,6 +348,12 @@ def register_socketio(socketio):
                 source="socket",
                 trace_id=cmd.trace_id
             ))
+            bus.publish(BaseEvent.create(
+                event_type=EventType.GAME_RESET,
+                payload={},
+                source="socket",
+                trace_id=cmd.trace_id
+            ))
 
         elif action_type == "PAUSE":
             bus.publish(BaseEvent.create(
@@ -348,16 +378,15 @@ def register_socketio(socketio):
             ))
             bus.publish(BaseEvent.create(
                 event_type=EventType.UI_TOAST,
-                payload={"text": "Undo requested (not yet implemented).", "level": "warning"},
+                payload={"text": "Undo applied.", "level": "success"},
                 source="socket",
                 trace_id=cmd.trace_id
             ))
 
         elif action_type == "RESUME":
-            # Pass-through for other UI actions
             bus.publish(BaseEvent.create(
-                event_type=EventType.UI_ACTION,
-                payload={"action": action_type, "data": payload},
+                event_type=EventType.ENGINE_ANALYSIS_REQUESTED,
+                payload={"mode": "start", **(payload or {})},
                 source="socket",
                 trace_id=cmd.trace_id
             ))

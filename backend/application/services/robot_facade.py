@@ -8,6 +8,7 @@ from backend.interfaces.hardware_interfaces import RobotInterface
 from backend.utils import config
 from backend.utils.logger import logger
 from backend.application.services.estop import estop
+from backend.observability.error_reporter import publish_error_diagnostic
 
 
 class RobotFacade(RobotInterface):
@@ -20,20 +21,63 @@ class RobotFacade(RobotInterface):
 
     def __init__(self):
         self._impl = None
+        self._fake_mode = None
 
-        if getattr(config, "FAKE_ROBOT", False):
+        self._configure_impl()
+
+        # register for E-Stop chain if supported
+        try:
+            estop.register_robot(self)
+        except Exception as exc:
+            logger.warning("[RobotFacade] failed to register with E-Stop controller", exc_info=True)
+            publish_error_diagnostic(
+                source="robot_facade",
+                module="robot",
+                code="robot_estop_registration_failed",
+                message=str(exc),
+                severity="error",
+                recoverable=False,
+                throttle_seconds=30.0,
+            )
+
+    def _configure_impl(self):
+        fake_mode = bool(getattr(config, "FAKE_ROBOT", False))
+        if fake_mode:
             from backend.infrastructure.simulation.fake_robot import fake_robot
             self._impl = fake_robot
         else:
             from backend.application.services.robot_service import RobotService
 
             self._impl = RobotService()
+        self._fake_mode = fake_mode
 
-        # register for E-Stop chain if supported
-        try:
-            estop.register_robot(self)
-        except Exception:
-            pass
+    def reconfigure_from_config(self) -> bool:
+        """Switch between fake and real implementations after setup settings change."""
+        fake_mode = bool(getattr(config, "FAKE_ROBOT", False))
+        if fake_mode != self._fake_mode:
+            old_impl = self._impl
+            try:
+                if old_impl and hasattr(old_impl, "disconnect"):
+                    old_impl.disconnect()
+            except Exception:
+                logger.debug("[RobotFacade] old robot implementation disconnect failed", exc_info=True)
+            self._configure_impl()
+        else:
+            impl = self._impl
+            try:
+                from backend.infrastructure.robot.safety import RobotSafety
+
+                if hasattr(impl, "_build_motion_profiles"):
+                    impl.motion_profiles = impl._build_motion_profiles()
+                if hasattr(impl, "safety"):
+                    impl.safety = RobotSafety(config)
+            except Exception:
+                logger.debug("[RobotFacade] runtime robot safety/profile refresh failed", exc_info=True)
+            adapter = getattr(impl, "adapter", None)
+            if adapter is not None and not getattr(adapter, "connected", False):
+                adapter.host = config.ROBOT_IP
+                adapter.port = config.ROBOT_PORT
+        return self.connect()
 
     def connect(self) -> bool:
         if hasattr(self._impl, "connect"):
@@ -49,8 +93,11 @@ class RobotFacade(RobotInterface):
           avoid "asyncio.run() cannot be called from a running event loop".
         """
         try:
-            asyncio.get_running_loop()
+            running_loop = asyncio.get_running_loop()
         except RuntimeError:
+            running_loop = None
+
+        if running_loop is None:
             return asyncio.run(coro)
 
         result_holder: Dict[str, Any] = {}
@@ -78,7 +125,16 @@ class RobotFacade(RobotInterface):
             try:
                 return bool(self._run_coroutine_sync(self._impl.move_piece(move, is_capture=is_capture)))
             except Exception as e:
-                logger.error(f"[RobotFacade] execute_move failed: {e}")
+                logger.error(f"[RobotFacade] execute_move failed: {e}", exc_info=True)
+                publish_error_diagnostic(
+                    source="robot_facade",
+                    module="robot",
+                    code="robot_execute_move_failed",
+                    message=str(e),
+                    severity="error",
+                    recoverable=True,
+                    details={"move": move, "is_capture": is_capture},
+                )
                 return False
         if hasattr(self._impl, "execute_chess_move"):
             return bool(self._impl.execute_chess_move(move))
@@ -94,7 +150,16 @@ class RobotFacade(RobotInterface):
                 self._impl.emergency_stop()
                 return True
         except Exception as e:
-            logger.error(f"[RobotFacade] emergency_stop failed: {e}")
+            logger.error(f"[RobotFacade] emergency_stop failed: {e}", exc_info=True)
+            publish_error_diagnostic(
+                source="robot_facade",
+                module="robot",
+                code="robot_emergency_stop_failed",
+                message=str(e),
+                severity="error",
+                recoverable=False,
+                throttle_seconds=10.0,
+            )
         return False
 
     def get_status(self) -> Dict[str, Any]:
@@ -109,7 +174,21 @@ class RobotFacade(RobotInterface):
                     "last_action": raw.get("last_action", ""),
                     "queue_size": int(raw.get("queue_size", 0) or 0),
                     "position": raw.get("position") or {"x": 0.0, "y": 0.0, "z": 0.0},
+                    "fake_robot": bool(self._fake_mode),
                 }
-        except Exception:
-            pass
-        return {"connected": False, "busy": False, "error": None, "last_action": "", "queue_size": 0, "position": {"x": 0.0, "y": 0.0, "z": 0.0}}
+        except Exception as exc:
+            logger.warning("[RobotFacade] get_status failed", exc_info=True)
+            publish_error_diagnostic(
+                source="robot_facade",
+                module="robot",
+                code="robot_status_unavailable",
+                message=str(exc),
+                severity="warning",
+                status="warning",
+                recoverable=True,
+                throttle_seconds=15.0,
+            )
+            error = str(exc)
+        else:
+            error = "status_unavailable"
+        return {"connected": False, "busy": False, "error": error, "last_action": "", "queue_size": 0, "position": {"x": 0.0, "y": 0.0, "z": 0.0}}

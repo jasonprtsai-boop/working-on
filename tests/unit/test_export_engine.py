@@ -5,6 +5,7 @@ import tempfile
 import unittest
 
 from backend.infrastructure.database.export_engine import export_excel_report, export_full_snapshot
+from backend.infrastructure.database.db import Database
 
 
 class TestExportEngine(unittest.TestCase):
@@ -36,6 +37,23 @@ class TestExportEngine(unittest.TestCase):
             self.assertFalse(export_excel_report("events; DROP TABLE events; --", out_path, db_path=db_path))
             self.assertFalse(export_excel_report("internal_shadow", out_path, db_path=db_path))
             self.assertFalse(os.path.exists(out_path))
+
+    def test_legacy_database_export_uses_safe_table_allowlist(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = os.path.join(tmpdir, "events.db")
+            out_path = os.path.join(tmpdir, "bad.csv")
+            self._seed_db(db_path)
+            from backend.utils import config
+
+            old_test_mode = config.TEST_MODE
+            config.TEST_MODE = False
+            database = Database(db_path=db_path)
+            try:
+                self.assertFalse(database.export_excel_csv("events; DROP TABLE events; --", out_path))
+                self.assertFalse(os.path.exists(out_path))
+            finally:
+                database.close()
+                config.TEST_MODE = old_test_mode
 
     def test_export_full_snapshot_skips_unlisted_tables(self):
         with tempfile.TemporaryDirectory() as tmpdir:

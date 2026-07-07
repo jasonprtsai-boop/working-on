@@ -37,7 +37,16 @@ def main() -> int:
     run([sys.executable, "-m", "compileall", "backend", "frontend", "scripts", "tests", "-q"], "python compileall")
     run([sys.executable, "scripts/consistency_audit.py"], "file consistency audit")
     run([sys.executable, "scripts/check_contract.py"], "event contract check")
+    run([sys.executable, "scripts/check_legacy_events.py"], "legacy event publisher check")
     run([sys.executable, "scripts/check_assets.py"], "protected asset manifest check")
+    run(
+        [sys.executable, "scripts/check_vision_models.py", "--warmup", "--allow-runtime-skip"],
+        "vision model asset/runtime check",
+    )
+    run([sys.executable, "scripts/audit_dependencies.py"], "dependency lock audit")
+    run([sys.executable, "scripts/check_production_config.py", "--self-test"], "production config preflight self-test")
+    run([sys.executable, "scripts/check_artifact_hygiene.py"], "runtime artifact hygiene check")
+    run([sys.executable, "scripts/maintenance/cleanup.py", "--dry-run"], "artifact cleanup dry-run")
     run([sys.executable, "scripts/build_release_zip.py", "--dry-run"], "release zip dry-run")
     test_env = os.environ.copy()
     test_env["ENGINE_AUTO_ANALYZE"] = "false"

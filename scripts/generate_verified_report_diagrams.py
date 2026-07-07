@@ -52,7 +52,7 @@ def research_process() -> Diagram:
             ("s1", "1 文獻整理\n高齡陪伴\n棋類活動\n安全規範", PALETTE["amber_light"], PALETTE["amber"]),
             ("s2", "2 需求定義\n互動目標\n安全邊界\n評估指標", PALETTE["green_light"], PALETTE["green"]),
             ("s3", "3 系統架構設計\n感知 / 決策\n執行 / 回饋\n事件架構", PALETTE["blue_light"], PALETTE["blue"]),
-            ("s4", "4 影像資料建置\n棋盤拍攝\n資料標註\nYOLOv8 + SAHI", PALETTE["teal_light"], PALETTE["teal"]),
+            ("s4", "4 影像資料建置\n棋盤拍攝\n資料標註\nYOLO26 + YOLO", PALETTE["teal_light"], PALETTE["teal"]),
             ("s5", "5 系統模組整合\nVision\nPikafish\nRobotFacade\nDashboard", PALETTE["violet_light"], PALETTE["violet"]),
             ("s6", "6 初步測試規劃\n功能驗證\n問卷訪談\n系統修正", PALETTE["red_light"], PALETTE["red"]),
         ],
@@ -77,7 +77,7 @@ def board_to_ai_robot_flow() -> Diagram:
     d = Diagram(
         "board_to_ai_robot_flow_verified",
         "實體棋盤狀態轉換與 AI 落子流程圖",
-        "攝影機 -> OpenCV / YOLOv8 / SAHI -> FEN -> Pikafish -> RobotFacade -> 使用者回饋",
+        "攝影機 -> OpenCV / Homography / YOLO26 -> FEN -> Pikafish -> RobotFacade -> 使用者回饋",
         "第二章、第三章",
         "對齊第二章圖 2-1 與第三章 3.2.1；修正圖號與正式流程描述。",
     )
@@ -86,7 +86,7 @@ def board_to_ai_robot_flow() -> Diagram:
         [
             ("b1", "攝影機\n擷取棋盤影像", PALETTE["teal_light"], PALETTE["teal"]),
             ("b2", "OpenCV\n影像前處理\n棋盤校正", "#E0F2FE", "#0284C7"),
-            ("b3", "YOLOv8 / SAHI\n棋子偵測\n小目標輔助", PALETTE["violet_light"], PALETTE["violet"]),
+            ("b3", "YOLO26\n棋子偵測\n小目標輔助", PALETTE["violet_light"], PALETTE["violet"]),
             ("b4", "座標映射\n9 x 10 棋盤\n格位判斷", PALETTE["green_light"], PALETTE["green"]),
             ("b5", "FEN Generator\n產生棋局格式\n供引擎分析", PALETTE["red_light"], PALETTE["red"]),
             ("b6", "Pikafish\n局勢分析\n產生走法", PALETTE["amber_light"], PALETTE["amber"]),
@@ -100,7 +100,7 @@ def board_to_ai_robot_flow() -> Diagram:
     )
     d.group(170, 650, 1580, 205, "正式流程與輔助流程區分", "#FFFFFF", "#CBD5E1")
     d.box("note1", 245, 720, 400, 90, "正式流程核心\n校正、偵測、FEN、引擎、落子", PALETTE["green_light"], PALETTE["green"], font_size=20)
-    d.box("note2", 760, 720, 400, 90, "ROI 定位\n效能最佳化與比較模組\n不是必要主流程", PALETTE["amber_light"], PALETTE["amber"], font_size=20)
+    d.box("note2", 760, 720, 400, 90, "Homography 定位\n效能最佳化與比較模組\n不是必要主流程", PALETTE["amber_light"], PALETTE["amber"], font_size=20)
     d.box("note3", 1275, 720, 400, 90, "Dashboard\n顯示棋盤、FEN、AI 分析\n與安全狀態", PALETTE["blue_light"], PALETTE["blue"], font_size=20)
     d.arrow("b3", "note2", "輔助比較", dashed=True)
     d.arrow("b7", "note3", "即時回饋")
@@ -130,7 +130,7 @@ def system_architecture() -> Diagram:
     d.box("state", 920, 485, 300, 135, "StateManager\nReducers\nSystemState\nFEN validation", PALETTE["teal_light"], PALETTE["teal"], font_size=20)
     d.box("runtime", 730, 725, 310, 125, "Runtime Workers\nCamera / Vision\nEngine / Persistence\nMonitoring", PALETTE["amber_light"], PALETTE["amber"], font_size=20)
 
-    d.box("vision", 1510, 235, 300, 115, "Vision\nOpenCV / YOLOv8\nSAHI / FEN", PALETTE["teal_light"], PALETTE["teal"], font_size=20)
+    d.box("vision", 1510, 235, 300, 115, "Vision\nOpenCV / YOLO26\nYOLO / FEN", PALETTE["teal_light"], PALETTE["teal"], font_size=20)
     d.box("engine", 1510, 420, 300, 115, "Pikafish Engine\nUCI / NNUE\nDepth / MultiPV", PALETTE["amber_light"], PALETTE["amber"], font_size=20)
     d.box("robot", 1510, 605, 300, 115, "TM5-700\nRobotFacade\nModbus / FakeRobot", PALETTE["red_light"], PALETTE["red"], font_size=20)
     d.box("data", 1510, 790, 300, 115, "SQLite / Replay\nExcel / CSV\nlogs / metrics", PALETTE["green_light"], PALETTE["green"], font_size=20)
@@ -197,9 +197,9 @@ def vision_fen_pipeline() -> Diagram:
     d = Diagram(
         "vision_fen_pipeline_verified",
         "Vision Pipeline 與 FEN 轉換實作圖",
-        "CameraManager -> OpenCV preprocess -> YOLOv8 / SAHI -> BoardMapper -> FEN Generator",
+        "CameraManager -> OpenCV preprocess -> YOLO26 -> BoardMapper -> FEN Generator",
         "第三章 3.2.2、第四章 4.4",
-        "對齊影像辨識主流程，並明確標示 ROI 為輔助最佳化。",
+        "對齊影像辨識主流程，並明確標示 Homography 為輔助最佳化。",
     )
     add_chain(
         d,
@@ -207,7 +207,7 @@ def vision_fen_pipeline() -> Diagram:
             ("v1", "CameraManager\nFrameBuffer\nMJPEG Stream", PALETTE["teal_light"], PALETTE["teal"]),
             ("v2", "OpenCV 前處理\nDenoise\nCLAHE\nSharpening", "#E0F2FE", "#0284C7"),
             ("v3", "Perspective\n四角點\nHomography\n俯視棋盤", PALETTE["blue_light"], PALETTE["blue"]),
-            ("v4", "Detector\nYOLOv8 .pt\nSAHI 切片\nGrid fallback", PALETTE["violet_light"], PALETTE["violet"]),
+            ("v4", "Detector\nYOLO26 ONNX\nYOLO full-frame\nYOLO only", PALETTE["violet_light"], PALETTE["violet"]),
             ("v5", "BoardMapper\nbbox center\n9 x 10 格位\n棋子代碼", PALETTE["green_light"], PALETTE["green"]),
             ("v6", "FENGenerator\nboard_state\nFEN / UCCI\nfen_valid", PALETTE["red_light"], PALETTE["red"]),
         ],
@@ -224,9 +224,6 @@ def vision_fen_pipeline() -> Diagram:
     d.arrow("v4", "frame", "每幀診斷")
     d.arrow("v6", "move", "stable FEN")
     d.arrow("move", "check", "測試比對")
-    d.box("roi", 775, 520, 370, 85, "ROIOptimizer：變動區域偵測\n用於降低重複推論，非正式流程必要條件", "#FFFFFF", "#475569", font_size=18, shadow=False)
-    d.arrow("v2", "roi", "輔助", dashed=True)
-    d.arrow("roi", "v4", "ROI + YOLO/SAHI", dashed=True)
     return d
 
 
@@ -452,7 +449,7 @@ ALIGNMENT_ROWS = [
     (
         "02_board_to_ai_robot_flow_verified",
         "第二章圖 2-1、第三章 3.2.1",
-        "修正舊圖圖號不一致問題；ROI 標為輔助最佳化，不列為正式流程必要步驟。",
+        "修正舊圖圖號不一致問題；Homography 標為輔助最佳化，不列為正式流程必要步驟。",
         "OK",
     ),
     (
@@ -470,7 +467,7 @@ ALIGNMENT_ROWS = [
     (
         "05_vision_fen_pipeline_verified",
         "第三章 3.2.2、第四章 4.4",
-        "對齊 CameraManager、OpenCV、YOLOv8 .pt、SAHI、BoardMapper、FENGenerator；FEN 正確率以人工標記比對。",
+        "對齊 CameraManager、OpenCV、YOLO26 ONNX、YOLO、BoardMapper、FENGenerator；FEN 正確率以人工標記比對。",
         "OK",
     ),
     (
@@ -572,7 +569,7 @@ def write_alignment_report() -> None:
         "",
         "- 不把第四章寫成正式使用者實驗結果，目前定位為系統實作與初步測試規劃。",
         "- 不把 TMflow 寫成已完成實機整合，僅列為後續點位教導與實機安全參數整合。",
-        "- 不把 ROI 寫成正式影像辨識主流程必要條件，僅列為效能最佳化與後續比較模組。",
+        "- 不把 Homography 寫成正式影像辨識主流程必要條件，僅列為效能最佳化與後續比較模組。",
         "- FEN 正確性以人工標記盤面與系統輸出比對，不直接宣稱已完全正確。",
         "- 第二章原內嵌圖的「圖 2-3」問題已在新版圖包中改為可用於「圖 2-1」的內容。",
         "",

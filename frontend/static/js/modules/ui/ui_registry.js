@@ -15,6 +15,16 @@ export const UIRegistry = {
             // Indicators
             statusText: document.getElementById('system-status-text'),
             turnIndicator: document.getElementById('turn-indicator'),
+            playerTurnIndicator: document.getElementById('player-turn-indicator'),
+            playerGuideStep: document.getElementById('player-guide-step'),
+            playerGuideAction: document.getElementById('player-guide-action'),
+            playerGuideDetail: document.getElementById('player-guide-detail'),
+            playerGuideTurn: document.getElementById('player-guide-turn'),
+            playerGuideVision: document.getElementById('player-guide-vision'),
+            playerGuideVisionCard: document.getElementById('player-guide-vision-card'),
+            playerGuideRobot: document.getElementById('player-guide-robot'),
+            playerGuideRobotCard: document.getElementById('player-guide-robot-card'),
+            playerGuideAi: document.getElementById('player-guide-ai'),
             sourceIndicator: document.getElementById('state-source-indicator'),
 
             // Metrics
@@ -30,6 +40,10 @@ export const UIRegistry = {
             visionYoloLatency: document.getElementById('vision-yolo-latency'),
             visionRecognitionTime: document.getElementById('vision-recognition-time'),
             visionDetectionSummary: document.getElementById('vision-detection-summary'),
+            visionCalibrationStatus: document.getElementById('vision-calibration-status'),
+            visionCalibrationSource: document.getElementById('vision-calibration-source'),
+            visionCalibrationError: document.getElementById('vision-calibration-error'),
+            visionCalibrationQuality: document.getElementById('vision-calibration-quality'),
             dashboardBoardTurn: document.getElementById('dashboard-board-turn'),
             dashboardBoardFen: document.getElementById('dashboard-board-fen'),
             dashboardBoardLastMove: document.getElementById('dashboard-board-last-move'),

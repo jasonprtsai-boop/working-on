@@ -12,20 +12,18 @@
             </header>
 
             <nav class="view-mode-toggle glass">
-                <button id="btn-toggle-board" type="button" class="mode-btn active">棋盤監控</button>
-                <button id="btn-toggle-video" type="button" class="mode-btn">即時影像</button>
-                <button id="btn-toggle-status" type="button" class="mode-btn">目前狀態</button>
+                <button id="btn-toggle-board" type="button" class="mode-btn active">棋盤</button>
+                <button id="btn-toggle-video" type="button" class="mode-btn">視覺</button>
+                <button id="btn-toggle-status" type="button" class="mode-btn">狀態</button>
             </nav>
 
             <div id="pane-board-view" class="view-pane active">
                 <div class="board-unit">
                     <div class="board-header flex-row">
-                        <h2>即時棋盤狀態</h2>
-                        <div class="timer-group flex-row">
-                            <div class="timer black">B: <span id="clock-black">10:00</span></div>
-                            <div class="timer red">R: <span id="clock-red">10:00</span></div>
+                        <div class="turn-status-inline" aria-live="polite">
+                            <span>目前輪到</span>
+                            <div id="turn-indicator" class="turn-indicator-pill red">紅方移動</div>
                         </div>
-                        <div id="turn-indicator" class="turn-indicator-pill red">紅方回合</div>
                     </div>
                     <div id="thinking-container" class="thinking-bar-container hidden">
                         <div id="thinking-progress-bar" class="thinking-bar-fill"></div>
@@ -35,10 +33,6 @@
                         <div class="eval-bar-wrapper">
                             <div id="eval-bar" class="eval-bar-container">
                                 <div id="eval-bar-fill" class="eval-bar-fill"></div>
-                            </div>
-                            <div class="eval-labels">
-                                <span>黑方優勢</span>
-                                <span>紅方優勢</span>
                             </div>
                         </div>
                         <div id="console-board" class="chess-board">
@@ -80,16 +74,14 @@
                                 <span id="video-cam" class="badge">Camera: --</span>
                             </div>
                         </div>
-                        <div class="video-controls-row">
-                            <button type="button" class="admin-btn mini" id="btn-reconnect-video">重新連線</button>
-                            <button type="button" class="admin-btn mini" id="btn-snapshot">擷取畫面</button>
-                        </div>
                         <div id="video-overlay-coords" class="video-overlay-info">辨識座標：無資料</div>
                     </div>
                 </div>
             </div>
 
             <div id="pane-status-view" class="view-pane" style="overflow-y: auto; padding-right: 8px;">
+                {% include 'templates/components/system_status_strip.html' %}
+
                 <div class="stat-card-glass detailed-status-card">
                     <h4 class="panel-title">系統狀態</h4>
                     <div class="system-status-list industrial">
@@ -134,6 +126,10 @@
                         <div class="status-item"><span>YOLO Latency</span><span id="vision-yolo-latency">--ms</span></div>
                         <div class="status-item"><span>Latest Recognition</span><span id="vision-recognition-time">--:--:--</span></div>
                         <div class="status-item"><span>Detection Summary</span><span id="vision-detection-summary">--</span></div>
+                        <div class="status-item"><span>Calibration</span><span id="vision-calibration-status">--</span></div>
+                        <div class="status-item"><span>Calibration Source</span><span id="vision-calibration-source">--</span></div>
+                        <div class="status-item"><span>Max Reprojection Error</span><span id="vision-calibration-error">--</span></div>
+                        <div class="status-item"><span>Corner Quality</span><span id="vision-calibration-quality">--</span></div>
                     </div>
                 </div>
 
@@ -150,6 +146,15 @@
                     </div>
                     <div id="multipv-container" class="multipv-list mt-12">
                         <div class="pv-row empty">等待 Pikafish 分析資料...</div>
+                    </div>
+                    <div class="dashboard-control-block mt-12">
+                        <span class="control-label">AI Mode</span>
+                        <div class="ai-mode-grid" id="ai-mode-controls">
+                            <button type="button" class="ai-mode-btn active" data-ai-mode="companionship">陪伴</button>
+                            <button type="button" class="ai-mode-btn" data-ai-mode="training">訓練</button>
+                            <button type="button" class="ai-mode-btn" data-ai-mode="demo">展示</button>
+                            <button type="button" class="ai-mode-btn" data-ai-mode="adaptive">自適應</button>
+                        </div>
                     </div>
                     <div class="dashboard-control-block mt-12">
                         <span class="control-label">AI Depth</span>

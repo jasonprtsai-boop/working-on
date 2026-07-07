@@ -34,7 +34,7 @@ class SystemReducer:
                     state.vision,
                     camera_status=vision_payload.get("status", state.vision.camera_status),
                     mode=vision_payload.get("mode", state.vision.mode),
-                    fallback=bool(vision_payload.get("fallback", state.vision.fallback)),
+                    simulation=bool(vision_payload.get("simulation", state.vision.simulation)),
                     fps=vision_payload.get("fps", state.vision.fps),
                 )
             # Update root health fields

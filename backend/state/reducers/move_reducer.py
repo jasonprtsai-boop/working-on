@@ -17,6 +17,19 @@ class MoveReducer:
         move = payload.get("move")
         new_fen = payload.get("fen", state.game.fen)
 
+        if move and "fen" not in payload:
+            try:
+                from backend.core.rules import ChessLogic
+
+                next_fen = ChessLogic.apply_move(state.game.fen, move)
+                if next_fen == state.game.fen:
+                    logger.warning("[MoveReducer] rejected illegal move: %s", move)
+                    return state
+                new_fen = next_fen
+            except Exception as e:
+                logger.warning(f"[MoveReducer] move application failed: {e}")
+                return state
+
         # 1. Update Board Matrix from FEN if provided
         new_board = state.game.board
         if "fen" in payload:

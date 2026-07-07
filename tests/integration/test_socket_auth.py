@@ -22,6 +22,10 @@ class TestSocketAuth(unittest.TestCase):
     def test_socket_connect_without_token_gets_read_only_snapshot(self):
         from backend.main import create_app
 
+        from backend.utils import config
+
+        old_public_snapshot = config.SOCKET_PUBLIC_SNAPSHOT_ENABLED
+        config.SOCKET_PUBLIC_SNAPSHOT_ENABLED = True
         app, socketio = create_app()
         client = socketio.test_client(app, flask_test_client=app.test_client())
         try:
@@ -33,7 +37,23 @@ class TestSocketAuth(unittest.TestCase):
             result = _payload(client.emit("action", {"type": "RESET"}, callback=True))
             self.assertEqual(result.get("error"), "unauthorized")
         finally:
+            config.SOCKET_PUBLIC_SNAPSHOT_ENABLED = old_public_snapshot
             client.disconnect()
+
+    def test_socket_connect_without_token_can_be_rejected_when_public_snapshot_disabled(self):
+        from backend.main import create_app
+        from backend.utils import config
+
+        old_public_snapshot = config.SOCKET_PUBLIC_SNAPSHOT_ENABLED
+        config.SOCKET_PUBLIC_SNAPSHOT_ENABLED = False
+        app, socketio = create_app()
+        client = socketio.test_client(app, flask_test_client=app.test_client())
+        try:
+            self.assertFalse(client.is_connected())
+        finally:
+            config.SOCKET_PUBLIC_SNAPSHOT_ENABLED = old_public_snapshot
+            if client.is_connected():
+                client.disconnect()
 
     def test_socket_mutating_event_requires_admin_role(self):
         from backend.main import create_app

@@ -89,5 +89,13 @@ def create_app():
 
 if __name__ == "__main__":
     app, socketio = create_app()
-    logger.info("S.M.A.R.T Chess Server Running on http://localhost:5000")
-    socketio.run(app, host="0.0.0.0", port=5000, debug=False)
+    host = getattr(config, "BIND_HOST", "127.0.0.1")
+    port = int(getattr(config, "PORT", 5000))
+    logger.info("S.M.A.R.T Chess Server Running on http://%s:%s", host, port)
+    socketio.run(
+        app,
+        host=host,
+        port=port,
+        debug=False,
+        allow_unsafe_werkzeug=not getattr(config, "IS_PRODUCTION", False),
+    )

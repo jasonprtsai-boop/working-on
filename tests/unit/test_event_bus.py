@@ -1,6 +1,11 @@
 import unittest
 
 from backend.events.bus.event_bus import EventBus
+from backend.events.models.base_event import BaseEvent
+
+
+def event(event_type, payload=None):
+    return BaseEvent.create(event_type=event_type, source="unit", payload=payload or {})
 
 
 class TestEventBus(unittest.TestCase):
@@ -9,15 +14,15 @@ class TestEventBus(unittest.TestCase):
         calls = []
 
         def stale(event):
-            calls.append(("stale", event.get("type")))
+            calls.append(("stale", event.event_type))
 
         def current(event):
-            calls.append(("current", event.get("type")))
+            calls.append(("current", event.event_type))
 
         bus.subscribe_all(stale, key="socketio.forward_event", replace=True)
         bus.subscribe_all(current, key="socketio.forward_event", replace=True)
 
-        bus.publish({"type": "TEST.EVENT", "payload": {}})
+        bus.publish(event("TEST.EVENT"))
 
         self.assertEqual(calls, [("current", "TEST.EVENT")])
         self.assertEqual(bus.stats()["global_subscribers"], 1)
@@ -28,12 +33,12 @@ class TestEventBus(unittest.TestCase):
         calls = []
 
         def handler(event):
-            calls.append(event.get("type"))
+            calls.append(event.event_type)
 
         bus.subscribe("TEST.EVENT", handler)
         bus.subscribe("TEST.EVENT", handler)
 
-        bus.publish({"type": "TEST.EVENT", "payload": {}})
+        bus.publish(event("TEST.EVENT"))
 
         self.assertEqual(calls, ["TEST.EVENT"])
         self.assertEqual(bus.stats()["specific_subscribers"], 1)
@@ -66,12 +71,12 @@ class TestEventBus(unittest.TestCase):
         container.register("loop", FakeLoop())
 
         async def handler(event):
-            calls.append(event.get("type"))
+            calls.append(event.event_type)
 
         try:
             bus = EventBus(is_singleton=False)
             bus.subscribe("TEST.ASYNC", handler, is_async=True)
-            bus.publish({"type": "TEST.ASYNC", "payload": {}})
+            bus.publish(event("TEST.ASYNC"))
         finally:
             container._services = original_services
 
@@ -91,7 +96,7 @@ class TestEventBus(unittest.TestCase):
         bus.subscribe("TEST.FAIL", failing_handler)
         bus.subscribe("SYSTEM_ERROR", system_error_handler)
 
-        bus.publish({"type": "TEST.FAIL", "payload": {}})
+        bus.publish(event("TEST.FAIL"))
 
         self.assertEqual(len(system_errors), 1)
         self.assertEqual(system_errors[0].event_type, "SYSTEM_ERROR")
@@ -108,17 +113,20 @@ class TestEventBus(unittest.TestCase):
 
         bus.subscribe("SYSTEM_ERROR", failing_system_error_handler)
 
-        bus.publish({"event_type": "SYSTEM_ERROR", "payload": {}})
+        bus.publish(event("SYSTEM_ERROR"))
 
         self.assertEqual(len(calls), 1)
         self.assertEqual(bus.stats()["dead_letters"], 1)
 
     def test_legacy_dict_events_are_counted_and_resettable(self):
         bus = EventBus(is_singleton=False)
+        calls = []
+        bus.subscribe("TEST.LEGACY", lambda event: calls.append(event.event_type))
 
-        bus.publish({"type": "TEST.LEGACY", "payload": {}, "source": "unit"})
-        bus.publish({"type": "TEST.LEGACY", "payload": {}, "source": "unit"})
+        bus.publish_from_legacy({"type": "TEST.LEGACY", "payload": {}, "source": "unit"})
+        bus.publish_from_legacy({"type": "TEST.LEGACY", "payload": {}, "source": "unit"})
 
+        self.assertEqual(calls, ["TEST.LEGACY", "TEST.LEGACY"])
         stats = bus.stats()
         self.assertEqual(stats["legacy_dict_events"], 2)
         self.assertEqual(stats["legacy_dict_event_types"], {"TEST.LEGACY": 2})
@@ -129,6 +137,19 @@ class TestEventBus(unittest.TestCase):
         self.assertEqual(stats["legacy_dict_events"], 0)
         self.assertEqual(stats["legacy_dict_event_types"], {})
         self.assertEqual(stats["sequence"], 0)
+
+    def test_legacy_dict_events_can_be_disabled(self):
+        bus = EventBus(is_singleton=False, allow_legacy_dict_events=False)
+        calls = []
+        bus.subscribe("TEST.LEGACY", lambda event: calls.append(event.event_type))
+
+        bus.publish_from_legacy({"type": "TEST.LEGACY", "payload": {}, "source": "unit"})
+
+        stats = bus.stats()
+        self.assertEqual(calls, [])
+        self.assertFalse(stats["legacy_dict_enabled"])
+        self.assertEqual(stats["legacy_dict_events"], 0)
+        self.assertEqual(stats["dead_letters"], 1)
 
 
 if __name__ == "__main__":

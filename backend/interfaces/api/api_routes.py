@@ -10,6 +10,8 @@ from backend.interfaces.api import estop_routes  # noqa: F401
 from backend.interfaces.api import export_routes  # noqa: F401
 from backend.interfaces.api import replay_routes  # noqa: F401
 from backend.interfaces.api import runtime_control_routes  # noqa: F401
+from backend.interfaces.api import robot_routes  # noqa: F401
+from backend.interfaces.api import setup_routes  # noqa: F401
 from backend.interfaces.api import state_routes  # noqa: F401
 from backend.interfaces.api import vision_routes  # noqa: F401
 

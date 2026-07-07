@@ -27,6 +27,7 @@ EXCLUDED_DIR_NAMES = {
 }
 
 EXCLUDED_PATH_PREFIXES = {
+    ("analysis_artifacts",),
     ("backend", "data"),
     ("data",),
     ("reports",),

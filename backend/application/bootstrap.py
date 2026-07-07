@@ -54,6 +54,41 @@ def _register_shutdown_hooks(runtime, vision_system):
     atexit.register(_shutdown)
     _register_shutdown_hooks._registered = True
 
+
+def _register_optional_vision_pipeline(container, config):
+    """Register queue-based vision pipeline services only when explicitly enabled."""
+    if not getattr(config, "VISION_WORKER_PIPELINE_ENABLED", False):
+        return
+
+    from backend.infrastructure.vision.board.board_mapper import BoardMapper
+    from backend.infrastructure.vision.board.coordinate_system import BoardCoordinateSystem, GridConfig
+    from backend.infrastructure.vision.camera import Camera
+    from backend.infrastructure.vision.detection.yolo_detector import YOLODetector
+    from backend.infrastructure.vision.fen.fen_generator import FENGenerator
+    from backend.infrastructure.vision.morphology import MorphologyOptimizer
+    from backend.infrastructure.vision.perspective import PerspectiveTransformer
+    from backend.infrastructure.vision.pipeline import VisionPipeline
+    from backend.infrastructure.vision.preprocess.image_preprocessor import ImagePreprocessor
+
+    grid_config = GridConfig(
+        rows=config.BOARD_ROWS,
+        cols=config.BOARD_COLS,
+        width=config.WARP_WIDTH,
+        height=config.WARP_HEIGHT,
+    )
+    mapper = BoardMapper(BoardCoordinateSystem(grid_config))
+    pipeline = VisionPipeline(
+        camera=None,
+        preprocess=ImagePreprocessor(),
+        perspective=PerspectiveTransformer(target_size=(config.WARP_WIDTH, config.WARP_HEIGHT)),
+        morphology=MorphologyOptimizer(),
+        detector=YOLODetector(model_path=config.YOLO_MODEL_PATH),
+        fen_gen=FENGenerator(rows=config.BOARD_ROWS, cols=config.BOARD_COLS),
+        board_mapper=mapper,
+    )
+    container.register("camera_hw", Camera(index=config.CAMERA_INDEX))
+    container.register("vision_pipeline", pipeline)
+
 def bootstrap_system():
     """
     [Architectural Authority] Centralized Wiring & Initialization.
@@ -70,6 +105,17 @@ def bootstrap_system():
         return
 
     logger.info("[Bootstrap] Bootstrapping S.M.A.R.T. Chess System...")
+
+    if getattr(config, "IS_PRODUCTION", False):
+        from backend.infrastructure.protected_assets.manifest import validate_assets
+        logger.info("[Bootstrap] Validating protected asset hashes for production...")
+        report = validate_assets()
+        failed = [item for item in report.get("items", []) if not item.get("ok")]
+        if failed:
+            msg = f"Protected asset hash verification failed for: {', '.join(f['path'] for f in failed)}"
+            logger.error(f"[Bootstrap] {msg}")
+            raise FatalBootstrapError(msg)
+
     bootstrap_status = {
         "booted": False,
         "ready": False,
@@ -81,6 +127,7 @@ def bootstrap_system():
         "robot_connected": False,
         "workers_started": False,
         "workflow_started": False,
+        "telemetry_started": False,
         "persistence_started": False,
         "vision_started": False,
         "vision_fallback": False,
@@ -136,6 +183,11 @@ def bootstrap_system():
     bootstrap_status["robot_registered"] = True
     logger.info("[Bootstrap] Core services registered in Container.")
 
+    try:
+        _register_optional_vision_pipeline(container, config)
+    except Exception as exc:
+        record_bootstrap_error("vision_pipeline.register", exc)
+
     if getattr(config, "ENGINE_PROBE_ON_BOOT", True) and not getattr(config, "ENGINE_AUTO_ANALYZE", True):
         try:
             runtime.run_task(engine_service.probe_compatible_pair())
@@ -161,7 +213,6 @@ def bootstrap_system():
     reducer_registry.register(EventType.SYSTEM_ERROR, SystemReducer)
     reducer_registry.register(EventType.DIAGNOSTICS_UPDATED, SystemReducer)
     logger.info("[Bootstrap] Reducers registered in Global Registry.")
-    bootstrap_status["persistence_started"] = True # Re-use index if needed
 
     # 5. Wire StateManager to EventBus (SSOT)
     # We use is_async=True to ensure state mutations happen on the background loop
@@ -171,6 +222,16 @@ def bootstrap_system():
     except Exception as exc:
         record_bootstrap_error("state_manager.wire", exc, level="error")
         raise FatalBootstrapError(f"Failed to wire StateManager: {exc}") from exc
+
+    # 5b. Start bounded observability sidecar before workers emit diagnostics.
+    try:
+        from backend.observability.telemetry import telemetry_service
+        telemetry_service.start()
+        container.register("telemetry_service", telemetry_service)
+        bootstrap_status["telemetry_started"] = True
+        logger.info("[Bootstrap] TelemetryService started.")
+    except Exception as exc:
+        record_bootstrap_error("telemetry_service", exc)
 
     # 6. Initialize and Start Workers
     # Start old VisionSystem (legacy MJPEG stream)
@@ -207,8 +268,20 @@ def bootstrap_system():
     except Exception as exc:
         record_bootstrap_error("estop.robot_queue_clear_hook", exc)
 
-    initialize_workers()
-    bootstrap_status["workers_started"] = True
+    worker_start_results = initialize_workers() or {}
+    bootstrap_status["worker_start_results"] = worker_start_results
+    critical_workers = ("engine", "robot_status", "monitoring")
+    failed_critical_workers = [
+        name for name in critical_workers
+        if not (worker_start_results.get(name) or {}).get("started")
+    ]
+    bootstrap_status["workers_started"] = not failed_critical_workers
+    if failed_critical_workers:
+        record_bootstrap_error(
+            "workers.start",
+            ComponentDegradedError(f"Critical workers failed to start: {', '.join(failed_critical_workers)}"),
+            level="error",
+        )
     logger.info("[Bootstrap] Background workers started via AsyncRuntime.")
 
     # 6. Start High-Level Workflow Orchestration

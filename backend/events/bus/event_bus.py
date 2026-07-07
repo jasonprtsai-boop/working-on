@@ -3,6 +3,7 @@ from typing import Callable, Any, List, Dict, Optional
 import asyncio
 import threading
 import time
+from backend.events.adapters.legacy_event_adapter import adapt_legacy_event
 from backend.utils.logger import logger
 
 def subscribe(event_type: str):
@@ -15,7 +16,7 @@ def subscribe(event_type: str):
 class EventBus:
     _instance = None
 
-    def __new__(cls, is_singleton: bool = True):
+    def __new__(cls, is_singleton: bool = True, allow_legacy_dict_events: Optional[bool] = None):
         if not is_singleton:
             instance = super().__new__(cls)
             instance._initialized = False
@@ -25,11 +26,18 @@ class EventBus:
             cls._instance._initialized = False
         return cls._instance
 
-    def __init__(self, is_singleton: bool = True):
+    def __init__(self, is_singleton: bool = True, allow_legacy_dict_events: Optional[bool] = None):
         if self._initialized: return
+        if allow_legacy_dict_events is None:
+            try:
+                from backend.utils import config
+                allow_legacy_dict_events = bool(getattr(config, "EVENTBUS_ALLOW_LEGACY_DICT_EVENTS", True))
+            except Exception:
+                allow_legacy_dict_events = True
         self._subscribers = defaultdict(list) # List[Tuple[Callable, bool]] (handler, is_async)
         self._global_subscribers = [] # List[Tuple[Callable, bool]]
         self._global_subscriber_keys = {}
+        self._allow_legacy_dict_events = bool(allow_legacy_dict_events)
         self._legacy_dict_warnings = set()
         self._legacy_dict_event_count = 0
         self._legacy_dict_event_types = defaultdict(int)
@@ -73,26 +81,50 @@ class EventBus:
             if not any(h[0] is handler for h in self._global_subscribers):
                 self._global_subscribers.append((handler, is_async))
 
+    def publish_from_legacy(self, event: dict):
+        legacy_key = self._event_key(event)
+        source = event.get("source", "unknown")
+        if not self._allow_legacy_dict_events:
+            self._record_dead_letter(
+                {"type": legacy_key},
+                "event_ingress",
+                TypeError("legacy dict events are disabled"),
+            )
+            logger.error(
+                "[EventBus] rejected legacy dict event: type=%s source=%s",
+                legacy_key, source
+            )
+            return
+        warning_key = (legacy_key, source)
+        with self._lock:
+            self._legacy_dict_event_count += 1
+            self._legacy_dict_event_types[legacy_key] += 1
+            should_warn = warning_key not in self._legacy_dict_warnings
+            if should_warn:
+                self._legacy_dict_warnings.add(warning_key)
+        if should_warn:
+            logger.warning(
+                "[EventBus] legacy dict event published: type=%s source=%s",
+                legacy_key, source
+            )
+        adapted = adapt_legacy_event(event)
+        if adapted is None:
+            self._record_dead_letter({"type": legacy_key}, "event_ingress", ValueError("legacy event missing type"))
+            return
+        self.publish(adapted)
+
     def publish(self, event: Any):
         """
         Unified publication portal.
         Dispatches events to specific and global subscribers.
         """
+        from backend.events.models.base_event import BaseEvent
+        if not isinstance(event, BaseEvent):
+            if isinstance(event, dict):
+                raise TypeError("Internal EventBus accepts BaseEvent only. Use publish_from_legacy for dict events.")
+            raise TypeError(f"Internal EventBus accepts BaseEvent only, got {type(event).__name__}")
+
         key = self._event_key(event)
-        if isinstance(event, dict):
-            source = event.get("source", "unknown")
-            warning_key = (key, source)
-            with self._lock:
-                self._legacy_dict_event_count += 1
-                self._legacy_dict_event_types[key] += 1
-                should_warn = warning_key not in self._legacy_dict_warnings
-                if should_warn:
-                    self._legacy_dict_warnings.add(warning_key)
-            if should_warn:
-                logger.warning(
-                    "[EventBus] legacy dict event published: type=%s source=%s",
-                    key, source
-                )
         with self._lock:
             self._sequence_counter += 1
             handlers = list(self._subscribers.get(key, []))
@@ -125,7 +157,7 @@ class EventBus:
                 # instead of concurrent execution in a thread pool executor.
                 loop.call_soon_threadsafe(self._safe_execute, handler, event)
         except Exception as e:
-            logger.debug(f"[EventBus] Async dispatch failed for {handler}: {e}")
+            logger.warning(f"[EventBus] Async dispatch failed for {handler}: {e}", exc_info=True)
             self._safe_execute(handler, event)
 
     def _safe_execute(self, handler: Callable, event: Any):
@@ -185,7 +217,9 @@ class EventBus:
         )
 
     def emit(self, event_type, data=None):
-        self.publish({"type": event_type, "payload": data or {}})
+        from backend.events.models.base_event import BaseEvent
+
+        self.publish(BaseEvent.create(event_type=str(event_type), source="event_bus.emit", payload=data or {}))
 
     def stats(self) -> Dict[str, Any]:
         """Return observability counters without exposing handler internals."""
@@ -197,6 +231,7 @@ class EventBus:
                 "global_subscribers": len(self._global_subscribers),
                 "keyed_global_subscribers": len(self._global_subscriber_keys),
                 "dead_letters": self._dead_letter_count,
+                "legacy_dict_enabled": self._allow_legacy_dict_events,
                 "legacy_dict_events": self._legacy_dict_event_count,
                 "legacy_dict_event_types": dict(self._legacy_dict_event_types),
             }

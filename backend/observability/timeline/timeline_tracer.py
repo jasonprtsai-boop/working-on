@@ -1,8 +1,11 @@
 from typing import Dict, List, Any
+import logging
 import time
 from backend.events.bus.event_bus import bus
 from backend.events.event_types import EventType
 from backend.events.models.base_event import BaseEvent
+
+logger = logging.getLogger(__name__)
 
 class TimelineTracer:
     """
@@ -80,6 +83,10 @@ class TimelineTracer:
                 }
             ))
         except Exception:
-            pass
+            logger.warning(
+                "[TimelineTracer] failed to publish waterfall trace_id=%s",
+                trace_id,
+                exc_info=True,
+            )
 
 timeline_tracer = TimelineTracer()

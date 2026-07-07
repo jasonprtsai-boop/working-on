@@ -5,8 +5,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-import pandas as pd
-
 from backend.events.bus.event_bus import bus
 from backend.utils import config
 from backend.utils.logger import logger
@@ -177,18 +175,9 @@ class Database:
         self._conn.commit()
 
     def export_excel_csv(self, table_name: str, output_path: str) -> bool:
-        try:
-            df = pd.read_sql_query(f"SELECT * FROM {table_name}", self.connect())
-            output = Path(output_path)
-            output.parent.mkdir(parents=True, exist_ok=True)
-            if output.suffix.lower() == ".csv":
-                df.to_csv(output, index=False)
-            else:
-                df.to_excel(output, index=False)
-            return True
-        except Exception:
-            logger.error("[Database] export failed", exc_info=True)
-            return False
+        from backend.infrastructure.database.export_engine import export_excel_report
+
+        return export_excel_report(table_name, output_path, db_path=self.db_path)
 
 
 class _DBProxy:

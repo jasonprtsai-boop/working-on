@@ -3,6 +3,9 @@ import yaml
 from dotenv import load_dotenv
 import logging
 
+from backend.utils.setup_settings import get_nested as _setup_get
+from backend.utils.setup_settings import load_settings as _load_setup_settings
+
 # Load .env file if it exists [Opt 12]
 load_dotenv()
 
@@ -41,12 +44,26 @@ def get_cfg(path, default=None):
     return val if val is not None else default
 
 
+SETUP_SETTINGS_FILE = os.path.abspath(
+    os.environ.get("SETUP_SETTINGS_FILE") or get_cfg("setup.settings_file", "data/setup_settings.json")
+)
+_setup_settings = _load_setup_settings(SETUP_SETTINGS_FILE)
+
+
 def _env_or_cfg(env_name: str, cfg_path: str, default=None):
     """Read runtime config from .env first, then YAML config, then default."""
     value = os.environ.get(env_name)
     if value is not None:
         return value
     return get_cfg(cfg_path, default)
+
+
+def _setup_or_env_or_cfg(env_name: str, cfg_path: str, setup_path: str, default=None):
+    """Read operator-tuned hardware settings from setup JSON before env/YAML."""
+    value = _setup_get(_setup_settings, setup_path, None)
+    if value is not None:
+        return value
+    return _env_or_cfg(env_name, cfg_path, default)
 
 
 def _as_bool(value, default: bool = False) -> bool:
@@ -72,6 +89,29 @@ def _normalize_origins(value, default=None):
         return ["*"] if "*" in origins else origins
     return []
 
+
+def _load_yolo_class_names(path: str) -> list[str]:
+    """Load class names from the preserved YOLO dataset yaml when available."""
+    if not path:
+        return []
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+    except Exception:
+        logging.getLogger(__name__).debug("Failed to load YOLO class names from %s", path, exc_info=True)
+        return []
+
+    names = data.get("names")
+    if isinstance(names, dict):
+        try:
+            keys = sorted(names, key=lambda item: int(item))
+        except Exception:
+            keys = sorted(names)
+        return [str(names[key]) for key in keys]
+    if isinstance(names, list):
+        return [str(name) for name in names]
+    return []
+
 # System
 SYSTEM_MODE = os.environ.get('SYSTEM_MODE', get_cfg('system.mode', 'simulation'))
 TEST_MODE = _as_bool(os.environ.get('TEST_MODE', get_cfg('system.test_mode', False)))
@@ -81,8 +121,17 @@ APP_ENV = str(os.environ.get("APP_ENV") or os.environ.get("FLASK_ENV") or get_cf
 IS_PRODUCTION = APP_ENV in {"prod", "production"}
 LOG_QUEUE_SIZE = int(_env_or_cfg("LOG_QUEUE_SIZE", "system.log_queue_size", 10000))
 
+_bind_all_requested = _as_bool(_env_or_cfg("SMART_CHESS_BIND_ALL", "server.bind_all", False), default=False)
+_explicit_host = os.environ.get("SMART_CHESS_HOST") or os.environ.get("HOST") or get_cfg("server.host", None)
+BIND_HOST = str(_explicit_host or ("0.0.0.0" if _bind_all_requested else "127.0.0.1")).strip() or "127.0.0.1"
+PORT = int(_env_or_cfg("PORT", "server.port", 5000))
+
 # Runtime contract validation (best-effort, non-fatal)
 CONTRACT_VALIDATE = _as_bool(os.environ.get('CONTRACT_VALIDATE', get_cfg('system.contract_validate', True)), default=True)
+EVENTBUS_ALLOW_LEGACY_DICT_EVENTS = _as_bool(
+    _env_or_cfg("EVENTBUS_ALLOW_LEGACY_DICT_EVENTS", "system.eventbus_allow_legacy_dict_events", not IS_PRODUCTION),
+    default=not IS_PRODUCTION,
+)
 CONTROL_AUTH_REQUIRED = _as_bool(
     os.environ.get("CONTROL_AUTH_REQUIRED", get_cfg("security.control_auth_required", True)),
     default=True,
@@ -96,6 +145,10 @@ CONTROL_RATE_LIMIT_PER_MINUTE = int(_env_or_cfg("CONTROL_RATE_LIMIT_PER_MINUTE",
 SOCKET_RATE_LIMIT_PER_MINUTE = int(_env_or_cfg("SOCKET_RATE_LIMIT_PER_MINUTE", "security.socket_rate_limit_per_minute", 120))
 MAX_REQUEST_BYTES = int(_env_or_cfg("MAX_REQUEST_BYTES", "security.max_request_bytes", 1_048_576))
 MAX_SOCKET_PAYLOAD_BYTES = int(_env_or_cfg("MAX_SOCKET_PAYLOAD_BYTES", "security.max_socket_payload_bytes", 65_536))
+SOCKET_PUBLIC_SNAPSHOT_ENABLED = _as_bool(
+    _env_or_cfg("SOCKET_PUBLIC_SNAPSHOT_ENABLED", "security.socket_public_snapshot_enabled", not IS_PRODUCTION),
+    default=not IS_PRODUCTION,
+)
 TRUST_X_FORWARDED_FOR = _as_bool(
     _env_or_cfg("TRUST_X_FORWARDED_FOR", "security.trust_x_forwarded_for", False),
     default=False,
@@ -114,14 +167,23 @@ SOCKET_ACTION_ALLOWLIST = tuple(
 # Security (Phase 4 Industrialization Update)
 DEFAULT_SECRET_KEY = "industrial-secret"
 DEFAULT_ADMIN_PASSWORD = "888888"
+_default_allow_insecure_defaults = bool(TEST_MODE)
 ALLOW_INSECURE_DEFAULTS = _as_bool(
-    os.environ.get("ALLOW_INSECURE_DEFAULTS", get_cfg("security.allow_insecure_defaults", (not IS_PRODUCTION) or TEST_MODE)),
-    default=(not IS_PRODUCTION) or TEST_MODE,
+    os.environ.get("ALLOW_INSECURE_DEFAULTS", get_cfg("security.allow_insecure_defaults", _default_allow_insecure_defaults)),
+    default=_default_allow_insecure_defaults,
 )
 SECRET_KEY = os.environ.get("CHESS_SECRET_KEY") or get_cfg("security.secret_key", None) or DEFAULT_SECRET_KEY
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD") or get_cfg("security.admin_password", None) or DEFAULT_ADMIN_PASSWORD
+SETUP_PASSWORD = os.environ.get("SETUP_PASSWORD") or get_cfg("security.setup_password", "login")
+JWT_TTL_MINUTES = int(_env_or_cfg("JWT_TTL_MINUTES", "security.jwt_ttl_minutes", 120))
+COMMISSIONING_REPORT_FILE = _env_or_cfg(
+    "COMMISSIONING_REPORT_FILE",
+    "system.commissioning_report_file",
+    os.path.join("data", "commissioning_report.json"),
+)
 
-_default_origins = ["*"] if (not IS_PRODUCTION or TEST_MODE) else []
+_local_origins = [f"http://127.0.0.1:{PORT}", f"http://localhost:{PORT}"]
+_default_origins = ["*"] if TEST_MODE else ([] if IS_PRODUCTION else _local_origins)
 CORS_ALLOWED_ORIGINS = _normalize_origins(
     os.environ.get("CORS_ALLOWED_ORIGINS", None) or get_cfg("security.cors_allowed_origins", _default_origins),
     default=_default_origins,
@@ -139,6 +201,7 @@ _weak_secret = (
     or "changeme" in _secret_text.lower()
 )
 _default_admin_password = ADMIN_PASSWORD == DEFAULT_ADMIN_PASSWORD
+_default_setup_password = str(SETUP_PASSWORD or "") == "login"
 
 if IS_PRODUCTION:
     if TEST_MODE:
@@ -149,20 +212,31 @@ if IS_PRODUCTION:
         _security_errors.append("CORS_ALLOWED_ORIGINS must not be '*' in production.")
     if not RATE_LIMITS_ENABLED:
         _security_errors.append("RATE_LIMITS_ENABLED must be true in production.")
+    if SOCKET_PUBLIC_SNAPSHOT_ENABLED:
+        _security_errors.append("SOCKET_PUBLIC_SNAPSHOT_ENABLED must be false in production.")
+    if EVENTBUS_ALLOW_LEGACY_DICT_EVENTS:
+        _security_errors.append("EVENTBUS_ALLOW_LEGACY_DICT_EVENTS must be false in production.")
     if LOGIN_RATE_LIMIT_PER_MINUTE <= 0 or CONTROL_RATE_LIMIT_PER_MINUTE <= 0 or SOCKET_RATE_LIMIT_PER_MINUTE <= 0:
         _security_errors.append("Rate limits must be positive in production.")
     if TRUST_X_FORWARDED_FOR and not TRUSTED_PROXY_IPS:
         _security_errors.append("TRUSTED_PROXY_IPS must be set when TRUST_X_FORWARDED_FOR is enabled in production.")
     if TRUST_X_FORWARDED_FOR and "*" in TRUSTED_PROXY_IPS:
         _security_errors.append("TRUSTED_PROXY_IPS must not contain '*' in production.")
+    if _default_setup_password:
+        _security_errors.append("SETUP_PASSWORD must be changed from the default 'login' in production.")
+
+if JWT_TTL_MINUTES <= 0 or JWT_TTL_MINUTES > 24 * 60:
+    _security_errors.append("JWT_TTL_MINUTES must be between 1 and 1440.")
 
 if _weak_secret:
     message = "[config] Using weak SECRET_KEY."
     if ALLOW_INSECURE_DEFAULTS and not IS_PRODUCTION:
-        _security_logger.warning(f"{message} Set a random 32+ character CHESS_SECRET_KEY before production deployment.")
+        _security_logger.warning(
+            f"{message} Set a random 32+ character CHESS_SECRET_KEY before production deployment."
+        )
     else:
         _security_errors.append(
-            "CHESS_SECRET_KEY must be a non-default 32+ character value in production. "
+            "CHESS_SECRET_KEY must be a non-default 32+ character value outside explicit TEST_MODE/insecure-dev. "
             "Use 'openssl rand -hex 32' to generate one."
         )
 if _default_admin_password:
@@ -171,20 +245,34 @@ if _default_admin_password:
         _security_logger.warning(f"{message} Set ADMIN_PASSWORD before production deployment.")
     else:
         _security_errors.append(
-            "ADMIN_PASSWORD must be set to a non-default value in production. "
+            "ADMIN_PASSWORD must be set to a non-default value outside explicit TEST_MODE/insecure-dev. "
             "Please update your .env or config.yaml."
         )
 
+if BIND_HOST in {"0.0.0.0", "::"} and not _bind_all_requested:
+    _security_errors.append("Binding to all interfaces requires SMART_CHESS_BIND_ALL=1.")
+if BIND_HOST in {"0.0.0.0", "::"} and (_weak_secret or _default_admin_password or CORS_ALLOW_ALL):
+    if ALLOW_INSECURE_DEFAULTS and TEST_MODE and not IS_PRODUCTION:
+        _security_logger.warning("[config] TEST_MODE permits insecure bind-all settings for local test harnesses.")
+    else:
+        _security_errors.append(
+            "Bind-all mode requires a strong CHESS_SECRET_KEY, non-default ADMIN_PASSWORD, and non-wildcard CORS."
+        )
+
 # Simulation / Fake Modules
-FAKE_ROBOT = _as_bool(os.environ.get('FAKE_ROBOT', get_cfg('system.simulation.fake_robot', True)), default=True)
-FAKE_VISION = _as_bool(os.environ.get('FAKE_VISION', get_cfg('system.simulation.fake_vision', True)), default=True)
+FAKE_ROBOT = _as_bool(
+    _setup_or_env_or_cfg('FAKE_ROBOT', 'system.simulation.fake_robot', 'robot.runtime.fake_robot', True),
+    default=True,
+)
+FAKE_VISION = _as_bool(os.environ.get('FAKE_VISION', get_cfg('system.simulation.fake_vision', False)), default=False)
 FAKE_AI = _as_bool(os.environ.get('FAKE_AI', get_cfg('system.simulation.fake_ai', True)), default=True)
 AUTO_EXECUTE_ROBOT = _as_bool(
-    os.environ.get("AUTO_EXECUTE_ROBOT", get_cfg("system.auto_execute_robot", False)),
+    _setup_or_env_or_cfg("AUTO_EXECUTE_ROBOT", "system.auto_execute_robot", "robot.runtime.auto_execute_robot", False),
     default=False,
 )
 
 # Engine
+PROTECTED_ASSET_ROOT = os.path.abspath(os.path.join("backend", "infrastructure", "protected_assets"))
 _engine_root = "backend/infrastructure/protected_assets/engine/pikafish-avx2.exe"
 _default_nnue_candidates = [
     "backend/infrastructure/protected_assets/engine/pikafish.nnue",
@@ -208,12 +296,20 @@ ENGINE_BOOT_TIMEOUT = 10.0
 ENGINE_COMPUTE_TIMEOUT = 12.0
 ENGINE_OUTPUT_QUEUE_SIZE = int(_env_or_cfg("ENGINE_OUTPUT_QUEUE_SIZE", "engine.output_queue_size", 2000))
 CPU_THROTTLE_THRESHOLD = 80
-ENGINE_PROBE_ON_BOOT = _as_bool(os.environ.get("ENGINE_PROBE_ON_BOOT", get_cfg("engine.probe_on_boot", True)), default=True)
-ENGINE_AUTO_ANALYZE = _as_bool(os.environ.get("ENGINE_AUTO_ANALYZE", get_cfg("engine.auto_analyze", True)), default=True)
+ENGINE_PROBE_ON_BOOT = _as_bool(os.environ.get("ENGINE_PROBE_ON_BOOT", get_cfg("engine.probe_on_boot", False)), default=False)
+ENGINE_AUTO_ANALYZE = _as_bool(os.environ.get("ENGINE_AUTO_ANALYZE", get_cfg("engine.auto_analyze", False)), default=False)
+AI_MODE_DEFAULT = str(_env_or_cfg("AI_MODE_DEFAULT", "engine.ai_mode_default", "companionship")).strip().lower()
 ROBOT_COMMAND_QUEUE_SIZE = int(_env_or_cfg("ROBOT_COMMAND_QUEUE_SIZE", "robot.command_queue_size", 200))
 REPLAY_MAX_SESSION_EVENTS = int(_env_or_cfg("REPLAY_MAX_SESSION_EVENTS", "replay.max_session_events", 1000))
 REPLAY_SAVE_EVERY_N_EVENTS = int(_env_or_cfg("REPLAY_SAVE_EVERY_N_EVENTS", "replay.save_every_n_events", 10))
 REPLAY_RETENTION_FILES = int(_env_or_cfg("REPLAY_RETENTION_FILES", "replay.retention_files", 20))
+
+
+def _is_under_root(path: str, root: str) -> bool:
+    try:
+        return os.path.commonpath([os.path.abspath(path), root]) == root
+    except (OSError, ValueError):
+        return False
 
 # Database - Normalized Paths
 _db_path_configured = os.environ.get("DB_PATH") is not None or get_cfg("database.path", None) is not None
@@ -228,6 +324,14 @@ WAL_MODE = get_cfg('database.wal_mode', True)
 PERSISTENCE_QUEUE_SIZE = int(get_cfg("database.persistence_queue_size", 2000))
 PERSISTENCE_BATCH_SIZE = int(get_cfg("database.persistence_batch_size", 100))
 PERSISTENCE_FLUSH_INTERVAL_SEC = float(get_cfg("database.persistence_flush_interval_sec", 0.25))
+PERSISTENCE_DROP_WARNING_THRESHOLD = int(_env_or_cfg("PERSISTENCE_DROP_WARNING_THRESHOLD", "database.persistence_drop_warning_threshold", 1))
+PERSISTENCE_DROP_WARNING_INTERVAL_SEC = float(_env_or_cfg("PERSISTENCE_DROP_WARNING_INTERVAL_SEC", "database.persistence_drop_warning_interval_sec", 5.0))
+EXCEL_EXPORT_EVENT_LIMIT = int(_env_or_cfg("EXCEL_EXPORT_EVENT_LIMIT", "database.excel_export_event_limit", 1000))
+AUTO_EXPORT_SESSION_RECORD = _as_bool(
+    _env_or_cfg("AUTO_EXPORT_SESSION_RECORD", "database.auto_export_session_record", True),
+    default=True,
+)
+GAME_RECORD_EXPORT_DIR = _env_or_cfg("GAME_RECORD_EXPORT_DIR", "database.game_record_export_dir", os.path.join("logs", "game_records"))
 
 if IS_PRODUCTION:
     if not _db_path_configured:
@@ -248,49 +352,225 @@ if IS_PRODUCTION:
         _security_errors.append("Payload size limits must be positive in production.")
     if not SOCKET_ACTION_ALLOWLIST:
         _security_errors.append("SOCKET_ACTION_ALLOWLIST must not be empty in production.")
+    if not _is_under_root(ENGINE_PATH, PROTECTED_ASSET_ROOT):
+        _security_errors.append("ENGINE_PATH must point inside backend/infrastructure/protected_assets in production.")
+    if not os.path.isfile(os.path.abspath(ENGINE_PATH)):
+        _security_errors.append("ENGINE_PATH must point to an existing protected engine executable in production.")
+    for candidate in ENGINE_NNUE_CANDIDATES:
+        if not _is_under_root(candidate, PROTECTED_ASSET_ROOT):
+            _security_errors.append("ENGINE_NNUE_CANDIDATES must point inside backend/infrastructure/protected_assets in production.")
+            break
+        if not os.path.isfile(os.path.abspath(candidate)):
+            _security_errors.append("ENGINE_NNUE_CANDIDATES must point to existing protected NNUE files in production.")
+            break
 
 if _security_errors:
     raise RuntimeError("Unsafe production security configuration: " + " ".join(_security_errors))
 
 # Vision
-CAMERA_INDEX = int(_env_or_cfg('CAMERA_INDEX', 'vision.camera_index', 0))
+CAMERA_INDEX = int(_setup_or_env_or_cfg('CAMERA_INDEX', 'vision.camera_index', 'vision.camera_index', 0))
+VISION_WORKER_PIPELINE_ENABLED = _as_bool(
+    _env_or_cfg("VISION_WORKER_PIPELINE_ENABLED", "vision.worker_pipeline_enabled", False),
+    default=False,
+)
 WARP_WIDTH = int(_env_or_cfg('WARP_WIDTH', 'vision.warp_width', 1000))
 WARP_HEIGHT = int(_env_or_cfg('WARP_HEIGHT', 'vision.warp_height', 1000))
+VISION_CALIBRATION_MAX_DIM = int(_env_or_cfg("VISION_CALIBRATION_MAX_DIM", "vision.calibration_max_dim", 960))
+VISION_CALIBRATION_FILE = os.path.abspath(
+    _env_or_cfg("VISION_CALIBRATION_FILE", "vision.calibration_file", "data/vision_calibration.json")
+)
 VISION_CONFIDENCE = float(_env_or_cfg('VISION_CONFIDENCE', 'vision.confidence_threshold', 0.3))
 VISION_NMS_IOU = float(_env_or_cfg('VISION_NMS_IOU', 'vision.nms_iou', 0.45))
 STABILITY_THRESHOLD = int(_env_or_cfg('STABILITY_THRESHOLD', 'vision.stability_threshold', 3))
 VISION_SMALL_OBJECT_AREA_RATIO = float(_env_or_cfg('VISION_SMALL_OBJECT_AREA_RATIO', 'vision.small_object_area_ratio', 0.01))
+CAMERA_DISCOVERY_CACHE_TTL_SEC = float(_env_or_cfg("CAMERA_DISCOVERY_CACHE_TTL_SEC", "vision.camera_discovery_cache_ttl_sec", 10.0))
+VISION_PREPROCESS_MODE = str(_env_or_cfg("VISION_PREPROCESS_MODE", "vision.preprocess_mode", "fast")).strip().lower()
+VISION_MJPEG_QUALITY = int(_env_or_cfg("VISION_MJPEG_QUALITY", "vision.mjpeg_quality", 75))
+VISION_MJPEG_FPS = int(_env_or_cfg("VISION_MJPEG_FPS", "vision.mjpeg_fps", 15))
+VISION_RESULT_MAX_AGE_SEC = float(
+    _setup_or_env_or_cfg("VISION_RESULT_MAX_AGE_SEC", "vision.result_max_age_sec", "vision.result_max_age_sec", 3.0)
+)
 
 # AI Detection
-_default_model_candidates = [
-    "backend/infrastructure/protected_assets/vision/best.pt",
-]
-_default_model_path = next(
-    (path for path in _default_model_candidates if os.path.exists(path)),
-    _default_model_candidates[0],
-)
+_default_model_path = "backend/infrastructure/protected_assets/vision/best.onnx"
 YOLO_MODEL_PATH = _env_or_cfg('YOLO_MODEL_PATH', 'vision.model_path', _default_model_path)
-YOLO_MODEL_TYPE = str(_env_or_cfg('YOLO_MODEL_TYPE', 'vision.model_type', 'yolov8'))
+YOLO_MODEL_TYPE = str(_env_or_cfg('YOLO_MODEL_TYPE', 'vision.model_type', 'yolo26'))
+ULTRALYTICS_MIN_VERSION = str(_env_or_cfg("ULTRALYTICS_MIN_VERSION", "vision.ultralytics_min_version", "8.4.55"))
 YOLO_DNN_INPUT_SIZE = int(_env_or_cfg('YOLO_DNN_INPUT_SIZE', 'vision.dnn_input_size', 640))
 YOLO_OUTPUT_HAS_OBJECTNESS = _as_bool(
     _env_or_cfg('YOLO_OUTPUT_HAS_OBJECTNESS', 'vision.output_has_objectness', False),
     default=False,
 )
+YOLO_WARMUP_ON_LOAD = _as_bool(
+    _env_or_cfg("YOLO_WARMUP_ON_LOAD", "vision.warmup_on_load", True),
+    default=True,
+)
+VISION_BBOX_ANCHOR_X = float(_env_or_cfg("VISION_BBOX_ANCHOR_X", "vision.bbox_anchor_x", 0.5))
+VISION_BBOX_ANCHOR_Y = float(_env_or_cfg("VISION_BBOX_ANCHOR_Y", "vision.bbox_anchor_y", 0.5))
+YOLO_DATASET_MAPPING_PATH = os.path.abspath(
+    _env_or_cfg(
+        "YOLO_DATASET_MAPPING_PATH",
+        "vision.dataset_mapping_path",
+        "backend/infrastructure/protected_assets/vision/dataset_mapping.yaml",
+    )
+)
+YOLO_TRAINING_ARGS_PATH = os.path.abspath(
+    _env_or_cfg(
+        "YOLO_TRAINING_ARGS_PATH",
+        "vision.training_args_path",
+        "backend/infrastructure/protected_assets/vision/args.yaml",
+    )
+)
+YOLO_CLASS_NAMES = tuple(_load_yolo_class_names(YOLO_DATASET_MAPPING_PATH))
 VISION_DEVICE = str(_env_or_cfg('VISION_DEVICE', 'vision.device', 'cpu'))
-SAHI_SLICE_HEIGHT = int(_env_or_cfg('SAHI_SLICE_HEIGHT', 'vision.sahi_slice_height', 640))
-SAHI_SLICE_WIDTH = int(_env_or_cfg('SAHI_SLICE_WIDTH', 'vision.sahi_slice_width', 640))
-SAHI_OVERLAP_RATIO = float(_env_or_cfg('SAHI_OVERLAP_RATIO', 'vision.sahi_overlap_ratio', 0.20))
 
 # Robot
-ROBOT_IP = get_cfg('robot.ip', '192.168.1.1')
-ROBOT_PORT = get_cfg('robot.port', 5891)
+ROBOT_IP = str(_setup_or_env_or_cfg('ROBOT_IP', 'robot.ip', 'robot.connection.ip', '192.168.1.1'))
+ROBOT_PORT = int(_setup_or_env_or_cfg('ROBOT_PORT', 'robot.port', 'robot.connection.port', 502))
 CALIBRATION_FILE = get_cfg('robot.calibration_file', 'robot/calibration.json')
-Z_SAFE = float(get_cfg("robot.z_safe", 150.0))
-Z_GRAB = float(get_cfg("robot.z_grab", 20.0))
-ROBOT_MAX_X = float(get_cfg("robot.max_x", 600.0))
-ROBOT_MIN_X = float(get_cfg("robot.min_x", -600.0))
-ROBOT_MAX_Y = float(get_cfg("robot.max_y", 600.0))
-ROBOT_MIN_Y = float(get_cfg("robot.min_y", 100.0))
+Z_SAFE = float(_setup_or_env_or_cfg("Z_SAFE", "robot.z_safe", "robot.motion.z_safe", 150.0))
+Z_GRAB = float(_setup_or_env_or_cfg("Z_GRAB", "robot.z_grab", "robot.motion.z_grab", 20.0))
+ROBOT_MAX_X = float(_setup_or_env_or_cfg("ROBOT_MAX_X", "robot.max_x", "robot.limits.max_x", 600.0))
+ROBOT_MIN_X = float(_setup_or_env_or_cfg("ROBOT_MIN_X", "robot.min_x", "robot.limits.min_x", -600.0))
+ROBOT_MAX_Y = float(_setup_or_env_or_cfg("ROBOT_MAX_Y", "robot.max_y", "robot.limits.max_y", 600.0))
+ROBOT_MIN_Y = float(_setup_or_env_or_cfg("ROBOT_MIN_Y", "robot.min_y", "robot.limits.min_y", 100.0))
+ROBOT_MIN_Z = float(_setup_or_env_or_cfg("ROBOT_MIN_Z", "robot.min_z", "robot.limits.min_z", 0.0))
+ROBOT_MAX_Z = float(
+    _setup_or_env_or_cfg("ROBOT_MAX_Z", "robot.max_z", "robot.limits.max_z", max(Z_SAFE, Z_GRAB) + 100.0)
+)
+SOFT_LIMIT_X = (ROBOT_MIN_X, ROBOT_MAX_X)
+SOFT_LIMIT_Y = (ROBOT_MIN_Y, ROBOT_MAX_Y)
+SOFT_LIMIT_Z = (ROBOT_MIN_Z, ROBOT_MAX_Z)
+ROBOT_MIN_SPEED = float(_setup_or_env_or_cfg("ROBOT_MIN_SPEED", "robot.motion.min_speed", "robot.motion.min_speed", 1.0))
+ROBOT_MAX_SPEED = float(_setup_or_env_or_cfg("ROBOT_MAX_SPEED", "robot.motion.max_speed", "robot.motion.max_speed", 80.0))
+ROBOT_TRAVEL_SPEED = float(_setup_or_env_or_cfg("ROBOT_TRAVEL_SPEED", "robot.motion.travel_speed", "robot.motion.travel_speed", 30.0))
+ROBOT_LIFT_SPEED = float(_setup_or_env_or_cfg("ROBOT_LIFT_SPEED", "robot.motion.lift_speed", "robot.motion.lift_speed", 30.0))
+ROBOT_APPROACH_SPEED = float(_setup_or_env_or_cfg("ROBOT_APPROACH_SPEED", "robot.motion.approach_speed", "robot.motion.approach_speed", 15.0))
+ROBOT_DEFAULT_ACCELERATION = float(
+    _setup_or_env_or_cfg("ROBOT_DEFAULT_ACCELERATION", "robot.motion.default_acceleration", "robot.motion.default_acceleration", 60.0)
+)
+ROBOT_MOTION_TIMEOUT_SEC = float(
+    _setup_or_env_or_cfg("ROBOT_MOTION_TIMEOUT_SEC", "robot.motion.timeout_sec", "robot.motion.timeout_sec", 10.0)
+)
+ROBOT_PLACE_Z_OFFSET = float(
+    _setup_or_env_or_cfg("ROBOT_PLACE_Z_OFFSET", "robot.motion.place_z_offset", "robot.motion.place_z_offset", 2.0)
+)
+ROBOT_TOOL_RX = float(_setup_or_env_or_cfg("ROBOT_TOOL_RX", "robot.motion.tool_rx", "robot.motion.tool_rx", 0.0))
+ROBOT_TOOL_RY = float(_setup_or_env_or_cfg("ROBOT_TOOL_RY", "robot.motion.tool_ry", "robot.motion.tool_ry", 0.0))
+ROBOT_TOOL_RZ = float(_setup_or_env_or_cfg("ROBOT_TOOL_RZ", "robot.motion.tool_rz", "robot.motion.tool_rz", 0.0))
+ROBOT_MOTION_REGISTER_BASE = int(_setup_or_env_or_cfg(
+    "ROBOT_MOTION_REGISTER_BASE", "robot.modbus.motion_register_base", "robot.modbus.motion_register_base", 7000
+))
+ROBOT_PROFILE_REGISTER_BASE = int(_setup_or_env_or_cfg(
+    "ROBOT_PROFILE_REGISTER_BASE", "robot.modbus.profile_register_base", "robot.modbus.profile_register_base", 7012
+))
+ROBOT_STATUS_REGISTER = int(_setup_or_env_or_cfg(
+    "ROBOT_STATUS_REGISTER", "robot.modbus.status_register", "robot.modbus.status_register", 7100
+))
+ROBOT_STATUS_IDLE_VALUE = int(_setup_or_env_or_cfg(
+    "ROBOT_STATUS_IDLE_VALUE", "robot.modbus.status_idle_value", "robot.modbus.status_idle_value", 0
+))
+ROBOT_STATUS_MOVING_VALUE = int(_setup_or_env_or_cfg(
+    "ROBOT_STATUS_MOVING_VALUE", "robot.modbus.status_moving_value", "robot.modbus.status_moving_value", 1
+))
+ROBOT_STATUS_COMPLETE_VALUE = int(_setup_or_env_or_cfg(
+    "ROBOT_STATUS_COMPLETE_VALUE", "robot.modbus.status_complete_value", "robot.modbus.status_complete_value", 2
+))
+ROBOT_STATUS_ERROR_VALUE = int(_setup_or_env_or_cfg(
+    "ROBOT_STATUS_ERROR_VALUE", "robot.modbus.status_error_value", "robot.modbus.status_error_value", 3
+))
+ROBOT_HALT_REGISTER = int(_setup_or_env_or_cfg(
+    "ROBOT_HALT_REGISTER", "robot.modbus.halt_register", "robot.modbus.halt_register", 7099
+))
+ROBOT_HALT_VALUE = int(_setup_or_env_or_cfg(
+    "ROBOT_HALT_VALUE", "robot.modbus.halt_value", "robot.modbus.halt_value", 1
+))
+ROBOT_COMMAND_HANDSHAKE_ENABLED = _as_bool(_setup_or_env_or_cfg(
+    "ROBOT_COMMAND_HANDSHAKE_ENABLED",
+    "robot.modbus.command_handshake_enabled",
+    "robot.modbus.command_handshake_enabled",
+    True,
+), default=True)
+ROBOT_COMMAND_ID_REGISTER = int(_setup_or_env_or_cfg(
+    "ROBOT_COMMAND_ID_REGISTER", "robot.modbus.command_id_register", "robot.modbus.command_id_register", 6998
+))
+ROBOT_COMMAND_TRIGGER_REGISTER = int(_setup_or_env_or_cfg(
+    "ROBOT_COMMAND_TRIGGER_REGISTER", "robot.modbus.command_trigger_register", "robot.modbus.command_trigger_register", 6999
+))
+ROBOT_COMMAND_ACK_REGISTER = int(_setup_or_env_or_cfg(
+    "ROBOT_COMMAND_ACK_REGISTER", "robot.modbus.command_ack_register", "robot.modbus.command_ack_register", 7101
+))
+ROBOT_ERROR_CODE_REGISTER = int(_setup_or_env_or_cfg(
+    "ROBOT_ERROR_CODE_REGISTER", "robot.modbus.error_code_register", "robot.modbus.error_code_register", 7102
+))
+ROBOT_COMMAND_TRIGGER_VALUE = int(_setup_or_env_or_cfg(
+    "ROBOT_COMMAND_TRIGGER_VALUE", "robot.modbus.command_trigger_value", "robot.modbus.command_trigger_value", 1
+))
+ROBOT_COMMAND_CLEAR_VALUE = int(_setup_or_env_or_cfg(
+    "ROBOT_COMMAND_CLEAR_VALUE", "robot.modbus.command_clear_value", "robot.modbus.command_clear_value", 0
+))
+ROBOT_COMMAND_ID_WRAP = int(_setup_or_env_or_cfg(
+    "ROBOT_COMMAND_ID_WRAP", "robot.modbus.command_id_wrap", "robot.modbus.command_id_wrap", 32767
+))
+ROBOT_COMMAND_ACK_TIMEOUT_SEC = float(_setup_or_env_or_cfg(
+    "ROBOT_COMMAND_ACK_TIMEOUT_SEC", "robot.modbus.command_ack_timeout_sec", "robot.modbus.command_ack_timeout_sec", 2.0
+))
+ROBOT_REGISTER_SCALE = float(_setup_or_env_or_cfg(
+    "ROBOT_REGISTER_SCALE", "robot.modbus.register_scale", "robot.modbus.register_scale", 100.0
+))
+ROBOT_REGISTER_ENCODING = str(
+    _setup_or_env_or_cfg(
+        "ROBOT_REGISTER_ENCODING", "robot.modbus.register_encoding", "robot.modbus.register_encoding", "scaled_int32"
+    )
+).strip().lower()
+ROBOT_GRIPPER_REGISTER = int(_setup_or_env_or_cfg(
+    "ROBOT_GRIPPER_REGISTER", "robot.gripper.register", "robot.modbus.gripper_register", 7098
+))
+ROBOT_GRIPPER_CLOSE_VALUE = int(_setup_or_env_or_cfg(
+    "ROBOT_GRIPPER_CLOSE_VALUE", "robot.gripper.close_value", "robot.modbus.gripper_close_value", 1
+))
+ROBOT_GRIPPER_OPEN_VALUE = int(_setup_or_env_or_cfg(
+    "ROBOT_GRIPPER_OPEN_VALUE", "robot.gripper.open_value", "robot.modbus.gripper_open_value", 0
+))
+ROBOT_GRIPPER_FEEDBACK_ENABLED = _as_bool(_setup_or_env_or_cfg(
+    "ROBOT_GRIPPER_FEEDBACK_ENABLED",
+    "robot.gripper.feedback_enabled",
+    "robot.modbus.gripper_feedback_enabled",
+    True,
+), default=True)
+ROBOT_GRIPPER_STATUS_REGISTER = int(_setup_or_env_or_cfg(
+    "ROBOT_GRIPPER_STATUS_REGISTER", "robot.gripper.status_register", "robot.modbus.gripper_status_register", 7103
+))
+ROBOT_GRIPPER_OPENED_VALUE = int(_setup_or_env_or_cfg(
+    "ROBOT_GRIPPER_OPENED_VALUE", "robot.gripper.opened_value", "robot.modbus.gripper_opened_value", 0
+))
+ROBOT_GRIPPER_CLOSED_VALUE = int(_setup_or_env_or_cfg(
+    "ROBOT_GRIPPER_CLOSED_VALUE", "robot.gripper.closed_value", "robot.modbus.gripper_closed_value", 1
+))
+ROBOT_GRIPPER_ERROR_VALUE = int(_setup_or_env_or_cfg(
+    "ROBOT_GRIPPER_ERROR_VALUE", "robot.gripper.error_value", "robot.modbus.gripper_error_value", 2
+))
+ROBOT_GRIPPER_FEEDBACK_TIMEOUT_SEC = float(_setup_or_env_or_cfg(
+    "ROBOT_GRIPPER_FEEDBACK_TIMEOUT_SEC",
+    "robot.gripper.feedback_timeout_sec",
+    "robot.modbus.gripper_feedback_timeout_sec",
+    2.0,
+))
+ROBOT_GRIPPER_CLOSE_DWELL_SEC = float(_setup_or_env_or_cfg(
+    "ROBOT_GRIPPER_CLOSE_DWELL_SEC", "robot.gripper.close_dwell_sec", "robot.modbus.gripper_close_dwell_sec", 0.5
+))
+ROBOT_GRIPPER_OPEN_DWELL_SEC = float(_setup_or_env_or_cfg(
+    "ROBOT_GRIPPER_OPEN_DWELL_SEC", "robot.gripper.open_dwell_sec", "robot.modbus.gripper_open_dwell_sec", 0.5
+))
+ROBOT_VERIFY_STATUS_ON_CONNECT = _as_bool(
+    _setup_or_env_or_cfg(
+        "ROBOT_VERIFY_STATUS_ON_CONNECT",
+        "robot.modbus.verify_status_on_connect",
+        "robot.modbus.verify_status_on_connect",
+        False,
+    ),
+    default=False,
+)
 
 # Board
 BOARD_ROWS = 10

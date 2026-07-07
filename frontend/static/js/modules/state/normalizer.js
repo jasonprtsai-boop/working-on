@@ -26,14 +26,17 @@ export const Normalizer = {
     },
 
     systemState(data) {
+        const board = data.board || {};
+        const fen = board.fen || "";
+
         // Ensure standard structure for full state updates
         return {
             board: {
-                fen: data.board?.fen || "",
-                pieces: data.board?.pieces || [],
-                turn: data.board?.turn || "red",
-                move_count: data.board?.move_count || 0,
-                last_move: data.board?.last_move || null
+                fen,
+                pieces: board.pieces || [],
+                turn: normalizeBoardTurn(board.turn) || turnFromFen(fen) || "red",
+                move_count: board.move_count || 0,
+                last_move: board.last_move || null
             },
             engine: this.engineInfo(data.engine || {}),
             robot: this.robotStatus(data.robot || {}),
@@ -66,6 +69,9 @@ export const Normalizer = {
     },
 
     diagnostics(data) {
+        const queue = data.queue || data.queues || {};
+        const queues = data.queues || data.queue || {};
+        const runtime = data.runtime || {};
         // Keep it loose: diagnostics may contain engine/vision status, backoff, errors, etc.
         return {
             ui: data.ui || {},
@@ -73,6 +79,24 @@ export const Normalizer = {
             engine: data.engine || {},
             robot: data.robot || {},
             vision: data.vision || {},
+            health: data.health || {},
+            telemetry: data.telemetry || {},
+            queue,
+            queues,
+            pipeline: data.pipeline || {},
+            topology: data.topology || {},
+            workers: data.workers || {},
+            event_bus: data.event_bus || runtime.event_bus || {},
+            persistence: data.persistence || runtime.persistence || {},
+            async_runtime: data.async_runtime || runtime.async_runtime || {},
+            control: data.control || runtime.control || {},
+            runtime: {
+                ...runtime,
+                event_bus: data.event_bus || runtime.event_bus || {},
+                persistence: data.persistence || runtime.persistence || {},
+                async_runtime: data.async_runtime || runtime.async_runtime || {},
+                control: data.control || runtime.control || {},
+            },
         };
     },
 
@@ -111,10 +135,13 @@ export const Normalizer = {
             avg_confidence: avgConfidence,
             min_confidence: minConfidence,
             confidence: avgConfidence,
-            sahi_enabled: Boolean(data.sahi_enabled),
             stable: Boolean(data.stable),
             camera_ready: data.camera_ready ?? data.cameraReady ?? undefined,
             safe_mode: data.safe_mode ?? data.safeMode ?? undefined,
+            calibration: data.calibration || {},
+            calibrated: data.calibrated ?? data.calibration?.calibrated ?? undefined,
+            calibration_quality: data.calibration_quality || data.calibrationQuality || data.calibration?.quality || {},
+            calibration_source: data.calibration_source || data.calibrationSource || data.calibration?.source || "",
             timestamp: data.timestamp || Date.now() / 1000,
             status: data.status || "OK"
         };
@@ -143,3 +170,15 @@ export const Normalizer = {
         };
     }
 };
+
+function normalizeBoardTurn(value) {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (['black', 'b', 'dark'].includes(normalized)) return 'black';
+    if (['red', 'r', 'w', 'white'].includes(normalized)) return 'red';
+    return '';
+}
+
+function turnFromFen(fen) {
+    const side = String(fen || '').trim().split(/\s+/)[1];
+    return normalizeBoardTurn(side);
+}

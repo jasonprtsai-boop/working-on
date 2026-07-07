@@ -109,8 +109,8 @@ function summarizeDetections(detections) {
 function mapVisionStatus(status, mode) {
     const normalized = String(status || '').trim().toUpperCase();
     const normalizedMode = String(mode || '').trim().toLowerCase();
-    if (normalizedMode === 'fallback' || normalized === 'FALLBACK') {
-        return { label: 'Fallback', isError: false, isWarning: true };
+    if (normalizedMode === 'simulation' || normalized === 'SIMULATION') {
+        return { label: 'Simulation', isError: false, isWarning: true };
     }
 
     const labels = {
@@ -118,6 +118,7 @@ function mapVisionStatus(status, mode) {
         READY: 'Ready',
         LIVE: 'Live',
         RUNNING: 'Running',
+        SIMULATION: 'Simulation',
         ERROR: 'Error',
         OFFLINE: 'Offline',
     };

@@ -1,9 +1,7 @@
 import asyncio
-import concurrent.futures
 import queue
 import threading
 import time
-from contextlib import suppress
 from typing import Optional
 from backend.events.bus.event_bus import bus
 from backend.infrastructure.database.event_store import EventStore
@@ -25,9 +23,13 @@ class PersistenceWorker:
         self._stop = threading.Event()
         self._subscribed = False
         self._dropped_events = 0
+        self._received_events = 0
         self._persisted_events = 0
         self._last_drop_at = None
         self._last_persist_at = None
+        self._last_drop_diagnostics_at = 0.0
+        self.status = "IDLE"
+        self.last_error = None
 
     def start(self):
         if self._task and not self._task.done():
@@ -37,6 +39,7 @@ class PersistenceWorker:
             bus.subscribe_all(self._on_event)
             self._subscribed = True
         self._task = runtime.run_task(self._run_async())
+        self.status = "RUNNING"
         logger.info("[PersistenceWorker] Started with async queue-backed event persistence.")
 
     def _on_event(self, event):
@@ -57,6 +60,7 @@ class PersistenceWorker:
                     data["session_id"] = None
 
             try:
+                self._received_events += 1
                 self._queue.put_nowait(data)
             except queue.Full:
                 self._dropped_events += 1
@@ -64,9 +68,10 @@ class PersistenceWorker:
                 logger.warning(
                     f"[PersistenceWorker] queue full; dropped event type={data.get('type') or data.get('event_type')} (total dropped={self._dropped_events})"
                 )
-                if data.get("source") != "persistence_worker":
+                if self._should_publish_drop_diagnostics(data):
                     self._publish_drop_diagnostics(data)
         except Exception as e:
+            self.last_error = str(e)
             logger.debug(f"[PersistenceWorker] Failed to save event: {e}")
 
     async def _run_async(self):
@@ -100,6 +105,7 @@ class PersistenceWorker:
                 raise
             self._save_batch_sync(batch, phase="executor shutdown fallback")
         except Exception as exc:
+            self.last_error = str(exc)
             logger.warning(f"[PersistenceWorker] batch save failed: {exc}", exc_info=True)
 
     def _save_batch_sync(self, batch, phase: str):
@@ -107,11 +113,26 @@ class PersistenceWorker:
             self.store.save_events(batch)
             self._record_persisted(len(batch))
         except Exception as exc:
+            self.last_error = str(exc)
             logger.warning(f"[PersistenceWorker] {phase} failed: {exc}", exc_info=True)
 
     def _record_persisted(self, count: int):
         self._persisted_events += int(count or 0)
         self._last_persist_at = time.time()
+        self.last_error = None
+
+    def _should_publish_drop_diagnostics(self, event_data: dict) -> bool:
+        if event_data.get("source") == "persistence_worker":
+            return False
+        threshold = max(1, int(getattr(config, "PERSISTENCE_DROP_WARNING_THRESHOLD", 1)))
+        if self._dropped_events < threshold:
+            return False
+        interval = max(0.0, float(getattr(config, "PERSISTENCE_DROP_WARNING_INTERVAL_SEC", 5.0)))
+        now = time.time()
+        if interval and (now - self._last_drop_diagnostics_at) < interval:
+            return False
+        self._last_drop_diagnostics_at = now
+        return True
 
     def _publish_drop_diagnostics(self, event_data: dict):
         try:
@@ -134,10 +155,14 @@ class PersistenceWorker:
             "queue_size": self._queue.qsize(),
             "queue_maxsize": self._queue.maxsize,
             "queue_full": self._queue.full(),
+            "received_events": self._received_events,
             "dropped_events": self._dropped_events,
+            "drop_warning": self._dropped_events >= max(1, int(getattr(config, "PERSISTENCE_DROP_WARNING_THRESHOLD", 1))),
+            "drop_rate": (self._dropped_events / self._received_events) if self._received_events else 0.0,
             "persisted_events": self._persisted_events,
             "last_drop_at": self._last_drop_at,
             "last_persist_at": self._last_persist_at,
+            "last_error": self.last_error,
         }
 
     def _collect_batch(self):
@@ -164,14 +189,24 @@ class PersistenceWorker:
                 break
         return batch
 
-    async def stop(self):
+    def stop(self):
         self._stop.set()
         future = self._task
         if future:
-            future.cancel()
-            with suppress(asyncio.CancelledError, concurrent.futures.CancelledError, asyncio.TimeoutError):
-                await asyncio.wait_for(asyncio.wrap_future(future), timeout=5.0)
+            if getattr(runtime, "_thread", None) is threading.current_thread():
+                future.cancel()
+            else:
+                try:
+                    future.result(timeout=5.0)
+                except Exception:
+                    future.cancel()
+                    logger.debug("[PersistenceWorker] async task did not stop before timeout.", exc_info=True)
             self._task = None
+        self.status = "STOPPED"
         logger.info("[PersistenceWorker] Stopped.")
+
+    @property
+    def is_running(self):
+        return bool(self._task and not self._task.done() and not self._stop.is_set())
 
 persistence_worker = PersistenceWorker()

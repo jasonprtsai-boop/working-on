@@ -24,6 +24,7 @@ function socketOptions() {
     return {
         timeout: 7000,
         reconnectionAttempts: 10,
+        withCredentials: true,
         auth(callback) {
             const token = readStoredToken();
             callback(token ? { token } : {});

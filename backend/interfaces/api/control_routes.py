@@ -3,6 +3,7 @@ from __future__ import annotations
 from flask import jsonify, request
 from pydantic import ValidationError
 
+from backend.core.rules import ChessLogic
 from backend.events.event_types import EventType
 from backend.interfaces.api.request_models import ControlRequest, MoveRequest
 from backend.interfaces.api.shared import (
@@ -15,6 +16,54 @@ from backend.interfaces.api.shared import (
     remember_idempotent_response,
     replay_idempotent_response,
 )
+from backend.application.services.system_preflight import build_preflight_report
+from backend.application.services.runtime_control import runtime_control
+from backend.state.store.manager.state_manager import state_manager
+
+
+def _dispatch_control_command(data: ControlRequest) -> str | None:
+    action = str(data.action)
+    payload = dict(data.payload or {})
+    trace_id = data.trace_id
+
+    if action == "start_engine":
+        return publish_base_event(
+            EventType.ENGINE_ANALYSIS_REQUESTED,
+            payload={**payload, "mode": "start"},
+            trace_id=trace_id,
+        )
+    if action == "stop_engine":
+        return publish_base_event(
+            EventType.ENGINE_ANALYSIS_REQUESTED,
+            payload={**payload, "mode": "stop"},
+            trace_id=trace_id,
+        )
+    if action == "sync_vision":
+        return publish_base_event(
+            EventType.UI_ACTION,
+            payload={"action": "SYNC_VISION", "payload": payload},
+            trace_id=trace_id,
+        )
+    if action == "reset":
+        trace_id = publish_base_event(EventType.SYSTEM_RESET, payload=payload, trace_id=trace_id)
+        publish_base_event(EventType.GAME_RESET, payload=payload, trace_id=trace_id)
+        return trace_id
+    if action == "pause":
+        return publish_base_event(EventType.GAME_PAUSE, payload=payload, trace_id=trace_id)
+    if action == "undo":
+        return publish_base_event(EventType.GAME_UNDO, payload=payload, trace_id=trace_id)
+    if action == "resume":
+        return publish_base_event(
+            EventType.ENGINE_ANALYSIS_REQUESTED,
+            payload={**payload, "mode": "start"},
+            trace_id=trace_id,
+        )
+
+    return publish_base_event(
+        EventType.UI_ACTION,
+        payload={"action": action, "payload": payload},
+        trace_id=trace_id,
+    )
 
 
 @api_bp.route("/control", methods=["POST"])
@@ -28,11 +77,7 @@ def control():
         if cached:
             return cached
 
-        trace_id = publish_base_event(
-            EventType.UI_ACTION,
-            payload={"action": data.action.lower(), "payload": data.payload},
-            trace_id=data.trace_id,
-        )
+        trace_id = _dispatch_control_command(data)
         body = accepted_payload("control", trace_id=trace_id)
         remember_idempotent_response(key, body)
         return jsonify(body)
@@ -58,11 +103,7 @@ def control_action(action: str):
         cached = replay_idempotent_response(key)
         if cached:
             return cached
-        trace_id = publish_base_event(
-            EventType.UI_ACTION,
-            payload={"action": data.action, "payload": payload},
-            trace_id=data.trace_id,
-        )
+        trace_id = _dispatch_control_command(data)
         body = accepted_payload(data.action, trace_id=trace_id)
         remember_idempotent_response(key, body)
         return jsonify(body)
@@ -76,9 +117,42 @@ def control_action(action: str):
         )
 
 
+@api_bp.route("/player/start", methods=["POST"])
+def player_start():
+    """Start player-mode analysis without requiring console access."""
+    payload = request.get_json(silent=True) or {}
+    preflight = build_preflight_report(require_auto_execute=False)
+    if not preflight.get("ready"):
+        return error_response(
+            "preflight_failed",
+            "System preflight failed. Please complete setup before starting player mode.",
+            409,
+            details=preflight,
+            recoverable=True,
+        )
+    trace_id = publish_base_event(
+        EventType.ENGINE_ANALYSIS_REQUESTED,
+        payload={**payload, "mode": "start", "source": payload.get("source", "player_start")},
+        trace_id=payload.get("trace_id"),
+    )
+    body = accepted_payload("player_start", trace_id=trace_id)
+    body["runtime_control"] = runtime_control.snapshot()
+    return jsonify(body)
+
+
 @api_bp.route("/move", methods=["POST"])
 def apply_move():
     """Accept a manual UCCI move from the browser."""
+    return _apply_move_request(default_type="MANUAL")
+
+
+@api_bp.route("/player/move", methods=["POST"])
+def apply_player_move():
+    """Accept a player-view UCCI move without granting broader admin controls."""
+    return _apply_move_request(default_type="PLAYER")
+
+
+def _apply_move_request(default_type: str = "MANUAL"):
     try:
         raw = request.get_json(silent=True) or {}
         data = MoveRequest(**raw)
@@ -86,9 +160,27 @@ def apply_move():
         cached = replay_idempotent_response(key)
         if cached:
             return cached
+        current_fen = state_manager.current.game.fen
+        next_fen = ChessLogic.apply_move(current_fen, data.move)
+        if next_fen == current_fen:
+            return error_response(
+                "illegal_move",
+                "Move is not legal for the current board state.",
+                400,
+                trace_id=data.trace_id,
+                details={"move": data.move},
+            )
+
         trace_id = publish_base_event(
             EventType.GAME_PLAYER_MOVE,
-            payload={"move": data.move, "player": data.player, "type": raw.get("type", "MANUAL")},
+            payload={
+                "move": data.move,
+                "player": data.player,
+                "type": raw.get("type", default_type),
+                "fen": next_fen,
+                "fen_before": current_fen,
+                "fen_after": next_fen,
+            },
             trace_id=data.trace_id,
         )
         body = accepted_payload("move", trace_id=trace_id, move=data.move)

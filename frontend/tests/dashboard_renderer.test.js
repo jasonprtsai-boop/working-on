@@ -26,6 +26,10 @@ const dashboardIds = [
   'dashboard-exp-difficulty',
   'vision-detections-count',
   'vision-confidence',
+  'vision-calibration-status',
+  'vision-calibration-source',
+  'vision-calibration-error',
+  'vision-calibration-quality',
   'stat-ai',
 ];
 
@@ -55,6 +59,16 @@ test('DashboardRenderer surfaces board, engine, robot, safety, and experiment da
       detections_count: 2,
       avg_confidence: 0.91,
       min_confidence: 0.72,
+      calibration: {
+        calibrated: true,
+        source: 'auto',
+        quality: {
+          max_reprojection_error_px: 0.012345,
+          edge_ratio: 1.3154,
+          min_angle_deg: 89.5,
+          area_ratio: 0.132,
+        },
+      },
     },
     engine: {
       depth: 13,
@@ -97,6 +111,11 @@ test('DashboardRenderer surfaces board, engine, robot, safety, and experiment da
   expect(document.getElementById('dashboard-exp-session-status').textContent).toBe('進行中');
   expect(document.getElementById('dashboard-exp-difficulty').textContent).toBe('12');
   expect(document.getElementById('vision-confidence').textContent).toBe('91% / 72%');
+  expect(document.getElementById('vision-calibration-status').textContent).toBe('Calibrated');
+  expect(document.getElementById('vision-calibration-status').className).toBe('status-ok');
+  expect(document.getElementById('vision-calibration-source').textContent).toBe('auto');
+  expect(document.getElementById('vision-calibration-error').textContent).toBe('0.012 px');
+  expect(document.getElementById('vision-calibration-quality').textContent).toBe('edge 1.32 / angle 89.5deg / area 13.2%');
 });
 
 test('DashboardRenderer keeps unsupported fields explicit instead of inventing values', () => {
@@ -120,4 +139,14 @@ test('DashboardRenderer keeps unsupported fields explicit instead of inventing v
   expect(document.getElementById('dashboard-exp-session-id').textContent).toBe('--');
   expect(document.getElementById('dashboard-exp-session-status').textContent).toBe('待命');
   expect(document.getElementById('dashboard-exp-difficulty').textContent).toBe('未提供');
+});
+
+test('DashboardRenderer falls back to FEN side-to-move for board turn', () => {
+  DashboardRenderer.render({
+    board: {
+      fen: 'rnbakabnr/9/9/9/9/9/9/9/9/RNBAKABNR b - - 0 1',
+    },
+  });
+
+  expect(document.getElementById('dashboard-board-turn').textContent).toBe('黑方');
 });

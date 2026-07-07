@@ -9,6 +9,7 @@ class TestContractGuardBlocksInvalid(unittest.TestCase):
         os.environ.setdefault("FAKE_VISION", "1")
         from backend.main import create_app
         from backend.events.bus.event_bus import bus
+        from backend.events.models.base_event import BaseEvent
 
         app, socketio = create_app()
         client = socketio.test_client(app, flask_test_client=app.test_client(), auth=socket_auth())
@@ -16,7 +17,11 @@ class TestContractGuardBlocksInvalid(unittest.TestCase):
             client.get_received()  # drain connect snapshot
 
             # pv must be a list; send a malformed payload to trigger contract guard.
-            bus.publish({"type": "ENGINE.INFO_UPDATED", "source": "test", "payload": {"pv": "not-a-list"}})
+            bus.publish(BaseEvent.create(
+                event_type="ENGINE.INFO_UPDATED",
+                source="test",
+                payload={"pv": "not-a-list"},
+            ))
             socketio.sleep(0.05)
 
             received = client.get_received()

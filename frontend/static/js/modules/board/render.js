@@ -7,6 +7,7 @@ import { DashboardRenderer } from './dashboard_renderer.js';
 import { subscribe, state } from '../state/state.js';
 import { UIRegistry } from '../ui/ui_registry.js';
 import { TelemetryRenderer } from '../ui/telemetry_renderer.js';
+import { SystemStatusStrip } from '../ui/system_status_strip.js';
 
 const mainBoard = new BoardRenderer('board-pieces');
 const adminBoard = new BoardRenderer('console-pieces');
@@ -18,18 +19,22 @@ export function initRenderer() {
     rendererInitialized = true;
 
     TelemetryRenderer.init('admin-logs');
+    SystemStatusStrip.init();
     VisionRenderer.init();
     DashboardRenderer.init();
     DashboardRenderer.render(state.snapshot);
+    updateTurnIndicators();
 
     unsubscribeHandlers.push(subscribe('board', ({ pieces, oldPieces }) => {
         mainBoard.render(oldPieces, pieces);
         adminBoard.render(oldPieces, pieces);
+        updateTurnIndicators();
         DashboardRenderer.render(state.snapshot);
     }));
 
     unsubscribeHandlers.push(subscribe('events', (event) => {
         TelemetryRenderer.renderEvent(event);
+        SystemStatusStrip.handleEvent(event);
 
         if (event.type === 'RECOVERY_STARTED') {
             window.showAlert?.(`Recovery started: ${event.payload?.strategy || 'unknown'}`, 'warning');
@@ -94,12 +99,7 @@ function updateUIStatus(uiState) {
     const statusEl = UIRegistry.get('statusText');
     if (statusEl) statusEl.innerText = `System: ${translatePhaseLabel(uiState?.phase)}`;
 
-    const turnEl = UIRegistry.get('turnIndicator');
-    if (turnEl) {
-        const isRed = boardState.turn === 'red';
-        turnEl.innerText = isRed ? 'Red turn' : 'Black turn';
-        turnEl.className = `turn-indicator-pill ${isRed ? 'red' : 'black'}`;
-    }
+    updateTurnIndicators(boardState);
 
     try {
         const overlay = document.getElementById('pause-overlay');
@@ -116,6 +116,49 @@ function updateUIStatus(uiState) {
     } catch {
         // Status overlay is non-critical.
     }
+}
+
+export function updateTurnIndicators(boardState = state.snapshot.board) {
+    const display = getTurnDisplay(boardState);
+    const indicators = [
+        UIRegistry.get('turnIndicator'),
+        UIRegistry.get('playerTurnIndicator'),
+    ];
+
+    indicators.forEach((turnEl) => {
+        if (!turnEl) return;
+        turnEl.innerText = display.label;
+        turnEl.className = `turn-indicator-pill ${display.className}`;
+        turnEl.setAttribute?.('title', display.description);
+        turnEl.setAttribute?.('aria-label', display.description);
+    });
+}
+
+export function getTurnDisplay(boardState = {}) {
+    const turn = normalizeTurn(boardState.turn) || normalizeTurn(turnFromFen(boardState.fen));
+    const isBlack = turn === 'black';
+    return {
+        label: isBlack ? '黑方移動' : '紅方移動',
+        className: isBlack ? 'black' : 'red',
+        description: isBlack ? '現在輪到黑方移動棋子' : '現在輪到紅方移動棋子',
+    };
+    return {
+        label: isBlack ? '黑方移動' : '紅方移動',
+        className: isBlack ? 'black' : 'red',
+        description: isBlack ? '現在輪到黑方移動棋子' : '現在輪到紅方移動棋子',
+    };
+}
+
+function normalizeTurn(value) {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (['black', 'b', 'dark'].includes(normalized)) return 'black';
+    if (['red', 'r', 'w', 'white', 'player'].includes(normalized)) return 'red';
+    return '';
+}
+
+function turnFromFen(fen) {
+    const parts = String(fen || '').trim().split(/\s+/);
+    return parts.length > 1 ? parts[1] : '';
 }
 
 function translatePhaseLabel(phase) {

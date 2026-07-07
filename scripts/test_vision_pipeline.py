@@ -14,15 +14,15 @@ def main() -> int:
         return 2
 
     try:
-        from backend.infrastructure.vision.detection.sahi_detector import SAHIDetector, SAHI_AVAILABLE
+        from backend.infrastructure.vision.detection.yolo_detector import YOLODetector, ULTRALYTICS_AVAILABLE
         from backend.infrastructure.vision.board.board_mapper import BoardMapper
         from backend.utils import config
     except Exception as e:
-        print(f"[vision-test] Failed to import SAHIDetector: {e}")
+        print(f"[vision-test] Failed to import YOLODetector: {e}")
         return 2
 
-    if not SAHI_AVAILABLE:
-        print("[vision-test] SAHI not available. Install with: pip install -r requirements.vision.txt")
+    if not ULTRALYTICS_AVAILABLE:
+        print("[vision-test] Ultralytics not available. Install with: pip install -r requirements.vision.txt")
         return 2
 
     model_path = os.environ.get("YOLO_MODEL_PATH") or getattr(config, "YOLO_MODEL_PATH", "")
@@ -33,7 +33,7 @@ def main() -> int:
 
     camera_index = int(os.environ.get("CAMERA_INDEX", "0"))
     print(f"[vision-test] Loading model: {model_path}")
-    detector = SAHIDetector(model_path=model_path)
+    detector = YOLODetector(model_path=model_path)
     if detector.model is None:
         print(f"[vision-test] Model load failed: {detector.get_status()}")
         return 1

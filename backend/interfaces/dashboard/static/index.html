@@ -3,313 +3,978 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>S.M.A.R.T Observability Dashboard</title>
+    <title>S.M.A.R.T Mission Control</title>
     <script src="/static/vendor/socket.io.min.js" defer></script>
     <script src="/dashboard/static/dashboard.js" defer></script>
     <style>
         :root {
-            --bg-dark: #0a0b10;
-            --card-bg: rgba(255, 255, 255, 0.05);
-            --accent-blue: #00d2ff;
-            --accent-purple: #9d50bb;
-            --text-primary: #ffffff;
-            --text-secondary: #a0a0a0;
-            --success: #00f2fe;
-            --warning: #f7971e;
-            --danger: #ff4b2b;
+            --bg: #0d1117;
+            --panel: #151b23;
+            --panel-2: #10161f;
+            --border: #2a3340;
+            --text: #edf2f7;
+            --muted: #8b98a9;
+            --blue: #58a6ff;
+            --green: #3fb950;
+            --yellow: #d29922;
+            --red: #f85149;
+            --gray: #6e7681;
         }
 
         * {
-            margin: 0;
-            padding: 0;
             box-sizing: border-box;
-            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         }
 
         body {
-            background-color: var(--bg-dark);
-            color: var(--text-primary);
-            overflow-x: hidden;
-            background: radial-gradient(circle at 50% 50%, #1a1b26 0%, #0a0b10 100%);
+            margin: 0;
             min-height: 100vh;
+            color: var(--text);
+            background: var(--bg);
+            font-family: "Segoe UI", Arial, sans-serif;
         }
 
-        header {
-            padding: 2rem;
+        .topbar {
             display: flex;
+            align-items: center;
             justify-content: space-between;
-            align-items: center;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-            backdrop-filter: blur(10px);
-            position: sticky;
-            top: 0;
-            z-index: 100;
+            gap: 16px;
+            padding: 18px 24px;
+            border-bottom: 1px solid var(--border);
+            background: #0b1017;
         }
 
-        .logo {
-            font-size: 1.5rem;
+        .brand {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .brand h1 {
+            margin: 0;
+            font-size: 20px;
             font-weight: 700;
-            background: linear-gradient(to right, var(--accent-blue), var(--accent-purple));
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            letter-spacing: 2px;
         }
 
-        .system-status {
-            display: flex;
-            gap: 1.5rem;
+        .brand span {
+            color: var(--muted);
+            font-size: 13px;
         }
 
-        .status-badge {
-            padding: 0.5rem 1rem;
-            border-radius: 20px;
-            background: var(--card-bg);
-            font-size: 0.8rem;
+        .connection {
             display: flex;
             align-items: center;
-            gap: 0.5rem;
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            gap: 8px;
+            color: var(--muted);
+            font-size: 13px;
         }
 
         .dot {
-            width: 8px;
-            height: 8px;
+            width: 9px;
+            height: 9px;
             border-radius: 50%;
-            background: var(--success);
-            box-shadow: 0 0 10px var(--success);
+            background: var(--gray);
         }
 
-        main {
-            padding: 2rem;
+        .dot.connected {
+            background: var(--green);
+        }
+
+        .dot.error {
+            background: var(--red);
+        }
+
+        .dashboard-grid {
             display: grid;
-            grid-template-columns: repeat(12, 1fr);
-            gap: 1.5rem;
-            max-width: 1600px;
+            grid-template-columns: repeat(12, minmax(0, 1fr));
+            gap: 16px;
+            padding: 16px;
+            max-width: 1680px;
             margin: 0 auto;
         }
 
-        .card {
-            background: var(--card-bg);
-            border-radius: 1.5rem;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            padding: 1.5rem;
-            backdrop-filter: blur(5px);
-            transition: transform 0.3s ease;
+        .panel {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            min-width: 0;
         }
 
-        .card:hover {
-            transform: translateY(-5px);
-            border-color: rgba(255, 255, 255, 0.2);
-        }
-
-        .card-header {
+        .panel-header {
             display: flex;
-            justify-content: space-between;
             align-items: center;
-            margin-bottom: 1.5rem;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 12px 14px;
+            border-bottom: 1px solid var(--border);
         }
 
-        .card-title {
-            font-weight: 600;
+        .panel-title {
+            margin: 0;
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--muted);
             text-transform: uppercase;
-            font-size: 0.9rem;
-            color: var(--text-secondary);
-            letter-spacing: 1px;
         }
 
-        /* Health Section */
-        .health-grid {
-            grid-column: span 12;
+        .panel-body {
+            padding: 14px;
+        }
+
+        .span-3 { grid-column: span 3; }
+        .span-4 { grid-column: span 4; }
+        .span-5 { grid-column: span 5; }
+        .span-7 { grid-column: span 7; }
+        .span-8 { grid-column: span 8; }
+        .span-12 { grid-column: span 12; }
+
+        .metric-grid {
             display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 1rem;
+            grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+            gap: 12px;
         }
 
         .metric {
-            text-align: center;
+            background: var(--panel-2);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 12px;
         }
 
         .metric-value {
-            font-size: 2rem;
+            display: block;
+            min-height: 26px;
+            font-size: 22px;
             font-weight: 700;
-            margin-bottom: 0.2rem;
+            overflow-wrap: anywhere;
         }
 
         .metric-label {
-            font-size: 0.7rem;
-            color: var(--text-secondary);
+            display: block;
+            margin-top: 4px;
+            color: var(--muted);
+            font-size: 12px;
         }
 
-        /* Event Log */
-        .log-card {
-            grid-column: span 12;
-            display: flex;
-            flex-direction: column;
-            height: 500px;
+        .signal-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+            gap: 10px;
         }
 
-        .log-container {
-            flex-grow: 1;
-            overflow-y: auto;
-            padding-right: 0.5rem;
+        .signal {
+            display: grid;
+            grid-template-columns: 12px minmax(0, 1fr);
+            grid-template-rows: auto auto;
+            align-items: center;
+            column-gap: 10px;
+            min-height: 54px;
+            padding: 10px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--panel-2);
         }
 
-        .log-entry {
-            padding: 0.8rem;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-            font-size: 0.85rem;
-            display: flex;
-            flex-direction: column;
-            gap: 0.3rem;
-            animation: slideIn 0.3s ease-out;
+        .signal-dot {
+            grid-row: 1 / span 2;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: var(--gray);
         }
 
-        @keyframes slideIn {
-            from { opacity: 0; transform: translateX(10px); }
-            to { opacity: 1; transform: translateX(0); }
-        }
-
-        .log-header {
-            display: flex;
-            justify-content: space-between;
-        }
-
-        .log-type {
-            font-weight: 600;
-            color: var(--accent-blue);
-            font-size: 0.75rem;
-        }
-
-        .log-time {
-            color: var(--text-secondary);
-            font-size: 0.7rem;
-        }
-
-        .log-payload {
-            color: var(--text-secondary);
-            font-family: monospace;
-            font-size: 0.8rem;
-            word-break: break-all;
-        }
-
-        /* Timeline Card */
-        .timeline-card {
-            grid-column: span 12;
-        }
-
-        .timeline-viz {
-            height: 150px;
-            width: 100%;
-            background: rgba(255, 255, 255, 0.02);
-            border-radius: 1rem;
-            position: relative;
+        .signal-label {
+            min-width: 0;
+            font-size: 13px;
+            font-weight: 700;
             overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
-        .timeline-marker {
-            position: absolute;
-            bottom: 0;
-            width: 2px;
-            background: var(--accent-blue);
-            transition: left 0.3s ease;
+        .signal-meta {
+            min-width: 0;
+            color: var(--muted);
+            font-size: 11px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
-        /* Scrollbar */
-        ::-webkit-scrollbar {
-            width: 4px;
-        }
-        ::-webkit-scrollbar-thumb {
-            background: rgba(255, 255, 255, 0.2);
-            border-radius: 2px;
+        .signal.status-running .signal-dot,
+        .signal.status-active .signal-dot,
+        .signal.status-processing .signal-dot {
+            background: var(--blue);
+            box-shadow: 0 0 14px rgba(88, 166, 255, 0.5);
         }
 
-        .badge-pulse {
-            animation: pulse 2s infinite;
+        .signal.status-success .signal-dot {
+            background: var(--green);
+            box-shadow: 0 0 14px rgba(63, 185, 80, 0.5);
         }
 
-        @keyframes pulse {
-            0% { box-shadow: 0 0 0 0 rgba(0, 210, 255, 0.4); }
-            70% { box-shadow: 0 0 0 10px rgba(0, 210, 255, 0); }
-            100% { box-shadow: 0 0 0 0 rgba(0, 210, 255, 0); }
+        .signal.status-warning .signal-dot,
+        .signal.status-stale .signal-dot {
+            background: var(--yellow);
+            box-shadow: 0 0 14px rgba(210, 153, 34, 0.5);
         }
 
-        .grid-bg {
-            position: fixed;
-            top: 0;
-            left: 0;
+        .signal.status-blocked .signal-dot,
+        .signal.status-error .signal-dot {
+            background: var(--red);
+            box-shadow: 0 0 14px rgba(248, 81, 73, 0.55);
+        }
+
+        .pipeline-flow {
+            display: grid;
+            grid-template-columns: repeat(11, minmax(0, 1fr));
+            align-items: center;
+            gap: 0;
+            min-height: 144px;
+        }
+
+        .pipeline-node {
+            position: relative;
+            z-index: 2;
+            min-height: 124px;
+            padding: 12px 12px 10px;
+            border: 1px solid var(--border);
+            border-top: 4px solid var(--gray);
+            border-radius: 8px;
+            background: var(--panel-2);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.16);
+        }
+
+        .pipeline-node-title {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            font-size: 13px;
+            font-weight: 700;
+        }
+
+        .pipeline-node-meta,
+        .pipeline-node-sub {
+            margin-top: 8px;
+            color: var(--muted);
+            font-size: 11px;
+            overflow-wrap: anywhere;
+        }
+
+        .pipeline-node-sub {
+            min-height: 14px;
+            opacity: 0.86;
+        }
+
+        .pipeline-node.status-running,
+        .pipeline-node.status-active,
+        .pipeline-node.status-processing {
+            border-top-color: var(--blue);
+        }
+
+        .pipeline-node.status-success {
+            border-top-color: var(--green);
+        }
+
+        .pipeline-node.status-warning,
+        .pipeline-node.status-stale {
+            border-top-color: var(--yellow);
+        }
+
+        .pipeline-node.status-blocked,
+        .pipeline-node.status-error {
+            border-top-color: var(--red);
+        }
+
+        .pipeline-edge {
+            display: flex;
+            position: relative;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: var(--muted);
+            min-width: 42px;
+            padding: 0 4px;
+        }
+
+        .pipeline-edge-line {
+            position: relative;
             width: 100%;
-            height: 100%;
-            background-image: linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
-                              linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
-            background-size: 40px 40px;
-            z-index: -1;
+            height: 4px;
+            border-radius: 999px;
+            background: var(--gray);
+            box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04);
+        }
+
+        .pipeline-edge-line::after {
+            content: "";
+            position: absolute;
+            right: -1px;
+            top: 50%;
+            transform: translateY(-50%);
+            border-top: 6px solid transparent;
+            border-bottom: 6px solid transparent;
+            border-left: 9px solid currentColor;
+        }
+
+        .pipeline-edge-label {
+            margin-top: 8px;
+            max-width: 96px;
+            color: var(--muted);
+            font-size: 10px;
+            text-align: center;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .pipeline-edge.status-running .pipeline-edge-line,
+        .pipeline-edge.status-active .pipeline-edge-line,
+        .pipeline-edge.status-processing .pipeline-edge-line {
+            background: var(--blue);
+            color: var(--blue);
+            box-shadow: 0 0 14px rgba(88, 166, 255, 0.38);
+        }
+
+        .pipeline-edge.status-success .pipeline-edge-line {
+            background: var(--green);
+            color: var(--green);
+            box-shadow: 0 0 14px rgba(63, 185, 80, 0.36);
+        }
+
+        .pipeline-edge.status-warning .pipeline-edge-line,
+        .pipeline-edge.status-stale .pipeline-edge-line {
+            background: var(--yellow);
+            color: var(--yellow);
+            box-shadow: 0 0 14px rgba(210, 153, 34, 0.38);
+        }
+
+        .pipeline-edge.status-blocked .pipeline-edge-line,
+        .pipeline-edge.status-error .pipeline-edge-line {
+            background: var(--red);
+            color: var(--red);
+            box-shadow: 0 0 16px rgba(248, 81, 73, 0.44);
+        }
+
+        .pipeline-edge.status-blocked .pipeline-edge-label,
+        .pipeline-edge.status-error .pipeline-edge-label {
+            color: var(--red);
+        }
+
+        .pipeline-edge.status-running .pipeline-edge-line::before,
+        .pipeline-edge.status-active .pipeline-edge-line::before,
+        .pipeline-edge.status-processing .pipeline-edge-line::before {
+            content: "";
+            position: absolute;
+            top: -3px;
+            left: 8%;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--blue);
+            animation: flow-pulse 1.6s linear infinite;
+        }
+
+        @keyframes flow-pulse {
+            from { transform: translateX(0); opacity: 0.2; }
+            30% { opacity: 1; }
+            to { transform: translateX(76px); opacity: 0.2; }
+        }
+
+        .topology {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 10px;
+        }
+
+        .node {
+            min-height: 92px;
+            padding: 12px;
+            border: 1px solid var(--border);
+            border-left: 4px solid var(--gray);
+            border-radius: 8px;
+            background: var(--panel-2);
+        }
+
+        .node-title {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            font-weight: 700;
+            font-size: 14px;
+        }
+
+        .node-meta {
+            margin-top: 8px;
+            color: var(--muted);
+            font-size: 12px;
+            overflow-wrap: anywhere;
+        }
+
+        .status-idle { border-left-color: var(--gray); }
+        .status-running { border-left-color: var(--blue); }
+        .status-active { border-left-color: var(--blue); }
+        .status-processing { border-left-color: var(--yellow); }
+        .status-success { border-left-color: var(--green); }
+        .status-warning { border-left-color: var(--yellow); }
+        .status-stale { border-left-color: var(--yellow); }
+        .status-blocked { border-left-color: var(--red); }
+        .status-offline { border-left-color: var(--gray); }
+        .status-error { border-left-color: var(--red); }
+
+        .pill {
+            display: inline-flex;
+            align-items: center;
+            min-height: 22px;
+            padding: 2px 8px;
+            border-radius: 999px;
+            border: 1px solid var(--border);
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        .pill.running, .pill.processing, .pill.active { color: var(--blue); }
+        .pill.success { color: var(--green); }
+        .pill.warning, .pill.stale { color: var(--yellow); }
+        .pill.blocked, .pill.error { color: var(--red); }
+        .pill.offline { color: var(--muted); }
+        .pill.error { color: var(--red); }
+
+        .filter-row {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        .filter-chip,
+        .filter-select {
+            min-height: 30px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--panel-2);
+            color: var(--text);
+            font-size: 12px;
+        }
+
+        .filter-chip {
+            padding: 0 10px;
+            cursor: pointer;
+        }
+
+        .filter-chip.active {
+            border-color: var(--blue);
+            color: var(--blue);
+        }
+
+        .filter-select {
+            padding: 0 8px;
+        }
+
+        .replay-layout {
+            display: grid;
+            grid-template-columns: minmax(260px, 360px) minmax(0, 1fr);
+            gap: 14px;
+            align-items: start;
+        }
+
+        .replay-board-shell {
+            min-width: 0;
+        }
+
+        .replay-board {
+            display: grid;
+            grid-template-columns: repeat(9, minmax(0, 1fr));
+            grid-template-rows: repeat(10, minmax(0, 1fr));
+            width: 100%;
+            aspect-ratio: 9 / 10;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            overflow: hidden;
+            background: #111923;
+        }
+
+        .replay-cell {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 0;
+            min-height: 0;
+            border-right: 1px solid rgba(139, 152, 169, 0.2);
+            border-bottom: 1px solid rgba(139, 152, 169, 0.2);
+            font-size: clamp(13px, 2.3vw, 24px);
+            font-weight: 700;
+        }
+
+        .replay-cell:nth-child(9n) {
+            border-right: 0;
+        }
+
+        .replay-cell:nth-last-child(-n + 9) {
+            border-bottom: 0;
+        }
+
+        .replay-piece {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 72%;
+            max-width: 34px;
+            aspect-ratio: 1;
+            border: 1px solid currentColor;
+            border-radius: 50%;
+            background: #0d1117;
+            line-height: 1;
+        }
+
+        .replay-piece.red {
+            color: #ff7b72;
+        }
+
+        .replay-piece.black {
+            color: #d0d7de;
+        }
+
+        .replay-panel {
+            display: grid;
+            gap: 12px;
+            min-width: 0;
+        }
+
+        .replay-controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .control-button,
+        .control-select {
+            min-height: 32px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--panel-2);
+            color: var(--text);
+            font-size: 12px;
+        }
+
+        .control-button {
+            padding: 0 12px;
+            cursor: pointer;
+        }
+
+        .control-button.active,
+        .control-button:focus-visible {
+            border-color: var(--blue);
+            color: var(--blue);
+        }
+
+        .control-button:disabled,
+        .control-select:disabled {
+            cursor: not-allowed;
+            opacity: 0.52;
+        }
+
+        .control-select {
+            min-width: 180px;
+            padding: 0 8px;
+        }
+
+        .replay-slider {
+            width: 100%;
+            accent-color: var(--blue);
+        }
+
+        .replay-meta-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 8px;
+        }
+
+        .replay-meta {
+            min-width: 0;
+            padding: 8px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--panel-2);
+        }
+
+        .replay-meta span {
+            display: block;
+            color: var(--muted);
+            font-size: 11px;
+        }
+
+        .replay-meta strong {
+            display: block;
+            margin-top: 4px;
+            min-height: 18px;
+            font-size: 13px;
+            overflow-wrap: anywhere;
+        }
+
+        .replay-step-list {
+            max-height: 184px;
+            overflow: auto;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+        }
+
+        .replay-step-row {
+            display: grid;
+            grid-template-columns: 54px 92px minmax(0, 1fr) 84px;
+            gap: 8px;
+            align-items: center;
+            width: 100%;
+            padding: 8px;
+            border: 0;
+            border-bottom: 1px solid var(--border);
+            background: transparent;
+            color: var(--text);
+            text-align: left;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        .replay-step-row:last-child {
+            border-bottom: 0;
+        }
+
+        .replay-step-row.active {
+            background: rgba(88, 166, 255, 0.12);
+            color: var(--blue);
+        }
+
+        .replay-fen {
+            min-height: 34px;
+            padding: 8px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--panel-2);
+            color: var(--muted);
+            font-size: 12px;
+            overflow-wrap: anywhere;
+        }
+
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+
+        .table th,
+        .table td {
+            padding: 8px 6px;
+            border-bottom: 1px solid var(--border);
+            text-align: left;
+            vertical-align: top;
+        }
+
+        .table th {
+            color: var(--muted);
+            font-weight: 600;
+        }
+
+        .scroll {
+            max-height: 360px;
+            overflow: auto;
+        }
+
+        .timeline-list,
+        .edge-list,
+        .error-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .timeline-item,
+        .edge-item,
+        .error-item {
+            display: grid;
+            grid-template-columns: 92px minmax(0, 1fr) auto;
+            gap: 10px;
+            align-items: center;
+            padding: 8px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--panel-2);
+            font-size: 12px;
+        }
+
+        .error-item {
+            border-left: 4px solid var(--red);
+        }
+
+        .muted {
+            color: var(--muted);
+        }
+
+        .mono {
+            font-family: Consolas, "Courier New", monospace;
+        }
+
+        @media (max-width: 1100px) {
+            .span-3, .span-4, .span-5, .span-7, .span-8 {
+                grid-column: span 12;
+            }
+
+            .metric-grid,
+            .topology,
+            .pipeline-flow,
+            .replay-meta-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .replay-layout {
+                grid-template-columns: 1fr;
+            }
+
+            .pipeline-edge {
+                display: none;
+            }
+        }
+
+        @media (max-width: 640px) {
+            .topbar {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+
+            .metric-grid,
+            .topology,
+            .pipeline-flow,
+            .replay-meta-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .timeline-item,
+            .edge-item,
+            .error-item,
+            .replay-step-row {
+                grid-template-columns: 1fr;
+            }
         }
     </style>
 </head>
 <body>
-    <div class="grid-bg"></div>
-    <header>
-        <div class="logo">S.M.A.R.T OBSERVABILITY</div>
-        <div class="system-status">
-            <div class="status-badge">
-                <div class="dot badge-pulse"></div>
-                SYSTEM ACTIVE
-            </div>
-            <div class="status-badge">
-                <span id="session-id">SESSION: CHESS-882</span>
-            </div>
+    <header class="topbar">
+        <div class="brand">
+            <h1>S.M.A.R.T Mission Control</h1>
+            <span>Low-overhead AI robotics observability dashboard</span>
+        </div>
+        <div class="connection">
+            <span class="dot" id="socket-dot"></span>
+            <span id="socket-status">Connecting</span>
         </div>
     </header>
 
-    <main>
-        <!-- Health Summary -->
-        <div class="health-grid">
-            <div class="card">
-                <div class="metric">
-                    <div class="metric-value" id="val-fps">0.0</div>
-                    <div class="metric-label">VISION FPS</div>
-                </div>
+    <main class="dashboard-grid">
+        <section class="panel span-12">
+            <div class="panel-header">
+                <h2 class="panel-title">System Signals</h2>
+                <span class="muted" id="signals-summary">waiting for diagnostics</span>
             </div>
-            <div class="card">
-                <div class="metric">
-                    <div class="metric-value" id="val-latency">0</div>
-                    <div class="metric-label">PIPELINE LATENCY (ms)</div>
-                </div>
+            <div class="panel-body">
+                <div class="signal-grid" id="signal-grid"></div>
             </div>
-            <div class="card">
-                <div class="metric">
-                    <div class="metric-value" id="val-cpu">0</div>
-                    <div class="metric-label">CPU USAGE (%)</div>
-                </div>
-            </div>
-            <div class="card">
-                <div class="metric">
-                    <div class="metric-value" id="val-events">0</div>
-                    <div class="metric-label">EVENTS / SEC</div>
-                </div>
-            </div>
-        </div>
+        </section>
 
-        <!-- Event Log -->
-        <div class="card log-card">
-            <div class="card-header">
-                <div class="card-title">Live Event Stream</div>
+        <section class="panel span-12">
+            <div class="panel-header">
+                <h2 class="panel-title">Health Summary</h2>
+                <span class="pill" id="pipeline-status">idle</span>
             </div>
-            <div class="log-container" id="log-container">
-                <!-- Entries added by JS -->
+            <div class="panel-body metric-grid">
+                <div class="metric"><span class="metric-value" id="metric-cpu">--</span><span class="metric-label">CPU</span></div>
+                <div class="metric"><span class="metric-value" id="metric-memory">--</span><span class="metric-label">Memory</span></div>
+                <div class="metric"><span class="metric-value" id="metric-threads">--</span><span class="metric-label">Threads</span></div>
+                <div class="metric"><span class="metric-value" id="metric-gpu">--</span><span class="metric-label">GPU</span></div>
+                <div class="metric"><span class="metric-value" id="metric-temp">--</span><span class="metric-label">Temperature</span></div>
+                <div class="metric"><span class="metric-value" id="metric-fps">--</span><span class="metric-label">Vision FPS</span></div>
+                <div class="metric"><span class="metric-value" id="metric-latency">--</span><span class="metric-label">Pipeline Latency</span></div>
+                <div class="metric"><span class="metric-value" id="metric-error-rate">--</span><span class="metric-label">Error Rate</span></div>
+                <div class="metric"><span class="metric-value" id="metric-p95-latency">--</span><span class="metric-label">P95 Latency</span></div>
+                <div class="metric"><span class="metric-value" id="metric-robot">--</span><span class="metric-label">Robot</span></div>
+                <div class="metric"><span class="metric-value" id="metric-serial">--</span><span class="metric-label">Serial</span></div>
+                <div class="metric"><span class="metric-value" id="metric-usb">--</span><span class="metric-label">USB</span></div>
+                <div class="metric"><span class="metric-value" id="metric-events">0</span><span class="metric-label">Events / sec</span></div>
+                <div class="metric"><span class="metric-value" id="metric-queue">0</span><span class="metric-label">Queued</span></div>
             </div>
-        </div>
+        </section>
 
-        <!-- Timeline Visualization -->
-        <div class="card timeline-card">
-            <div class="card-header">
-                <div class="card-title">Event Sequence Timeline</div>
+        <section class="panel span-12">
+            <div class="panel-header">
+                <h2 class="panel-title">Pipeline Flow</h2>
+                <span class="muted mono" id="pipeline-message">Vision -> Engine -> Robot</span>
             </div>
-            <div class="timeline-viz" id="timeline-viz">
-                <!-- Markers added by JS -->
+            <div class="panel-body">
+                <div class="pipeline-flow" id="pipeline-flow"></div>
             </div>
-        </div>
+        </section>
+
+        <section class="panel span-12">
+            <div class="panel-header">
+                <h2 class="panel-title">Replay Control</h2>
+                <span class="pill idle" id="replay-status">idle</span>
+            </div>
+            <div class="panel-body replay-layout">
+                <div class="replay-board-shell">
+                    <div class="replay-board" id="replay-board" aria-label="Replay board"></div>
+                </div>
+                <div class="replay-panel">
+                    <div class="replay-controls">
+                        <select class="control-select" id="replay-session" aria-label="Replay session"></select>
+                        <button type="button" class="control-button" id="replay-refresh">Refresh</button>
+                        <button type="button" class="control-button active" id="replay-live">Live</button>
+                        <button type="button" class="control-button" id="replay-load">Load</button>
+                        <button type="button" class="control-button" id="replay-export">Export</button>
+                    </div>
+                    <div class="replay-controls">
+                        <button type="button" class="control-button" id="replay-prev">Prev</button>
+                        <button type="button" class="control-button" id="replay-play">Play</button>
+                        <button type="button" class="control-button" id="replay-next">Next</button>
+                        <select class="control-select" id="replay-speed" aria-label="Replay speed">
+                            <option value="0.5">0.5x</option>
+                            <option value="1" selected>1x</option>
+                            <option value="2">2x</option>
+                            <option value="5">5x</option>
+                        </select>
+                    </div>
+                    <input class="replay-slider" id="replay-slider" type="range" min="0" max="0" value="0" aria-label="Replay step">
+                    <div class="replay-meta-grid">
+                        <div class="replay-meta"><span>Step</span><strong id="replay-step-label">--</strong></div>
+                        <div class="replay-meta"><span>Move</span><strong id="replay-move-label">--</strong></div>
+                        <div class="replay-meta"><span>Time</span><strong id="replay-time-label">--</strong></div>
+                        <div class="replay-meta"><span>Trace</span><strong id="replay-trace-label">--</strong></div>
+                    </div>
+                    <div class="replay-fen mono" id="replay-fen">No replay loaded</div>
+                    <div class="replay-step-list" id="replay-step-list"></div>
+                </div>
+            </div>
+        </section>
+
+        <section class="panel span-8">
+            <div class="panel-header">
+                <h2 class="panel-title">Node Details</h2>
+                <span class="muted mono" id="active-trace">trace: --</span>
+            </div>
+            <div class="panel-body">
+                <div class="topology" id="topology-nodes"></div>
+            </div>
+        </section>
+
+        <section class="panel span-4">
+            <div class="panel-header">
+                <h2 class="panel-title">Pipeline Edges</h2>
+            </div>
+            <div class="panel-body scroll">
+                <div class="edge-list" id="edge-list"></div>
+            </div>
+        </section>
+
+        <section class="panel span-7">
+            <div class="panel-header">
+                <h2 class="panel-title">Recent Telemetry</h2>
+                <span class="muted" id="telemetry-count">0 recorded</span>
+            </div>
+            <div class="panel-body">
+                <div class="filter-row">
+                    <button type="button" class="filter-chip active" data-event-filter="all">All</button>
+                    <button type="button" class="filter-chip" data-event-filter="errors">Errors</button>
+                    <button type="button" class="filter-chip" data-event-filter="active-trace">Active Trace</button>
+                    <select class="filter-select" id="module-filter" aria-label="Filter telemetry module">
+                        <option value="all">All modules</option>
+                        <option value="vision">Vision</option>
+                        <option value="engine">Engine</option>
+                        <option value="robot">Robot</option>
+                        <option value="state">State</option>
+                        <option value="queue">Queue</option>
+                        <option value="socket">Socket</option>
+                        <option value="storage">Storage</option>
+                        <option value="health">Health</option>
+                    </select>
+                </div>
+                <div class="scroll">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Source</th>
+                            <th>Trace</th>
+                            <th>Module</th>
+                            <th>Event</th>
+                            <th>Status</th>
+                            <th>Latency</th>
+                        </tr>
+                    </thead>
+                    <tbody id="event-table"></tbody>
+                </table>
+                </div>
+            </div>
+        </section>
+
+        <section class="panel span-5">
+            <div class="panel-header">
+                <h2 class="panel-title">Active Trace Timeline</h2>
+            </div>
+            <div class="panel-body scroll">
+                <div class="timeline-list" id="trace-timeline"></div>
+            </div>
+        </section>
+
+        <section class="panel span-7">
+            <div class="panel-header">
+                <h2 class="panel-title">Queue Monitor</h2>
+            </div>
+            <div class="panel-body scroll">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Queue</th>
+                            <th>Size</th>
+                            <th>Max</th>
+                            <th>Full</th>
+                            <th>Blocked</th>
+                            <th>Policy</th>
+                            <th>Dropped</th>
+                            <th>Age</th>
+                        </tr>
+                    </thead>
+                    <tbody id="queue-table"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="panel span-5">
+            <div class="panel-header">
+                <h2 class="panel-title">Worker Status</h2>
+            </div>
+            <div class="panel-body scroll">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Worker</th>
+                            <th>Status</th>
+                            <th>Running</th>
+                            <th>Error</th>
+                        </tr>
+                    </thead>
+                    <tbody id="worker-table"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="panel span-12">
+            <div class="panel-header">
+                <h2 class="panel-title">Errors And Warnings</h2>
+            </div>
+            <div class="panel-body scroll">
+                <div class="error-list" id="error-list"></div>
+            </div>
+        </section>
     </main>
-
 </body>
 </html>

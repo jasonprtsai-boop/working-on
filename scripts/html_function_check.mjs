@@ -218,21 +218,17 @@ async function runBrowserChecks(token) {
     await click(page, '#btn-toggle-video');
     await page.locator('#pane-video-view.active').waitFor({ state: 'attached', timeout: 8000 });
     addResult('前台主視圖', '切換即時影像 pane', true, 'pane-video-view.active');
-    await click(page, '#btn-reconnect-video');
     const videoSrc = await page.locator('#vision-live-feed').getAttribute('src');
-    addResult('前台主視圖', '重新連線影像按鈕', String(videoSrc || '').includes('/api/video_feed?t='), videoSrc || '');
-    const snapshotPopupPromise = page.waitForEvent('popup', { timeout: 10000 }).catch(() => null);
-    await click(page, '#btn-snapshot');
-    const snapshotPopup = await snapshotPopupPromise;
-    const snapshotUrl = snapshotPopup?.url() || '';
-    addResult('前台主視圖', 'Snapshot 按鈕開啟影像 API', snapshotUrl.includes('/api/snapshot'), snapshotUrl || 'popup not opened');
-    await snapshotPopup?.close().catch(() => {});
+    addResult('前台主視圖', '即時影像來源已連接', String(videoSrc || '').includes('/api/video_feed'), videoSrc || '');
+    addResult('前台主視圖', '影像狀態顯示存在', await page.locator('#video-status-pill').count() === 1);
+    addResult('前台主視圖', 'YOLO overlay canvas 存在', await page.locator('#yolo-canvas').count() === 1);
     await click(page, '#btn-toggle-board');
     await page.locator('#pane-board-view.active').waitFor({ state: 'attached', timeout: 8000 });
     addResult('前台主視圖', '切回棋盤 pane', true, 'pane-board-view.active');
 
-    await click(page, '.tab-btn[data-tab="status"]');
-    addResult('Sidebar', 'Status tab 可切換', await page.locator('#pane-status.active').count() === 1);
+    await click(page, '#btn-toggle-status');
+    await page.locator('#pane-status-view.active').waitFor({ state: 'attached', timeout: 8000 });
+    addResult('前台主視圖', '狀態 pane 可切換', true, 'pane-status-view.active');
 
     await click(page, '.depth-btn[data-depth="20"]');
     await page.waitForFunction(() => document.querySelector('#dashboard-engine-depth')?.textContent?.trim() === '20', { timeout: 8000 });
@@ -320,7 +316,8 @@ async function runBrowserChecks(token) {
     const logText = await text(page, '#admin-logs');
     addResult('Sidebar', 'Logs tab 有系統事件', logText.length > 0, truncate(logText, 180));
 
-    await click(page, '.tab-btn[data-tab="status"]');
+    await click(page, '#btn-toggle-status');
+    await page.locator('#pane-status-view.active').waitFor({ state: 'attached', timeout: 8000 });
     screenshots.console = path.join(REPORT_DIR, `html-check-${stamp}-console.png`);
     await page.screenshot({ path: screenshots.console, fullPage: true });
     addResult('前台畫面', 'Console screenshot 已保存', true, screenshots.console);

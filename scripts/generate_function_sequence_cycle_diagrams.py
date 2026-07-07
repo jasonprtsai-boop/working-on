@@ -40,7 +40,7 @@ def function_map() -> Diagram:
         ("auth", 545, 215, "驗證與防護\nbackend/interfaces/api/auth_*.py\nJWT + 速率限制", "#F8FAFC", "#475569"),
         ("api", 890, 215, "REST / Socket 入口\ncontrol_routes.py\nsocket_handler.py", PALETTE["blue_light"], PALETTE["blue"]),
         ("state", 545, 410, "事件與狀態\nEventBus.publish()\nStateManager.dispatch()\nReducers", PALETTE["violet_light"], PALETTE["violet"]),
-        ("vision", 890, 410, "視覺辨識功能\nvision_system.py\nVisionService\nYOLO/SAHI/FEN", PALETTE["teal_light"], PALETTE["teal"]),
+        ("vision", 890, 410, "視覺辨識功能\nvision_system.py\nVisionService\nYOLO/FEN", PALETTE["teal_light"], PALETTE["teal"]),
         ("engine", 545, 605, "AI 引擎功能\nEngineWorker\nEngineService.compute()\nPikafish UCI", PALETTE["amber_light"], PALETTE["amber"]),
         ("robot", 890, 605, "機械手臂功能\nWorkflowCoordinator\nRobotFacade\nRobotService/FakeRobot", PALETTE["red_light"], PALETTE["red"]),
         ("runtime", 545, 800, "執行環境功能\nAsyncRuntime\n工作者 / 佇列\n監控", "#EDE9FE", PALETTE["violet"]),
@@ -169,7 +169,7 @@ def closed_loop_cycle() -> Diagram:
     )
     center = (960, 545)
     nodes = [
-        ("sense", 820, 170, "1 感知\n相機 / 視覺辨識\nYOLO/SAHI/FEN", PALETTE["teal_light"], PALETTE["teal"]),
+        ("sense", 820, 170, "1 感知\n相機 / 視覺辨識\nYOLO/FEN", PALETTE["teal_light"], PALETTE["teal"]),
         ("state", 1310, 315, "2 狀態同步\nEventBus\nStateManager\nSYSTEM_STATE_UPDATE", PALETTE["violet_light"], PALETTE["violet"]),
         ("think", 1310, 690, "3 AI 決策\nEngineWorker\nPikafish\n最佳走法", PALETTE["amber_light"], PALETTE["amber"]),
         ("act", 820, 835, "4 實體執行\nRobotFacade\n取放流程\n狀態回報", PALETTE["red_light"], PALETTE["red"]),

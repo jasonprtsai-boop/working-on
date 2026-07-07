@@ -6,6 +6,7 @@ from backend.events.event_types import EventType
 from backend.events.models.base_event import BaseEvent
 from backend.state.store.state_store import state_store as game_state
 from backend.state.store.models.game_state import SystemPhase
+from backend.observability.error_reporter import publish_error_diagnostic
 from backend.utils.logger import logger
 
 
@@ -39,8 +40,17 @@ class GameService:
 
         try:
             fen, confidence = self.vision.get_current_fen()
-        except Exception:
+        except Exception as exc:
             logger.warning("[GameService] vision cycle failed", exc_info=True)
+            publish_error_diagnostic(
+                source="game_service",
+                module="vision",
+                code="vision_cycle_failed",
+                message=str(exc),
+                severity="warning",
+                status="warning",
+                recoverable=True,
+            )
             bus.publish(BaseEvent.create(
                 event_type=EventType.UI_TOAST,
                 payload={"text": "Vision cycle failed.", "level": "error"},
@@ -104,8 +114,13 @@ class GameService:
 
         if action_type == "UNDO":
             bus.publish(BaseEvent.create(
+                event_type=EventType.GAME_UNDO,
+                payload={"source_action": "UNDO"},
+                source="game_service",
+            ))
+            bus.publish(BaseEvent.create(
                 event_type=EventType.UI_TOAST,
-                payload={"text": "Undo is not implemented yet.", "level": "warning"},
+                payload={"text": "Undo applied.", "level": "success"},
                 source="game_service",
             ))
             return
@@ -154,8 +169,18 @@ class GameService:
                         payload={"text": "Difficulty updated.", "level": "info"},
                         source="game_service",
                     ))
-            except Exception:
+            except Exception as exc:
                 logger.warning("[GameService] set_difficulty failed", exc_info=True)
+                publish_error_diagnostic(
+                    source="game_service",
+                    module="engine",
+                    code="set_difficulty_failed",
+                    message=str(exc),
+                    severity="warning",
+                    status="warning",
+                    recoverable=True,
+                    details={"value": action_value},
+                )
             return
 
         bus.publish(BaseEvent.create(
@@ -168,7 +193,18 @@ class GameService:
         try:
             snap = game_state.to_dict()
             turn = (snap.get("game") or {}).get("current_turn")
-        except Exception:
+        except Exception as exc:
+            logger.warning("[GameService] AI trigger check failed", exc_info=True)
+            publish_error_diagnostic(
+                source="game_service",
+                module="engine",
+                code="ai_trigger_check_failed",
+                message=str(exc),
+                severity="warning",
+                status="warning",
+                recoverable=True,
+                throttle_seconds=30.0,
+            )
             return False
         return (turn == "black") and bool(self.ai) and (not self.is_paused)
 
@@ -179,4 +215,4 @@ class GameService:
             self.pending_ai_timestamp = 0.0
 
 
-game_service = None
+game_service = GameService()

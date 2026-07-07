@@ -29,6 +29,34 @@ class TestEngineServiceSafety(unittest.TestCase):
         self.assertIsNone(service.process)
         self.assertTrue(service.last_startup_error)
 
+    def test_shutdown_prevents_late_start_and_compute(self):
+        service = EngineService()
+        service._shutdown_requested = True
+        service.probe_compatible_pair = AsyncMock(side_effect=AssertionError("probe should not run"))
+
+        asyncio.run(service.start())
+        result = asyncio.run(service.compute("startpos", depth=1))
+
+        self.assertIsNone(service.process)
+        self.assertIsNone(result)
+        service.probe_compatible_pair.assert_not_called()
+
+    def test_start_aborts_if_shutdown_begins_during_probe(self):
+        service = EngineService()
+        service.active_nnue_path = "fake.nnue"
+
+        async def fake_probe():
+            service._shutdown_requested = True
+            return True
+
+        service.probe_compatible_pair = AsyncMock(side_effect=fake_probe)
+        service._open_engine = AsyncMock(side_effect=AssertionError("engine should not open"))
+
+        asyncio.run(service.start())
+
+        self.assertIsNone(service.process)
+        service._open_engine.assert_not_called()
+
     def test_compute_handles_process_closed_mid_loop_without_error_log(self):
         service = EngineService()
         service.running = True

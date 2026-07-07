@@ -3,9 +3,8 @@ numpy>=1.24.0
 opencv-python>=4.8.0
 tensorflow>=2.15.0
 
-# Detection stack (SAHI + YOLOv8)
-sahi>=0.11.20
-ultralytics>=8.0.0
+# Detection stack (YOLO26-compatible)
+ultralytics>=8.4.55
 onnxruntime>=1.16.0
 onnx>=1.14.0
 

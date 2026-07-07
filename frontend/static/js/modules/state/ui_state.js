@@ -6,6 +6,8 @@ export const uiState = {
     estop_triggered: undefined,
     safe_mode: undefined,
     participant_id: "",
+    ai_mode: "",
+    ai_mode_label: "",
     ai_difficulty: "",
     engine_depth: undefined,
     session_id: "",
@@ -21,6 +23,8 @@ export function updateUIState(payload) {
     uiState.estop_triggered = payload.estop_triggered ?? payload.e_stop ?? payload.emergency_stop ?? uiState.estop_triggered;
     uiState.safe_mode = payload.safe_mode ?? payload.safeMode ?? uiState.safe_mode;
     uiState.participant_id = payload.participant_id ?? payload.participantId ?? uiState.participant_id;
+    uiState.ai_mode = payload.ai_mode ?? payload.aiMode ?? uiState.ai_mode;
+    uiState.ai_mode_label = payload.ai_mode_label ?? payload.aiModeLabel ?? uiState.ai_mode_label;
     uiState.ai_difficulty = payload.ai_difficulty ?? payload.aiDifficulty ?? uiState.ai_difficulty;
     uiState.engine_depth = payload.engine_depth ?? payload.engineDepth ?? uiState.engine_depth;
     uiState.session_id = payload.session_id ?? payload.sessionId ?? uiState.session_id;

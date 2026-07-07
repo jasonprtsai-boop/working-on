@@ -7,6 +7,7 @@ from backend.utils.logger import logger
 from backend.events.models.base_event import BaseEvent
 from backend.events.event_types import EventType
 from backend.events.bus.event_bus import bus
+from backend.observability.error_reporter import publish_error_diagnostic
 
 class VisionService:
     """
@@ -62,6 +63,20 @@ class VisionService:
                 ))
             except Exception as e:
                 logger.error(f"[VisionService] Sync failed: {e}", exc_info=True)
+                publish_error_diagnostic(
+                    source="vision_service",
+                    module="vision",
+                    code="manual_sync_failed",
+                    message=str(e),
+                    severity="warning",
+                    status="warning",
+                    recoverable=True,
+                )
+                bus.publish(BaseEvent.create(
+                    event_type=EventType.UI_TOAST,
+                    payload={"text": "Vision sync failed.", "level": "error"},
+                    source="vision_service"
+                ))
 
     def on_board_detected(self, event: BaseEvent):
         """Processes raw detection results from the InferenceWorker."""
@@ -87,10 +102,14 @@ class VisionService:
             trace_id = getattr(event, "trace_id", None) or TraceManager.create_trace_id()
             fen = self._generate_fen(stable_state, turn=turn)
             fen_valid = self._fen_valid(fen)
+            source_timestamp = self._coerce_timestamp(result.get("timestamp"), fallback=event.timestamp)
             timestamp = time.time()
             latency_ms = float(result.get("latency_ms", 0.0) or 0.0)
             stable_payload = {
                 "timestamp": timestamp,
+                "source_timestamp": source_timestamp,
+                "stable_timestamp": timestamp,
+                "vision_age_ms": round(max(0.0, timestamp - source_timestamp) * 1000.0, 3),
                 "trace_id": trace_id,
                 "fen": fen,
                 "fen_after": fen,
@@ -104,7 +123,6 @@ class VisionService:
                 "confidence": avg_confidence,
                 "latency_ms": latency_ms,
                 "fps": self._fps_from_latency(latency_ms),
-                "sahi_enabled": self._sahi_enabled(),
             }
             logger.info(f"[VisionService] New stable FEN: {fen} | Trace: {trace_id}")
 
@@ -116,13 +134,14 @@ class VisionService:
             ))
 
         # 4. Diagnostics/UI heartbeat
-        timestamp = result.get("timestamp") or time.time()
+        timestamp = self._coerce_timestamp(result.get("timestamp"), fallback=time.time())
         latency_ms = float(result.get("latency_ms", 0.0) or 0.0)
         bus.publish(BaseEvent.create(
             event_type=EventType.VISION_FRAME_PROCESSED,
             source="vision_service",
             payload={
                 "timestamp": timestamp,
+                "processed_timestamp": time.time(),
                 "trace_id": getattr(event, "trace_id", ""),
                 "fen": fen,
                 "fen_after": fen,
@@ -136,7 +155,6 @@ class VisionService:
                 "avg_confidence": avg_confidence,
                 "min_confidence": min_confidence,
                 "confidence": avg_confidence,
-                "sahi_enabled": self._sahi_enabled(),
                 "stable": stable_payload is not None,
             }
         ))
@@ -220,19 +238,23 @@ class VisionService:
             return 0.0
         return round(1000.0 / latency, 3)
 
-    def _sahi_enabled(self) -> bool:
-        detector = getattr(self._vision, "detector", None)
-        name = detector.__class__.__name__.lower() if detector is not None else ""
-        return "sahi" in name
+    def _coerce_timestamp(self, value, *, fallback: float) -> float:
+        try:
+            timestamp = float(value)
+            if timestamp > 0:
+                return timestamp
+        except (TypeError, ValueError):
+            pass
+        return float(fallback)
 
     def get_current_fen(self) -> tuple[str, float]:
         """Returns the last validated stable FEN string and confidence."""
         state = self._vision.validator.last_stable_state
         confidence = getattr(self._vision.validator, "last_confidence", 0.95)
         if not state:
-            turn = self._turn_from_payload()
+            turn = self._turn_from_payload(allow_state_fallback=True)
             return f"rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR {turn} - - 0 1", confidence
-        return self._generate_fen(state, turn=self._turn_from_payload()), confidence
+        return self._generate_fen(state, turn=self._turn_from_payload(allow_state_fallback=True)), confidence
 
     def get_board_state(self):
         return self._vision.validator.last_stable_state or {}
@@ -243,12 +265,21 @@ class VisionService:
         except TypeError:
             return self._vision.fen_gen.generate(board_state)
 
-    def _turn_from_payload(self, payload=None) -> str:
+    def _turn_from_payload(self, payload=None, *, allow_state_fallback: bool = False) -> str:
         if isinstance(payload, dict):
             for key in ("current_turn", "turn", "side_to_move"):
                 value = payload.get(key)
                 if value:
                     return normalize_fen_turn(value)
+
+            fen = payload.get("fen") or payload.get("fen_after") or payload.get("fen_before")
+            if isinstance(fen, str):
+                parts = fen.split()
+                if len(parts) >= 2:
+                    return normalize_fen_turn(parts[1])
+
+        if not allow_state_fallback:
+            return "w"
 
         try:
             from backend.state.store.state_store import state_store

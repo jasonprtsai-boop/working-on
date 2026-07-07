@@ -16,8 +16,7 @@ class Detector:
     """
     OpenCV DNN detector for exported ONNX YOLO models.
 
-    Runtime uses SAHI+Ultralytics for the protected best.pt model. This class is
-    kept as a lightweight ONNX path for deployments that export the model later.
+    This class is the OpenCV-only ONNX YOLO path.
     """
 
     def __init__(self, model_path: str = config.YOLO_MODEL_PATH):
@@ -27,6 +26,7 @@ class Detector:
         self.confidence_threshold = float(getattr(config, "VISION_CONFIDENCE", 0.3))
         self.nms_iou = float(getattr(config, "VISION_NMS_IOU", 0.45))
         self.output_has_objectness = bool(getattr(config, "YOLO_OUTPUT_HAS_OBJECTNESS", False))
+        self.class_names = list(getattr(config, "YOLO_CLASS_NAMES", ()) or ())
         self.last_error = None
         if model_path:
             self.load_model(model_path)
@@ -135,12 +135,17 @@ class Detector:
             detections.append(
                 Detection(
                     class_id=class_id,
-                    class_name=str(class_id),
+                    class_name=self._class_name(class_id),
                     confidence=float(confidences[int(index)]),
                     bbox=BoundingBox(x1=float(x), y1=float(y), x2=float(x + bw), y2=float(y + bh)),
                 )
             )
         return detections
+
+    def _class_name(self, class_id: int) -> str:
+        if 0 <= class_id < len(self.class_names):
+            return self.class_names[class_id]
+        return str(class_id)
 
     def get_status(self) -> dict:
         return {
@@ -151,5 +156,6 @@ class Detector:
             "confidence_threshold": self.confidence_threshold,
             "nms_iou": self.nms_iou,
             "output_has_objectness": self.output_has_objectness,
+            "class_names": len(self.class_names),
             "last_error": self.last_error,
         }

@@ -14,8 +14,8 @@ if __name__ == "__main__":
         return str(v or "").strip().lower() in {"1", "true", "yes", "y", "on"}
 
     debug = _truthy(os.getenv("FLASK_DEBUG")) or _truthy(os.getenv("DEBUG"))
-    host = os.getenv("HOST", "127.0.0.1")
-    port = int(os.getenv("PORT", "5000"))
+    host = getattr(config, "BIND_HOST", os.getenv("HOST", "127.0.0.1"))
+    port = int(getattr(config, "PORT", os.getenv("PORT", "5000")))
     print(f"\nS.M.A.R.T. Chess Robot is running: http://{host}:{port}/\n", flush=True)
     # This project is served locally through Flask-SocketIO's threading mode.
     # Flask-SocketIO requires this flag when using Werkzeug outside debug mode.

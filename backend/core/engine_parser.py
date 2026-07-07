@@ -1,5 +1,6 @@
 import re
 from typing import Dict, Any, Optional
+from backend.events.models.base_event import BaseEvent
 
 class EngineParser:
     """
@@ -61,10 +62,10 @@ class EngineParser:
             else:
                 winrate = 1 / (1 + math.exp(-sval / 400.0))
 
-            # Frontend expects `type` + `payload` via `SYSTEM_STATE_UPDATE` socket event.
-            return {
-                "type": "ENGINE.INFO_UPDATED",
-                "payload": {
+            return BaseEvent.create(
+                event_type="ENGINE.INFO_UPDATED",
+                source="AI_ENGINE",
+                payload={
                     "depth": data.get("depth", 0),
                     "score": sval,
                     "eval_type": data["eval_type"],
@@ -76,7 +77,6 @@ class EngineParser:
                     "best_move": pv[0] if pv else "",
                     "pv": pv,
                 },
-                "source": "AI_ENGINE",
-            }
+            )
 
         return None

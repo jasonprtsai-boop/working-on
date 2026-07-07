@@ -31,6 +31,8 @@ class TestConfigSecurity(unittest.TestCase):
                 "TEST_MODE": "1",
                 "CORS_ALLOWED_ORIGINS": "*",
                 "CONTROL_AUTH_REQUIRED": "0",
+                "SOCKET_PUBLIC_SNAPSHOT_ENABLED": "1",
+                "EVENTBUS_ALLOW_LEGACY_DICT_EVENTS": "1",
             })
             result = self._import_config(env)
 
@@ -39,6 +41,8 @@ class TestConfigSecurity(unittest.TestCase):
         self.assertIn("TEST_MODE", output)
         self.assertIn("CORS_ALLOWED_ORIGINS", output)
         self.assertIn("CONTROL_AUTH_REQUIRED", output)
+        self.assertIn("SOCKET_PUBLIC_SNAPSHOT_ENABLED", output)
+        self.assertIn("EVENTBUS_ALLOW_LEGACY_DICT_EVENTS", output)
 
     def test_production_rejects_default_admin_even_if_insecure_defaults_allowed(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -51,6 +55,53 @@ class TestConfigSecurity(unittest.TestCase):
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("ADMIN_PASSWORD", result.stderr + result.stdout)
+
+    def test_production_rejects_default_setup_password(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            env = self._production_env(tmpdir)
+            env["SETUP_PASSWORD"] = "login"
+            result = self._import_config(env)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("SETUP_PASSWORD", result.stderr + result.stdout)
+
+    def test_development_rejects_default_secrets_unless_explicitly_allowed(self):
+        env = os.environ.copy()
+        env.update({
+            "APP_ENV": "development",
+            "TEST_MODE": "0",
+            "ALLOW_INSECURE_DEFAULTS": "0",
+            "CHESS_SECRET_KEY": "industrial-secret",
+            "ADMIN_PASSWORD": "888888",
+            "PYTHONPATH": os.getcwd(),
+        })
+        result = self._import_config(env)
+
+        output = result.stderr + result.stdout
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("CHESS_SECRET_KEY", output)
+        self.assertIn("ADMIN_PASSWORD", output)
+
+    def test_bind_all_requires_explicit_flag_and_hardened_config(self):
+        env = os.environ.copy()
+        env.update({
+            "APP_ENV": "development",
+            "TEST_MODE": "0",
+            "ALLOW_INSECURE_DEFAULTS": "0",
+            "CHESS_SECRET_KEY": "0123456789abcdef0123456789abcdef",
+            "ADMIN_PASSWORD": "not-default-admin-password",
+            "SETUP_PASSWORD": "not-default-setup-password",
+            "CORS_ALLOWED_ORIGINS": "http://127.0.0.1:5000",
+            "HOST": "0.0.0.0",
+            "PYTHONPATH": os.getcwd(),
+        })
+        result = self._import_config(env)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("SMART_CHESS_BIND_ALL", result.stderr + result.stdout)
+
+        env["SMART_CHESS_BIND_ALL"] = "1"
+        result = self._import_config(env)
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
 
     def test_production_rejects_trusting_xff_without_proxy_allowlist(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -117,6 +168,23 @@ class TestConfigSecurity(unittest.TestCase):
         self.assertNotEqual(relative_result.returncode, 0)
         self.assertIn("absolute path", relative_result.stderr + relative_result.stdout)
 
+    def test_production_rejects_engine_assets_outside_protected_root(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            engine_path = os.path.join(tmpdir, "pikafish.exe")
+            nnue_path = os.path.join(tmpdir, "pikafish.nnue")
+            open(engine_path, "wb").close()
+            open(nnue_path, "wb").close()
+
+            env = self._production_env(tmpdir)
+            env["ENGINE_PATH"] = engine_path
+            env["NNUE_PATH"] = nnue_path
+            result = self._import_config(env)
+
+        output = result.stderr + result.stdout
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("ENGINE_PATH", output)
+        self.assertIn("ENGINE_NNUE_CANDIDATES", output)
+
     def _production_env(self, tmpdir: str) -> dict:
         env = os.environ.copy()
         env.update({
@@ -124,11 +192,14 @@ class TestConfigSecurity(unittest.TestCase):
             "SYSTEM_MODE": "production",
             "CHESS_SECRET_KEY": "0123456789abcdef0123456789abcdef",
             "ADMIN_PASSWORD": "not-default-admin-password",
+            "SETUP_PASSWORD": "not-default-setup-password",
             "ALLOW_INSECURE_DEFAULTS": "0",
             "TEST_MODE": "0",
             "CORS_ALLOWED_ORIGINS": "https://example.test",
             "CONTROL_AUTH_REQUIRED": "1",
             "RATE_LIMITS_ENABLED": "1",
+            "SOCKET_PUBLIC_SNAPSHOT_ENABLED": "0",
+            "EVENTBUS_ALLOW_LEGACY_DICT_EVENTS": "0",
             "FAKE_VISION": "0",
             "FAKE_ROBOT": "0",
             "FAKE_AI": "0",

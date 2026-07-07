@@ -6,7 +6,7 @@ $ErrorActionPreference = "Stop"
 Write-Host "[setup] Starting environment setup..." -ForegroundColor Cyan
 
 function Test-IncompatiblePythonVersion([string]$versionText) {
-  return ($versionText -notmatch "Python 3\.(10|11|12)\.")
+  return ($versionText -notmatch "Python 3\.(9|10|11|12)\.")
 }
 
 # 1) Create or reuse venv
@@ -14,7 +14,7 @@ $needsRecreate = $false
 if (Test-Path ".venv\Scripts\python.exe") {
   $venvVersion = & ".\.venv\Scripts\python.exe" --version
   if (Test-IncompatiblePythonVersion $venvVersion) {
-    Write-Host "[setup] Existing .venv uses $venvVersion (incompatible with common ML wheels). Recreating..." -ForegroundColor Yellow
+    Write-Host "[setup] Existing .venv uses $venvVersion (unsupported by this project). Recreating..." -ForegroundColor Yellow
     Remove-Item -Recurse -Force ".venv"
     $needsRecreate = $true
   }
@@ -27,7 +27,7 @@ if ($needsRecreate) {
   $created = $false
 
   if (Get-Command "py" -ErrorAction SilentlyContinue) {
-    foreach ($ver in @("3.12", "3.11", "3.10")) {
+    foreach ($ver in @("3.11", "3.12", "3.10", "3.9")) {
       try {
         py -$ver -m venv .venv
         $created = $true
@@ -38,12 +38,12 @@ if ($needsRecreate) {
 
   if (-not $created) {
     if (-not (Get-Command "python" -ErrorAction SilentlyContinue)) {
-      Write-Error "[setup] No python found. Install Python 3.10, 3.11, or 3.12 (64-bit) and retry."
+      Write-Error "[setup] No python found. Install Python 3.11 recommended, or Python 3.9, 3.10, or 3.12 (64-bit), and retry."
       exit 1
     }
     $sysVer = & python --version
     if (Test-IncompatiblePythonVersion $sysVer) {
-      Write-Error "[setup] System python is $sysVer (incompatible). Install Python 3.10, 3.11, or 3.12 (64-bit) and retry."
+      Write-Error "[setup] System python is $sysVer (incompatible). Install Python 3.11 recommended, or Python 3.9, 3.10, or 3.12 (64-bit), and retry."
       exit 1
     }
     python -m venv .venv
@@ -51,7 +51,7 @@ if ($needsRecreate) {
 
   $finalVersion = & ".\.venv\Scripts\python.exe" --version
   if (Test-IncompatiblePythonVersion $finalVersion) {
-    Write-Error "[setup] Created venv uses $finalVersion (incompatible). Install Python 3.10, 3.11, or 3.12 and retry."
+    Write-Error "[setup] Created venv uses $finalVersion (incompatible). Install Python 3.11 recommended, or Python 3.9, 3.10, or 3.12, and retry."
     exit 1
   }
 }
@@ -86,11 +86,25 @@ foreach ($folder in $folders) {
 Write-Host "[setup] Initializing DB schema..." -ForegroundColor Cyan
 & ".\.venv\Scripts\python.exe" -m backend.infrastructure.database.init_db
 
-# 5) Engine check
-if (-not (Test-Path "backend\infrastructure\bin\pikafish-avx2.exe")) {
-  Write-Host "[setup] WARNING: pikafish-avx2.exe not found at backend/infrastructure/bin/." -ForegroundColor Yellow
+# 5) Protected asset checks
+$enginePath = "backend\infrastructure\protected_assets\engine\pikafish-avx2.exe"
+$nnuePath = "backend\infrastructure\protected_assets\engine\pikafish.nnue"
+$visionModelPath = "backend\infrastructure\protected_assets\vision\best.onnx"
+
+if (-not (Test-Path $enginePath)) {
+  Write-Host "[setup] WARNING: engine binary not found at $enginePath." -ForegroundColor Yellow
 } else {
   Write-Host "[setup] Engine binary detected." -ForegroundColor Green
+}
+if (-not (Test-Path $nnuePath)) {
+  Write-Host "[setup] WARNING: NNUE file not found at $nnuePath." -ForegroundColor Yellow
+} else {
+  Write-Host "[setup] NNUE file detected." -ForegroundColor Green
+}
+if (-not (Test-Path $visionModelPath)) {
+  Write-Host "[setup] WARNING: YOLO model not found at $visionModelPath." -ForegroundColor Yellow
+} else {
+  Write-Host "[setup] YOLO model detected." -ForegroundColor Green
 }
 
 Write-Host "[setup] Complete. Run: .\.venv\Scripts\python.exe .\main.py" -ForegroundColor Green

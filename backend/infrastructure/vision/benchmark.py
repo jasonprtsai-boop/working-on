@@ -40,8 +40,6 @@ class BenchmarkResult:
     recall: str
     metric_note: str
     requires_annotations: bool
-    roi_applied: bool
-    roi: str
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -49,7 +47,7 @@ class BenchmarkResult:
 
 class VisionDetectionBenchmark:
     """
-    Runtime comparison harness for full YOLO, SAHI, ROI+YOLO, and ROI+SAHI.
+    Runtime harness for the active YOLO vision pipeline.
 
     It intentionally reports mAP/Recall as N/A when no annotation dataset is
     provided, because runtime detections alone cannot prove accuracy.
@@ -114,7 +112,6 @@ class VisionDetectionBenchmark:
         status = self._detector_status(detector)
         skip_reason = self._skip_reason(status, detections_count)
         benchmark_status = "skipped" if skip_reason else "ok"
-        roi_applied, roi_text = self._roi_metadata(status)
 
         return BenchmarkResult(
             mode=mode,
@@ -136,8 +133,6 @@ class VisionDetectionBenchmark:
             recall="N/A",
             metric_note="requires_annotations" if not self.has_annotations else "annotation_metrics_not_implemented",
             requires_annotations=not self.has_annotations,
-            roi_applied=roi_applied,
-            roi=roi_text,
         )
 
     def publish_results(self, rows: Iterable[Dict[str, Any]], session_id: str = "vision-benchmark") -> None:
@@ -227,22 +222,11 @@ class VisionDetectionBenchmark:
     def _skip_reason(self, status: Dict[str, Any], detections_count: int) -> str:
         if detections_count:
             return ""
-        if status.get("roi_enabled"):
-            child = status.get("detector") if isinstance(status.get("detector"), dict) else {}
-            reason = self._skip_reason(child, detections_count)
-            return reason
         if status.get("available") is False:
             return str(status.get("last_error") or "detector_not_available")
         if status.get("loaded") is False:
             return str(status.get("last_error") or "detector_unloaded")
         return ""
-
-    def _roi_metadata(self, status: Dict[str, Any]) -> tuple[bool, str]:
-        if not status.get("roi_enabled"):
-            return False, ""
-        roi = status.get("last_roi")
-        roi_text = ",".join(str(value) for value in roi) if isinstance(roi, list) else ""
-        return bool(status.get("roi_applied")), roi_text
 
     def _skipped_result(self, mode: str, frame_id: int, reason: str) -> BenchmarkResult:
         return BenchmarkResult(
@@ -265,8 +249,6 @@ class VisionDetectionBenchmark:
             recall="N/A",
             metric_note="requires_annotations",
             requires_annotations=True,
-            roi_applied=False,
-            roi="",
         )
 
     def _avg(self, rows: List[Dict[str, Any]], key: str) -> float:

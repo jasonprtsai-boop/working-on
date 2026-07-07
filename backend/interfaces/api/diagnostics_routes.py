@@ -17,6 +17,7 @@ from backend.interfaces.api.shared import (
     runtime_vision_status,
     vision_system,
 )
+from backend.infrastructure.vision.model_assets import vision_model_report
 
 
 @api_bp.route("/health", methods=["GET"])
@@ -35,12 +36,21 @@ def health():
         current_app.logger.debug("bootstrap_status lookup failed during health check", exc_info=True)
         bootstrap_status = {}
 
+    runtime_vision = runtime_vision_status()
+    active_model_path = (
+        ((runtime_vision.get("detector") or {}) if isinstance(runtime_vision, dict) else {}).get("model_path")
+        or ((runtime_vision.get("model") or {}) if isinstance(runtime_vision, dict) else {}).get("path")
+        or getattr(config, "YOLO_MODEL_PATH", "")
+    )
+    model_report = vision_model_report(active_path=active_model_path)
+
     report = {
         "ok": bool(bootstrap_status.get("ready", True)),
         "assets": {
             "engine": asset_info(getattr(config, "ENGINE_PATH", "")),
             "nnue": asset_info(getattr(config, "NNUE_PATH", "")),
             "vision_model": asset_info(getattr(config, "YOLO_MODEL_PATH", "")),
+            "vision_models": model_report,
             "protected_root": asset_info(os.path.join("backend", "infrastructure", "protected_assets")),
         },
         "engine": {
@@ -63,13 +73,15 @@ def health():
         },
         "vision": {
             "fake_vision": bool(getattr(config, "FAKE_VISION", False)),
-            "fallback": vision_system.__class__.__name__.lower().startswith("fallback"),
+            "simulation": bool(getattr(config, "FAKE_VISION", False)),
             "detector": getattr(getattr(vision_system, "detector", None), "__class__", type("x", (), {})).__name__,
             "yolo_model_path": os.path.abspath(getattr(config, "YOLO_MODEL_PATH", "") or ""),
             "yolo_model_exists": os.path.exists(os.path.abspath(getattr(config, "YOLO_MODEL_PATH", "") or "")),
-            "model_type": getattr(config, "YOLO_MODEL_TYPE", "yolov8"),
+            "model_type": getattr(config, "YOLO_MODEL_TYPE", "yolo26"),
+            "ultralytics_min_version": getattr(config, "ULTRALYTICS_MIN_VERSION", "8.4.55"),
             "device": getattr(config, "VISION_DEVICE", "cpu"),
-            "runtime": runtime_vision_status(),
+            "runtime": runtime_vision,
+            "models": model_report,
             "tf_model_dir": os.path.abspath(os.path.join("backend", "infrastructure", "vision", "models", "chess_pieces")),
             "tf_model_exists": os.path.exists(os.path.abspath(os.path.join("backend", "infrastructure", "vision", "models", "chess_pieces", "saved_model.pb"))),
         },
@@ -77,7 +89,6 @@ def health():
             "numpy": has_module("numpy"),
             "cv2": has_module("cv2"),
             "tensorflow": has_module("tensorflow"),
-            "sahi": has_module("sahi"),
             "ultralytics": has_module("ultralytics"),
         },
         "runtime": {
@@ -104,17 +115,26 @@ def runtime_metrics():
 def vision_status():
     yolo_path = os.path.abspath(getattr(config, "YOLO_MODEL_PATH", "") or "")
     tf_saved_model = os.path.abspath(os.path.join("backend", "infrastructure", "vision", "models", "chess_pieces", "saved_model.pb"))
+    runtime_status = runtime_vision_status()
+    active_model_path = (
+        ((runtime_status.get("detector") or {}) if isinstance(runtime_status, dict) else {}).get("model_path")
+        or ((runtime_status.get("model") or {}) if isinstance(runtime_status, dict) else {}).get("path")
+        or yolo_path
+    )
     return jsonify({
         "fake_vision": bool(getattr(config, "FAKE_VISION", False)),
+        "simulation": bool(getattr(config, "FAKE_VISION", False)),
         "system": vision_system.__class__.__name__,
         "detector": getattr(getattr(vision_system, "detector", None), "__class__", type("x", (), {})).__name__,
         "camera_index": getattr(config, "CAMERA_INDEX", 0),
-        "runtime": runtime_vision_status(),
+        "runtime": runtime_status,
         "models": {
             "yolo_model_path": yolo_path,
             "yolo_model_exists": bool(yolo_path and os.path.exists(yolo_path)),
-            "yolo_model_type": getattr(config, "YOLO_MODEL_TYPE", "yolov8"),
+            "yolo_model_type": getattr(config, "YOLO_MODEL_TYPE", "yolo26"),
+            "ultralytics_min_version": getattr(config, "ULTRALYTICS_MIN_VERSION", "8.4.55"),
             "device": getattr(config, "VISION_DEVICE", "cpu"),
+            "vision_models": vision_model_report(active_path=active_model_path),
             "tf_saved_model": tf_saved_model,
             "tf_saved_model_exists": os.path.exists(tf_saved_model),
         },
@@ -122,7 +142,6 @@ def vision_status():
             "numpy": has_module("numpy"),
             "cv2": has_module("cv2"),
             "tensorflow": has_module("tensorflow"),
-            "sahi": has_module("sahi"),
             "ultralytics": has_module("ultralytics"),
         },
     })
@@ -142,6 +161,7 @@ def assets_status():
         "engine": asset_info(getattr(config, "ENGINE_PATH", "")),
         "nnue": asset_info(getattr(config, "NNUE_PATH", "")),
         "vision_model": asset_info(getattr(config, "YOLO_MODEL_PATH", "")),
+        "vision_models": vision_model_report(),
         "protected_root": asset_info(os.path.join("backend", "infrastructure", "protected_assets")),
     })
 

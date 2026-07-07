@@ -1,6 +1,7 @@
 param(
   [switch]$SkipGitCleanCheck,
-  [switch]$SkipRuntimeSmoke
+  [switch]$SkipRuntimeSmoke,
+  [switch]$SkipHtmlFunctionCheck
 )
 
 $ErrorActionPreference = "Stop"
@@ -100,7 +101,7 @@ Invoke-Step "Git diff hygiene" {
 }
 
 Invoke-Step "Git tracked-file safety" {
-  $blockedPattern = '(^|/)(\.env|\.venv|node_modules|logs|data|reports|analysis_artifacts)(/|$)|\.db$|\.log$|\.xlsx$|\.nnue$|\.pt$|\.exe$|backend/infrastructure/vision/models/'
+  $blockedPattern = '(^|/)(\.env|\.venv|node_modules|logs|data|reports|analysis_artifacts)(/|$)|\.db$|\.log$|\.xlsx$|\.nnue$|\.pt$|\.onnx$|\.exe$|backend/infrastructure/vision/models/'
   $blocked = Invoke-Git ls-files | Where-Object { $_ -match $blockedPattern }
   if ($blocked) {
     $blocked | ForEach-Object { Write-Host "Blocked tracked file: $_" -ForegroundColor Red }
@@ -117,6 +118,13 @@ Invoke-Step "Quality gate" {
 Invoke-Step "System diagnostic" {
   & $python scripts\system_diagnostic.py
   Assert-CommandSucceeded $LASTEXITCODE "system diagnostic"
+}
+
+if (-not $SkipHtmlFunctionCheck) {
+  Invoke-Step "HTML function check" {
+    & npm.cmd run check:html
+    Assert-CommandSucceeded $LASTEXITCODE "HTML function check"
+  }
 }
 
 if (-not $SkipRuntimeSmoke) {

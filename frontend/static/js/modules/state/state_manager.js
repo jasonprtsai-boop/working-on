@@ -40,7 +40,7 @@ export const state = {
             min_confidence: 0,
             status: "OK",
             mode: "unknown",
-            fallback: false
+            simulation: false
         }
     },
     version: 0

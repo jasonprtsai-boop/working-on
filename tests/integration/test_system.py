@@ -94,6 +94,29 @@ class TestSystemControlFlow(unittest.TestCase):
         self.assertEqual(second.headers.get("X-Idempotent-Replay"), "true")
         self.assertEqual((first.get_json() or {}).get("trace_id"), (second.get_json() or {}).get("trace_id"))
 
+    def test_move_endpoint_rejects_illegal_move_and_accepts_legal_move(self):
+        from backend.events.event_types import EventType
+        from backend.events.models.base_event import BaseEvent
+        from backend.state.store.manager.state_manager import state_manager
+
+        state_manager.dispatch(BaseEvent.create(EventType.SYSTEM_RESET, "test", {}))
+
+        illegal = self.client.post(
+            "/api/move",
+            json={"move": "b0d1", "player": "human"},
+            headers=self.auth_headers,
+        )
+        self.assertEqual(illegal.status_code, 400)
+        self.assertEqual((illegal.get_json() or {}).get("code"), "illegal_move")
+
+        legal = self.client.post(
+            "/api/move",
+            json={"move": "a0a1", "player": "human"},
+            headers=self.auth_headers,
+        )
+        self.assertEqual(legal.status_code, 200)
+        self.assertEqual((legal.get_json() or {}).get("action"), "move")
+
 
 if __name__ == "__main__":
     unittest.main()

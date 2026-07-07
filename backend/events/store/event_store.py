@@ -38,6 +38,24 @@ class EventStore:
     ) -> List[Dict[str, Any]]:
         return self._load_all_events(session_id=session_id, limit=limit, offset=offset, event_types=event_types)
 
+    def list_sessions(
+        self,
+        limit: int = 50,
+        event_types: Optional[Sequence[str]] = None,
+    ) -> List[Dict[str, Any]]:
+        if hasattr(self._store, "list_sessions"):
+            return self._store.list_sessions(limit=limit, event_types=event_types)
+        return self._list_sessions(limit=limit, event_types=event_types)
+
+    def count_replay(
+        self,
+        session_id: Optional[str] = None,
+        event_types: Optional[Sequence[str]] = None,
+    ) -> int:
+        if hasattr(self._store, "count_events"):
+            return self._store.count_events(session_id=session_id, event_types=event_types)
+        return len(self._load_all_events(session_id=session_id, event_types=event_types))
+
     def get_all(self, limit: Optional[int] = None, offset: int = 0) -> List[Dict[str, Any]]:
         return self._load_all_events(limit=limit, offset=offset)
 
@@ -66,7 +84,7 @@ class EventStore:
 
         conn = self._store._connect()
         try:
-            sql = "SELECT sequence_id, session_id, trace_id, type, payload, timestamp FROM events"
+            sql = "SELECT sequence_id, session_id, trace_id, type, payload, timestamp, event_id, source, metadata FROM events"
             params: List[Any] = []
             clauses = []
             if session_id:
@@ -89,22 +107,62 @@ class EventStore:
             conn.close()
 
         events: List[Dict[str, Any]] = []
-        for seq, session_id, trace_id, event_type, payload, timestamp in rows:
+        for row in rows:
+            seq, session_id, trace_id, event_type, payload, timestamp = row[:6]
+            event_id = row[6] if len(row) > 6 else None
+            source = row[7] if len(row) > 7 else ""
+            metadata = row[8] if len(row) > 8 else None
             try:
                 payload_obj = json.loads(payload) if payload else {}
             except Exception:
                 payload_obj = {"raw": payload}
+            try:
+                metadata_obj = json.loads(metadata) if metadata else {}
+            except Exception:
+                metadata_obj = {"raw": metadata}
             events.append(
                 {
                     "sequence_id": seq,
+                    "event_id": event_id,
                     "session_id": session_id,
                     "trace_id": trace_id,
                     "type": event_type,
+                    "source": source or "",
                     "payload": payload_obj,
+                    "metadata": metadata_obj,
                     "timestamp": timestamp,
                 }
             )
         return events
+
+    def _list_sessions(
+        self,
+        limit: int = 50,
+        event_types: Optional[Sequence[str]] = None,
+    ) -> List[Dict[str, Any]]:
+        events = self._load_all_events(event_types=event_types)
+        by_id: Dict[str, Dict[str, Any]] = {}
+        for event in events:
+            session_id = event.get("session_id") or ""
+            entry = by_id.setdefault(
+                session_id,
+                {
+                    "session_id": session_id,
+                    "event_count": 0,
+                    "first_timestamp": event.get("timestamp"),
+                    "last_timestamp": event.get("timestamp"),
+                    "first_sequence_id": event.get("sequence_id"),
+                    "last_sequence_id": event.get("sequence_id"),
+                    "latest_trace_id": event.get("trace_id"),
+                },
+            )
+            entry["event_count"] += 1
+            entry["last_timestamp"] = event.get("timestamp")
+            entry["last_sequence_id"] = event.get("sequence_id")
+            entry["latest_trace_id"] = event.get("trace_id") or entry.get("latest_trace_id")
+        sessions = list(by_id.values())
+        sessions.sort(key=lambda item: item.get("last_sequence_id") or 0, reverse=True)
+        return sessions[: max(1, int(limit))]
 
 
 event_store = EventStore()

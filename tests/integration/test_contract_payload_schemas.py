@@ -45,6 +45,23 @@ class TestContractPayloadSchemas(unittest.TestCase):
                         "engine": {"status": "OK"},
                         "robot": {"connected": False},
                         "vision": {"status": "OK"},
+                        "health": {"cpu_percent": 0.0, "memory_mb": 0.0},
+                        "telemetry": {"recorded_events": 0, "recent_events": []},
+                        "queue": {"robot": {"size": 0, "maxsize": 10, "full": False}},
+                        "queues": {"robot": {"size": 0, "maxsize": 10, "full": False}},
+                        "pipeline": {"status": "idle", "timeline": []},
+                        "topology": {"nodes": [], "edges": []},
+                        "workers": {"monitoring": {"status": "RUNNING"}},
+                        "event_bus": {"sequence": 0},
+                        "persistence": {"dropped_events": 0},
+                        "async_runtime": {"loop_running": True},
+                        "control": {"safe_mode": True},
+                        "runtime": {
+                            "event_bus": {"sequence": 0},
+                            "persistence": {"dropped_events": 0},
+                            "async_runtime": {"loop_running": True},
+                            "control": {"safe_mode": True},
+                        },
                     },
                 ),
                 (
@@ -68,7 +85,6 @@ class TestContractPayloadSchemas(unittest.TestCase):
                         "avg_confidence": 0.91,
                         "min_confidence": 0.91,
                         "confidence": 0.91,
-                        "sahi_enabled": True,
                         "stable": True,
                     },
                 ),
@@ -88,7 +104,7 @@ class TestContractPayloadSchemas(unittest.TestCase):
             for et, payload in test_events:
                 # Validate our outgoing test payloads match schema
                 validate_contract_payload(et, payload)
-                bus.publish({"type": et, "payload": payload, "source": "test"})
+                bus.publish(BaseEvent.create(event_type=et, source="test", payload=payload))
 
             # Also validate the canonical producer path: BaseEvent(ENGINE_ANALYSIS_COMPLETED) -> ENGINE.INFO_UPDATED
             bus.publish(
@@ -122,7 +138,6 @@ class TestContractPayloadSchemas(unittest.TestCase):
                         "avg_confidence": 0,
                         "min_confidence": 0,
                         "confidence": 0,
-                        "sahi_enabled": False,
                         "stable": False,
                     },
                 )

@@ -1,13 +1,16 @@
 import { installFakeDom, setupContainer } from './test_dom.js';
 import { UIRegistry } from '../static/js/modules/ui/ui_registry.js';
 import { TelemetryRenderer } from '../static/js/modules/ui/telemetry_renderer.js';
+import { SystemStatusStrip } from '../static/js/modules/ui/system_status_strip.js';
 import { renderDiagnostics } from '../static/js/modules/board/diagnostics_renderer.js';
+import { getTurnDisplay, updateTurnIndicators } from '../static/js/modules/board/render.js';
 
 beforeEach(() => {
   installFakeDom();
 
   setupContainer('system-status-text');
   setupContainer('turn-indicator');
+  setupContainer('player-turn-indicator');
   setupContainer('state-source-indicator');
   setupContainer('mini-fps');
   setupContainer('mini-latency');
@@ -21,6 +24,10 @@ beforeEach(() => {
   setupContainer('vision-yolo-latency');
   setupContainer('vision-recognition-time');
   setupContainer('vision-detection-summary');
+  setupContainer('vision-calibration-status');
+  setupContainer('vision-calibration-source');
+  setupContainer('vision-calibration-error');
+  setupContainer('vision-calibration-quality');
   setupContainer('board-pieces');
   setupContainer('console-pieces');
   setupContainer('eval-bar-fill');
@@ -36,6 +43,9 @@ beforeEach(() => {
   setupContainer('video-ts');
   setupContainer('stat-camera');
   setupContainer('video-status-pill');
+  setupContainer('system-status-lights');
+  setupContainer('system-status-detail');
+  setupContainer('system-status-updated');
 
   UIRegistry.init();
 });
@@ -43,6 +53,26 @@ beforeEach(() => {
 test('UIRegistry resolves canonical DOM references', () => {
   expect(UIRegistry.get('statusText')).toBe(document.getElementById('system-status-text'));
   expect(UIRegistry.get('videoFeed')).toBe(document.getElementById('vision-live-feed'));
+  expect(UIRegistry.get('playerTurnIndicator')).toBe(document.getElementById('player-turn-indicator'));
+  expect(UIRegistry.get('visionCalibrationStatus')).toBe(document.getElementById('vision-calibration-status'));
+});
+
+test('turn indicators update console and player view together', () => {
+  updateTurnIndicators({ turn: 'black' });
+
+  expect(document.getElementById('turn-indicator').innerText).toBe('\u9ed1\u65b9\u79fb\u52d5');
+  expect(document.getElementById('turn-indicator').className).toBe('turn-indicator-pill black');
+  expect(document.getElementById('player-turn-indicator').innerText).toBe('\u9ed1\u65b9\u79fb\u52d5');
+  expect(document.getElementById('player-turn-indicator').getAttribute('aria-label')).toBe('\u73fe\u5728\u8f2a\u5230\u9ed1\u65b9\u79fb\u52d5\u68cb\u5b50');
+});
+
+test('turn display falls back to FEN side-to-move when turn is missing', () => {
+  expect(getTurnDisplay({
+    fen: 'rnbakabnr/9/9/9/9/9/9/9/9/RNBAKABNR b - - 0 1',
+  })).toMatchObject({
+    label: '\u9ed1\u65b9\u79fb\u52d5',
+    className: 'black',
+  });
 });
 
 test('updateTelemetry writes cross-panel runtime metrics', () => {
@@ -75,10 +105,69 @@ test('TelemetryRenderer writes event text without injecting markup', () => {
   expect(line.querySelector('img')).toBe(null);
 });
 
-test('renderDiagnostics surfaces vision fallback mode', () => {
-  renderDiagnostics({ vision: { mode: 'fallback', status: 'FALLBACK' } });
+test('SystemStatusStrip renders telemetry topology and hardware lights', () => {
+  const lights = document.getElementById('system-status-lights');
+  SystemStatusStrip.init();
 
-  expect(document.getElementById('stat-camera').innerText).toBe('Fallback');
+  SystemStatusStrip.handleEvent({
+    type: 'DIAGNOSTICS.UPDATED',
+    payload: {
+      health: {
+        cpu_percent: 42,
+        memory_mb: 512,
+        gpu: { available: false, reason: 'not_detected' },
+        temperature: { available: false, reason: 'unsupported' },
+        timestamp: 1770000000,
+      },
+      robot: {
+        connected: true,
+        busy: false,
+        queue_size: 1,
+        serial: { available: true, status: 'connected' },
+        usb: { available: true, status: 'connected' },
+      },
+      vision: {
+        status: 'READY',
+        fps: 28,
+        detections_count: 2,
+        avg_confidence: 0.9,
+        fen: 'fen-main',
+      },
+      queue: {
+        robot: { size: 1, maxsize: 10, blocked: true },
+      },
+      workers: {
+        vision_inference: { status: 'RUNNING' },
+      },
+      telemetry: {
+        enabled: true,
+        recorded_events: 12,
+      },
+      topology: {
+        updated_at: 1770000000,
+        nodes: [
+          { id: 'engine', label: 'AI Engine', status: 'running', last_event: 'ENGINE_ANALYSIS_STARTED', latency_ms: 15 },
+          { id: 'storage', label: 'Storage', status: 'success', last_event: 'PERSISTED' },
+        ],
+        edges: [{ id: 'queue_robot', source: 'queue', target: 'robot', status: 'blocked' }],
+      },
+    },
+  });
+
+  expect(lights.children.length).toBeGreaterThan(10);
+  expect(lights.textContent).toContain('Queue');
+  expect(lights.textContent).toContain('Blocked');
+  expect(lights.textContent).toContain('Pikafish');
+  expect(lights.textContent).toContain('Running');
+  expect(lights.textContent).toContain('GPU');
+  expect(lights.textContent).toContain('Offline');
+  expect(document.getElementById('system-status-updated').textContent).toContain('updated');
+});
+
+test('renderDiagnostics surfaces vision simulation mode', () => {
+  renderDiagnostics({ vision: { mode: 'simulation', status: 'SIMULATION' } });
+
+  expect(document.getElementById('stat-camera').innerText).toBe('Simulation');
   expect(document.getElementById('stat-camera').className).toBe('status-warning');
 });
 

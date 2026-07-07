@@ -38,6 +38,7 @@ test('core app enters console directly and resets emergency stop via API', async
     <section id="view-landing"></section>
     <section id="view-player" class="hidden"></section>
     <section id="view-console" class="hidden"></section>
+    <div id="player-start-panel"></div>
     <div id="game-arena" class="hidden"></div>
     <div id="analysis-container"></div>
     <div id="toast-container"></div>
@@ -84,8 +85,8 @@ test('core app enters console directly and resets emergency stop via API', async
     <div id="tab-indicator"></div>
     <div id="admin-logs">boot log</div>
     ${[
-      'btn-role-player', 'btn-role-console', 'btn-exit', 'btn-console-exit',
-      'btn-toggle-board', 'btn-toggle-video', 'btn-reconnect-video', 'btn-snapshot',
+      'btn-role-player', 'btn-player-start', 'btn-role-console', 'btn-exit', 'btn-console-exit',
+      'btn-toggle-board', 'btn-toggle-video',
       'btn-estop-trigger', 'btn-resume-overlay', 'btn-export-excel', 'btn-export-csv',
       'btn-session-start', 'btn-session-end'
     ].map((id) => `<button id="${id}"></button>`).join('')}
@@ -114,6 +115,23 @@ test('core app enters console directly and resets emergency stop via API', async
   expect(document.getElementById('view-landing').classList.contains('active')).toBe(true);
   expect(document.getElementById('btn-export-excel').disabled).toBe(true);
   expect(document.getElementById('btn-estop-trigger').disabled).toBe(true);
+
+  document.getElementById('btn-role-player').click();
+  expect(document.getElementById('view-player').classList.contains('active')).toBe(true);
+  expect(document.getElementById('player-start-panel').classList.contains('hidden')).toBe(false);
+  expect(document.getElementById('game-arena').classList.contains('hidden')).toBe(true);
+
+  global.fetch.mockClear();
+  window.sessionStorage.setItem('setupToken', jwtWithPayload({ role: 'setup', exp: Math.floor(Date.now() / 1000) + 3600 }));
+  window.sessionStorage.setItem('setupRole', 'setup');
+  document.getElementById('btn-player-start').click();
+  await flushAsync();
+  const playerStartCall = global.fetch.mock.calls.find(([url]) => url === '/api/player/start');
+  expect(playerStartCall?.[1]).toEqual(expect.objectContaining({ method: 'POST' }));
+  expect(JSON.parse(playerStartCall?.[1]?.body || '{}')).toEqual(expect.objectContaining({ source: 'player_start_button' }));
+  expect(playerStartCall?.[1]?.headers.get('Authorization')).toMatch(/^Bearer /);
+  expect(document.getElementById('player-start-panel').classList.contains('hidden')).toBe(true);
+  expect(document.getElementById('game-arena').classList.contains('hidden')).toBe(false);
 
   document.getElementById('btn-role-console').click();
   expect(document.getElementById('view-console').classList.contains('active')).toBe(false);
@@ -167,4 +185,6 @@ test('core app enters console directly and resets emergency stop via API', async
   document.getElementById('btn-export-csv').click();
   await flushAsync();
   expect(global.fetch.mock.calls.map(([url]) => url)).toContain('/api/export/csv');
+
+  expect(global.fetch.mock.calls.find(([url]) => url === '/api/player/move')).toBeUndefined();
 });

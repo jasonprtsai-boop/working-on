@@ -12,10 +12,12 @@ from backend.events.event_types import EventType
 from backend.interfaces.api.shared import (
     accepted,
     api_bp,
+    bounded_int_arg,
     error_response,
     game_state,
     publish_base_event,
 )
+from backend.utils import config
 
 
 @api_bp.route("/snaplog", methods=["POST"])
@@ -55,8 +57,9 @@ def export_excel():
     from backend.utils.serialization.excel_report_service import export_research_workbook
 
     session_id = request.args.get("session")
+    limit = bounded_int_arg("limit", config.EXCEL_EXPORT_EVENT_LIMIT, 1, 50000)
     try:
-        result = export_research_workbook(session_id)
+        result = export_research_workbook(session_id, event_limit=limit)
     except Exception as exc:
         return error_response("export_failed", str(exc), 500, recoverable=False)
 
@@ -89,7 +92,17 @@ def export_csv():
 
     fd, path = tempfile.mkstemp(prefix="smart_chess_events_", suffix=".csv")
     os.close(fd)
-    headers = ["sequence_id", "session_id", "trace_id", "type", "timestamp", "payload_json"]
+    headers = [
+        "sequence_id",
+        "session_id",
+        "trace_id",
+        "type",
+        "timestamp",
+        "payload_json",
+        "event_id",
+        "source",
+        "metadata_json",
+    ]
     try:
         with open(path, "w", newline="", encoding="utf-8-sig") as handle:
             writer = csv.DictWriter(handle, fieldnames=headers)
@@ -102,6 +115,9 @@ def export_csv():
                     "type": event.get("type", ""),
                     "timestamp": event.get("timestamp", ""),
                     "payload_json": json.dumps(event.get("payload") or {}, ensure_ascii=False, sort_keys=True),
+                    "event_id": event.get("event_id", ""),
+                    "source": event.get("source", ""),
+                    "metadata_json": json.dumps(event.get("metadata") or {}, ensure_ascii=False, sort_keys=True),
                 })
     except Exception as exc:
         try:

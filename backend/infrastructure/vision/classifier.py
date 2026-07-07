@@ -51,7 +51,7 @@ class Classifier:
         if self._predictor.is_ready:
             return self._predictor.predict(cell, color)
 
-        # Fallback to Template Matching
+        # Template matching path for classifier-only tests/tools.
         gray = cv2.cvtColor(cell, cv2.COLOR_BGR2GRAY)
         best_score, best_code = -1.0, "P" if color == "red" else "p"
         prefix = "RNBAKCP" if color == "red" else "rnbakcp"

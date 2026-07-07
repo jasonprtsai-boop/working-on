@@ -47,7 +47,7 @@ def _blank_non_applicable_metrics(clean: Dict[str, Any], exporter: ExcelExporter
     if "ENGINE" not in event_type:
         groups.extend(["engine_score", "engine_depth", "engine_ms"])
     if "VISION" not in event_type:
-        groups.extend(["detections_count", "avg_confidence", "min_confidence", "yolo_latency_ms", "yolo_fps", "sahi_enabled"])
+        groups.extend(["detections_count", "avg_confidence", "min_confidence", "yolo_latency_ms", "yolo_fps"])
     if "ROBOT" not in event_type:
         groups.extend(["robot_ms"])
     for field in groups:

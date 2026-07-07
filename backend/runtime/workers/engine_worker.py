@@ -90,6 +90,19 @@ class EnginePollingWorker:
     def is_enabled(self): return self._enabled
     def backoff_sec(self): return self._backoff_sec
 
+    @property
+    def is_running(self):
+        return bool(self._task and not self._task.done() and not self._stop)
+
+    def stats(self):
+        return {
+            "enabled": self._enabled,
+            "last_analysis_at": self.last_analysis_at,
+            "failure_count": self.failure_count,
+            "backoff_sec": self._backoff_sec,
+            "last_error": self.last_error,
+        }
+
     async def _run_async(self):
         engine = container.get("engine")
         if not engine:
@@ -134,6 +147,10 @@ class EnginePollingWorker:
                     if result:
                         result = dict(result)
                         result["final"] = True
+                        result.setdefault("fen", fen)
+                        result.setdefault("fen_before", fen)
+                        result.setdefault("board", game.get("board") or {})
+                        result.setdefault("current_turn", game.get("current_turn"))
                         bus.publish(BaseEvent.create(
                             event_type=EventType.ENGINE_ANALYSIS_COMPLETED,
                             source="engine_worker",

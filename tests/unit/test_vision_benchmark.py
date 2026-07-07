@@ -5,7 +5,7 @@ import numpy as np
 
 from backend.infrastructure.vision.benchmark import VisionDetectionBenchmark
 from backend.infrastructure.vision.detection.detection_result import BoundingBox, Detection
-from backend.infrastructure.vision.detection.mode_factory import DetectorModeFactory, ROIAdjustedDetector
+from backend.infrastructure.vision.detection.mode_factory import DetectorModeFactory
 
 
 class FakeDetector:
@@ -24,64 +24,23 @@ class FakeDetector:
         return dict(self.status)
 
 
-class StaticROI:
-    def __init__(self, roi=(10, 20, 40, 50)):
-        self.roi = roi
-
-    def detect_change(self, _frame):
-        return self.roi
-
-
-class EmptyROI:
-    def detect_change(self, _frame):
-        return None
-
-
 class TestVisionBenchmark(unittest.TestCase):
-    def test_factory_builds_all_four_modes(self):
+    def test_factory_builds_yolo_mode(self):
         factory = DetectorModeFactory(
             model_path="",
             yolo_builder=lambda: FakeDetector("yolo"),
-            sahi_builder=lambda: FakeDetector("sahi"),
-            roi_builder=EmptyROI,
         )
 
-        detectors = factory.create_all(["full_yolo", "sahi", "roi_yolo", "roi_sahi"])
+        detectors = factory.create_all(["full_yolo"])
 
-        self.assertEqual(set(detectors), {"full_yolo", "sahi", "roi_yolo", "roi_sahi"})
-        self.assertIsInstance(detectors["roi_yolo"], ROIAdjustedDetector)
-        self.assertIsInstance(detectors["roi_sahi"], ROIAdjustedDetector)
-
-    def test_roi_detector_offsets_bbox_back_to_full_frame(self):
-        inner = FakeDetector(
-            detections=[
-                Detection(
-                    class_id=1,
-                    class_name="R",
-                    confidence=0.9,
-                    bbox=BoundingBox(1, 2, 5, 6),
-                )
-            ]
-        )
-        detector = ROIAdjustedDetector(inner, roi_optimizer=StaticROI())
-        frame = np.zeros((100, 100, 3), dtype=np.uint8)
-
-        detections = detector.detect(frame)
-
-        self.assertEqual(len(detections), 1)
-        self.assertEqual(detections[0].bbox.x1, 11)
-        self.assertEqual(detections[0].bbox.y1, 22)
-        self.assertEqual(detections[0].bbox.x2, 15)
-        self.assertEqual(detections[0].bbox.y2, 26)
-        self.assertTrue(detector.get_status()["roi_applied"])
+        self.assertEqual(set(detectors), {"full_yolo"})
+        self.assertEqual(detectors["full_yolo"].name, "yolo")
 
     def test_no_annotations_keep_map_and_recall_as_na(self):
         detection = Detection(0, "R", 0.95, BoundingBox(0, 0, 5, 5))
         factory = DetectorModeFactory(
             model_path="",
             yolo_builder=lambda: FakeDetector("yolo", [detection]),
-            sahi_builder=lambda: FakeDetector("sahi", [detection]),
-            roi_builder=EmptyROI,
         )
         benchmark = VisionDetectionBenchmark(
             modes=["full_yolo"],
@@ -104,25 +63,6 @@ class TestVisionBenchmark(unittest.TestCase):
         self.assertTrue(rows[1]["stable_update"])
         self.assertEqual(summary[0]["map_50"], "N/A")
         self.assertGreater(summary[0]["avg_fps"], 0)
-
-    def test_sahi_unavailable_is_reported_as_skipped(self):
-        factory = DetectorModeFactory(
-            model_path="",
-            yolo_builder=lambda: FakeDetector("yolo"),
-            sahi_builder=lambda: FakeDetector(
-                "sahi",
-                detections=[],
-                status={"available": False, "loaded": False, "last_error": "sahi_not_available"},
-            ),
-            roi_builder=EmptyROI,
-        )
-        benchmark = VisionDetectionBenchmark(modes=["sahi"], factory=factory)
-        frame = np.zeros((100, 100, 3), dtype=np.uint8)
-
-        rows = benchmark.run_frames([frame])
-
-        self.assertEqual(rows[0]["status"], "skipped")
-        self.assertEqual(rows[0]["skip_reason"], "sahi_not_available")
 
 
 if __name__ == "__main__":

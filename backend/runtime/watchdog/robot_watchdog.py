@@ -45,6 +45,8 @@ class RobotWatchdog(BaseWorker):
                     ))
 
                 await asyncio.sleep(2.0)
+            except asyncio.CancelledError:
+                break
             except Exception as e:
                 logger.error(f"[RobotWatchdog] Loop error: {e}")
                 await asyncio.sleep(5.0)

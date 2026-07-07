@@ -25,7 +25,16 @@ class AiService:
 
         try:
             fen = state.get("fen", "startpos")
-            if "rnbakabnr" not in fen.lower(): fen = "startpos"
+            if fen != "startpos":
+                try:
+                    from backend.utils.fen.parser import validate_fen
+
+                    if not validate_fen(fen):
+                        logger.warning("AI received invalid FEN; falling back to startpos.")
+                        fen = "startpos"
+                except Exception:
+                    logger.warning("AI FEN validation failed; falling back to startpos.", exc_info=True)
+                    fen = "startpos"
 
             result = await self.engine.compute(fen, depth=self.depth)
             if result:

@@ -10,6 +10,8 @@ export const VisionRenderer = {
     ctx: null,
     video: null,
     controller: null,
+    calibrationGridVisible: false,
+    lastVisionData: null,
 
     init() {
         if (this.controller && this.canvas) return;
@@ -41,16 +43,69 @@ export const VisionRenderer = {
 
     render(visionData) {
         if (!this.ctx || !visionData) return;
+        this.lastVisionData = visionData;
 
         RenderScheduler.schedule('vision-overlay', () => {
             this.resize();
             this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
+            this.drawCalibrationGrid(visionData);
             const detections = Array.isArray(visionData.detections) ? visionData.detections : [];
             detections.forEach(det => this.drawDetection(det));
             this.drawTelemetry(visionData);
             this.renderDetectionSummary(detections);
         });
+    },
+
+    setCalibrationGridVisible(visible) {
+        this.calibrationGridVisible = Boolean(visible);
+        if (this.lastVisionData) this.render(this.lastVisionData);
+    },
+
+    drawCalibrationGrid(visionData) {
+        if (!this.calibrationGridVisible || !this.ctx || !this.canvas) return;
+
+        const calibration = visionData?.calibration || {};
+        const calibrated = visionData?.calibrated ?? calibration.calibrated;
+        if (!calibrated) return;
+
+        const outputSize = Array.isArray(calibration.output_size) ? calibration.output_size : [];
+        const sourceWidth = Math.max(1, Number(outputSize[0] || this.video?.naturalWidth || this.canvas.width || 1));
+        const sourceHeight = Math.max(1, Number(outputSize[1] || this.video?.naturalHeight || this.canvas.height || 1));
+        const rect = this.containedImageRect(sourceWidth, sourceHeight);
+        const cols = Math.max(2, Number(visionData?.board_cols || calibration.cols || 9));
+        const rows = Math.max(2, Number(visionData?.board_rows || calibration.rows || 10));
+
+        this.ctx.save?.();
+        this.ctx.strokeStyle = 'rgba(14, 165, 233, 0.72)';
+        this.ctx.lineWidth = 1;
+        for (let c = 0; c < cols; c += 1) {
+            const x = rect.left + (rect.width * c) / (cols - 1);
+            this.ctx.beginPath();
+            this.ctx.moveTo(x, rect.top);
+            this.ctx.lineTo(x, rect.top + rect.height);
+            this.ctx.stroke();
+        }
+        for (let r = 0; r < rows; r += 1) {
+            const y = rect.top + (rect.height * r) / (rows - 1);
+            this.ctx.beginPath();
+            this.ctx.moveTo(rect.left, y);
+            this.ctx.lineTo(rect.left + rect.width, y);
+            this.ctx.stroke();
+        }
+
+        this.ctx.fillStyle = 'rgba(14, 165, 233, 0.95)';
+        [
+            [rect.left, rect.top],
+            [rect.left + rect.width, rect.top],
+            [rect.left + rect.width, rect.top + rect.height],
+            [rect.left, rect.top + rect.height],
+        ].forEach(([x, y]) => {
+            this.ctx.beginPath();
+            this.ctx.arc(x, y, 4, 0, Math.PI * 2);
+            this.ctx.fill();
+        });
+        this.ctx.restore?.();
     },
 
     drawDetection(det) {

@@ -7,7 +7,9 @@ import {
   hasValidAdminSession,
   isTokenExpired,
   loginAdmin,
-  setAdminToken
+  setAdminCookieSession,
+  setAdminToken,
+  setSetupToken
 } from '../static/js/modules/core/api_client.js';
 
 beforeEach(() => {
@@ -38,6 +40,18 @@ test('apiFetch attaches admin token and JSON content type', async () => {
   expect(options.headers.get('Content-Type')).toBe('application/json');
 });
 
+test('apiFetch uses setup token for player endpoints when admin token is absent', async () => {
+  setSetupToken('setup-token');
+
+  await apiFetch('/api/player/start', {
+    method: 'POST',
+    body: JSON.stringify({ source: 'test' }),
+  });
+
+  const [_url, options] = global.fetch.mock.calls[0];
+  expect(options.headers.get('Authorization')).toBe('Bearer setup-token');
+});
+
 test('clearAdminToken removes stored console credentials', () => {
   setAdminToken('t123');
   clearAdminToken();
@@ -45,6 +59,7 @@ test('clearAdminToken removes stored console credentials', () => {
   expect(window.sessionStorage.getItem('adminToken')).toBe(null);
   expect(window.localStorage.getItem('token')).toBe(null);
   expect(window.sessionStorage.getItem('adminRole')).toBe(null);
+  expect(window.sessionStorage.getItem('adminSessionExpiresAt')).toBe(null);
   expect(window.localStorage.getItem('role')).toBe(null);
   expect(getStoredRole()).toBe('viewer');
 });
@@ -61,12 +76,36 @@ test('setAdminToken stores the console role used by UI guards', () => {
   expect(getStoredRole()).toBe('admin');
 });
 
-test('loginAdmin stores returned token and role', async () => {
+test('loginAdmin stores cookie-backed session marker by default', async () => {
+  const exp = Math.floor(Date.now() / 1000) + 3600;
   global.fetch = jest.fn(async () => ({
     ok: true,
     status: 200,
     headers: new Headers(),
-    json: async () => ({ ok: true, token: 'jwt-token', role: 'admin' }),
+    json: async () => ({
+      ok: true,
+      token: 'jwt-token',
+      role: 'admin',
+      auth_mode: 'cookie',
+      token_storage: 'cookie',
+      expires_at: exp,
+    }),
+  }));
+
+  await loginAdmin('secret');
+
+  expect(window.sessionStorage.getItem('adminToken')).toBe(null);
+  expect(window.sessionStorage.getItem('adminRole')).toBe('admin');
+  expect(Number(window.sessionStorage.getItem('adminSessionExpiresAt'))).toBe(exp * 1000);
+  expect(hasValidAdminSession()).toBe(true);
+});
+
+test('loginAdmin still supports explicit bearer-token storage mode', async () => {
+  global.fetch = jest.fn(async () => ({
+    ok: true,
+    status: 200,
+    headers: new Headers(),
+    json: async () => ({ ok: true, token: 'jwt-token', role: 'admin', token_storage: 'session' }),
   }));
 
   await loginAdmin('secret');
@@ -93,6 +132,13 @@ test('hasValidAdminSession rejects malformed console tokens', () => {
   expect(window.sessionStorage.getItem('adminToken')).toBe(null);
 });
 
+test('hasValidAdminSession clears expired cookie session markers', () => {
+  setAdminCookieSession('admin', Math.floor(Date.now() / 1000) - 1);
+
+  expect(hasValidAdminSession()).toBe(false);
+  expect(window.sessionStorage.getItem('adminRole')).toBe(null);
+});
+
 test('apiJson returns parsed payload on successful response', async () => {
   global.fetch = jest.fn(async () => ({
     ok: true,
@@ -103,6 +149,7 @@ test('apiJson returns parsed payload on successful response', async () => {
 
   const payload = await apiJson('/api/state');
   expect(payload).toEqual({ ok: true, status: 'accepted' });
+  expect(global.fetch.mock.calls[0][1].credentials).toBe('same-origin');
 });
 
 test('apiJson raises a useful error on failed response payload', async () => {

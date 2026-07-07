@@ -1,4 +1,5 @@
 import os
+import uuid
 import unittest
 from io import BytesIO
 
@@ -38,7 +39,10 @@ class TestApiRoutes(unittest.TestCase):
             "/api/video_status",
             "/api/engine/status",
             "/api/estop/status",
+            "/api/vision/cameras",
+            "/api/vision/calibration",
             "/api/runtime/status",
+            "/api/robot/calibration",
             "/api/runtime/metrics",
             "/api/runtime/control",
             "/api/assets/status",
@@ -47,8 +51,10 @@ class TestApiRoutes(unittest.TestCase):
             "/api/vision/snapshot",
             "/api/snapshot",
             "/api/export/excel",
+            "/api/replay/sessions",
             "/api/replay/steps",
             "/api/replay/step/0",
+            "/api/replay/export",
         ):
             with self.subTest(path=path):
                 resp = client.get(path)
@@ -62,14 +68,29 @@ class TestApiRoutes(unittest.TestCase):
         self.assertIn("status", payload)
         self.assertIn("report", payload)
 
+    def test_vision_status_exposes_single_protected_yolo_model(self):
+        resp = self.client.get("/api/vision/status", headers=self.auth_headers)
+        self.assertEqual(resp.status_code, 200)
+        payload = resp.get_json() or {}
+        model_report = ((payload.get("models") or {}).get("vision_models") or {})
+        model = model_report.get("model") or {}
+
+        self.assertEqual(model.get("extension"), ".onnx")
+        self.assertTrue(model.get("protected"))
+        self.assertTrue((model_report.get("dataset_mapping") or {}).get("names_match_nc"))
+
     def test_runtime_status_exposes_workers_queues_and_event_bus(self):
         resp = self.client.get("/api/runtime/status", headers=self.auth_headers)
         self.assertEqual(resp.status_code, 200)
         payload = resp.get_json() or {}
         self.assertIn("workers", payload)
         self.assertIn("queues", payload)
+        self.assertIn("queue", payload)
         self.assertIn("event_bus", payload)
+        self.assertIn("async_runtime", payload)
         self.assertIn("persistence", payload)
+        self.assertIn("runtime", payload)
+        self.assertEqual(payload.get("queue"), payload.get("queues"))
         self.assertIn("global_subscribers", payload.get("event_bus", {}))
         self.assertIn("dropped_events", payload.get("persistence", {}))
 
@@ -80,6 +101,7 @@ class TestApiRoutes(unittest.TestCase):
         self.assertIn("timestamp", payload)
         self.assertIn("status_counts", payload.get("workers", {}))
         self.assertIn("event_bus", payload)
+        self.assertIn("async_runtime", payload)
         self.assertIn("persistence", payload)
         self.assertIn("queues", payload)
 
@@ -92,6 +114,14 @@ class TestApiRoutes(unittest.TestCase):
         self.assertEqual(payload.get("engine_depth"), 20)
         self.assertEqual(engine_worker.depth_on_change, 20)
         self.assertEqual(engine_worker.depth_on_idle, 20)
+
+        mode = self.client.post("/api/runtime/ai-mode", json={"mode": "companionship"}, headers=self.auth_headers)
+        self.assertEqual(mode.status_code, 200)
+        mode_payload = mode.get_json() or {}
+        self.assertEqual(mode_payload.get("ai_mode"), "companionship")
+        self.assertEqual(mode_payload.get("ai_mode_label"), "陪伴模式")
+        self.assertEqual(mode_payload.get("engine_depth"), 6)
+        self.assertEqual(engine_worker.depth_on_change, 6)
 
         safe = self.client.post("/api/runtime/safe-mode", json={"enabled": False}, headers=self.auth_headers)
         self.assertEqual(safe.status_code, 200)
@@ -138,6 +168,50 @@ class TestApiRoutes(unittest.TestCase):
         text = resp.get_data(as_text=True)
         resp.close()
         self.assertIn("sequence_id,session_id,trace_id,type,timestamp,payload_json", text)
+
+    def test_replay_routes_expose_sessions_steps_snapshot_and_export(self):
+        from backend.events.store.event_store import event_store
+
+        session_id = f"replay-test-{uuid.uuid4().hex}"
+        start_fen = "rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w - - 0 1"
+        event_store.append({
+            "session_id": session_id,
+            "trace_id": "trace-replay-test",
+            "type": "STATE_UPDATED",
+            "payload": {
+                "game": {
+                    "fen": start_fen,
+                    "move_history": ["b2b5"],
+                    "current_turn": "b",
+                }
+            },
+            "timestamp": 1234.0,
+        })
+
+        sessions = self.client.get("/api/replay/sessions", headers=self.auth_headers)
+        self.assertEqual(sessions.status_code, 200)
+        session_payload = sessions.get_json() or {}
+        self.assertTrue(any(item.get("session_id") == session_id for item in session_payload.get("sessions", [])))
+
+        steps = self.client.get(f"/api/replay/steps?session={session_id}", headers=self.auth_headers)
+        self.assertEqual(steps.status_code, 200)
+        step_payload = steps.get_json() or {}
+        self.assertEqual(step_payload.get("total"), 1)
+        self.assertEqual(step_payload["steps"][0]["move"], "b2b5")
+        self.assertEqual(step_payload["steps"][0]["trace_id"], "trace-replay-test")
+
+        snapshot = self.client.get(f"/api/replay/step/0?session={session_id}", headers=self.auth_headers)
+        self.assertEqual(snapshot.status_code, 200)
+        snapshot_payload = snapshot.get_json() or {}
+        self.assertEqual((snapshot_payload.get("_replay") or {}).get("session_id"), session_id)
+        self.assertEqual((snapshot_payload.get("board") or {}).get("fen"), start_fen)
+
+        exported = self.client.get(f"/api/replay/export?session={session_id}", headers=self.auth_headers)
+        self.assertEqual(exported.status_code, 200)
+        self.assertEqual(exported.mimetype, "application/json")
+        export_payload = exported.get_json() or {}
+        self.assertEqual(export_payload.get("count"), 1)
+        self.assertEqual(export_payload.get("session_id"), session_id)
 
 
 if __name__ == "__main__":

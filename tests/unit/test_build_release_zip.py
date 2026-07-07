@@ -17,6 +17,7 @@ class BuildReleaseZipTests(unittest.TestCase):
         self.assertIsNotNone(build_release_zip.exclusion_reason(Path("node_modules/jest/index.js"), is_dir=False))
         self.assertIsNotNone(build_release_zip.exclusion_reason(Path("data/runtime/app.db"), is_dir=False))
         self.assertIsNotNone(build_release_zip.exclusion_reason(Path("logs/app.log"), is_dir=False))
+        self.assertIsNotNone(build_release_zip.exclusion_reason(Path("analysis_artifacts/image_inventory.json"), is_dir=False))
         self.assertIsNotNone(
             build_release_zip.exclusion_reason(Path("chess_robot_experiment.before_excel_fix_20260515040648.xlsx"), is_dir=False)
         )
@@ -26,20 +27,28 @@ class BuildReleaseZipTests(unittest.TestCase):
                 is_dir=False,
             )
         )
+        self.assertIsNone(
+            build_release_zip.exclusion_reason(
+                Path("backend/infrastructure/protected_assets/vision/best.onnx"),
+                is_dir=False,
+            )
+        )
 
     def test_collect_release_files_prunes_ignored_directories(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             keep = root / "frontend" / "static" / "js" / "app.js"
             protected = root / "backend" / "infrastructure" / "protected_assets" / "vision" / "best.pt"
+            protected_onnx = root / "backend" / "infrastructure" / "protected_assets" / "vision" / "best.onnx"
             drop_files = [
                 root / ".env",
                 root / "node_modules" / "jest" / "index.js",
                 root / "data" / "runtime" / "app.db",
                 root / "logs" / "app.log",
+                root / "analysis_artifacts" / "image_inventory.json",
                 root / "chess_robot_experiment.xlsx",
             ]
-            for path in [keep, protected, *drop_files]:
+            for path in [keep, protected, protected_onnx, *drop_files]:
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text("x", encoding="utf-8")
 
@@ -49,6 +58,7 @@ class BuildReleaseZipTests(unittest.TestCase):
             self.assertEqual(
                 names,
                 [
+                    "backend/infrastructure/protected_assets/vision/best.onnx",
                     "backend/infrastructure/protected_assets/vision/best.pt",
                     "frontend/static/js/app.js",
                 ],

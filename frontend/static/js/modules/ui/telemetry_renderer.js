@@ -1,5 +1,5 @@
 /**
- * telemetry_renderer.js - [UI Layer] Renders real-time industrial event timeline.
+ * telemetry_renderer.js - [UI Layer] Renders the compact event timeline.
  */
 
 import { RenderScheduler } from '../core/render_scheduler.js';
@@ -35,10 +35,8 @@ export const TelemetryRenderer = {
             payloadEl.textContent = this.formatPayload(event.payload);
 
             line.append(timeEl, typeEl, payloadEl);
-
             this.container.prepend(line);
 
-            // Maintain line count
             if (this.container.children.length > this.maxLines) {
                 this.container.removeChild(this.container.lastChild);
             }
@@ -49,10 +47,11 @@ export const TelemetryRenderer = {
         if (!payload) return "";
         if (typeof payload === 'string') return payload;
 
-        // Brief summary of payload for telemetry view
-        if (payload.board?.last_move) return `走子：${payload.board.last_move}`;
-        if (payload.best_move) return `最佳著法：${payload.best_move}（${payload.score}）`;
-        if (payload.connected !== undefined) return `狀態：${payload.connected ? '連線中' : '離線'}`;
+        if (payload.board?.last_move) return `last move: ${payload.board.last_move}`;
+        if (payload.best_move) return `best move: ${payload.best_move} score: ${payload.score ?? '--'}`;
+        if (payload.connected !== undefined) return `connected: ${payload.connected ? 'yes' : 'no'}`;
+        if (payload.health?.cpu_percent !== undefined) return `cpu: ${Math.round(payload.health.cpu_percent)}%`;
+        if (payload.telemetry?.recorded_events !== undefined) return `events: ${payload.telemetry.recorded_events}`;
 
         return "";
     },

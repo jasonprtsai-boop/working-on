@@ -16,30 +16,43 @@ PROTECTED_ENDPOINTS = (
     ("/api/video_status", None, "operator"),
     ("/api/estop/status", None, "operator"),
     ("/api/runtime/engine-depth", None, "admin"),
+    ("/api/runtime/ai-mode", None, "admin"),
     ("/api/runtime/safe-mode", None, "admin"),
     ("/api/runtime/session/start", None, "admin"),
     ("/api/runtime/session/end", None, "admin"),
+    ("/api/setup/settings", "GET", "setup"),
+    ("/api/setup/settings", None, "setup"),
+    ("/api/setup/preflight", None, "setup"),
+    ("/api/setup/hardware-test", None, "setup"),
+    ("/api/setup/commissioning", None, "setup"),
     ("/api/runtime", None, "operator"),
     ("/api/assets", None, "operator"),
     ("/api/video_feed", None, "operator"),
+    ("/api/vision/cameras", None, "operator"),
     ("/api/vision/stream", None, "operator"),
     ("/api/vision/snapshot", None, "operator"),
+    ("/api/vision/calibration", "GET", "operator"),
+    ("/api/vision/calibration", None, "setup"),
     ("/api/snapshot", None, "operator"),
     ("/api/replay", None, "operator"),
+    ("/api/robot/calibration", "GET", "operator"),
+    ("/api/robot/calibration", None, "admin"),
     ("/api/control", None, "admin"),
     ("/api/move", None, "admin"),
+    ("/api/player/start", None, "operator"),
+    ("/api/player/move", None, "operator"),
     ("/api/reset", None, "admin"),
     ("/api/simulation", None, "admin"),
     ("/api/snaplog", None, "admin"),
     ("/api/estop/trigger", None, "admin"),
     ("/api/estop/reset", None, "admin"),
-    ("/api/vision/camera", None, "admin"),
+    ("/api/vision/camera", None, "setup"),
     ("/api/export", None, "admin"),
     ("/api/export_json", None, "admin"),
     ("/api/export_kpi", None, "admin"),
 )
 
-ROLE_LEVELS = {"viewer": 1, "operator": 2, "admin": 3}
+ROLE_LEVELS = {"viewer": 1, "operator": 2, "setup": 2, "admin": 3}
 
 
 def _required_role_for_request() -> str | None:
@@ -87,12 +100,14 @@ def _error_response(code: str, message: str, status: int, *, recoverable: bool =
 def _has_required_role(actual: str | None, required: str | None) -> bool:
     if not required:
         return True
+    if str(required).lower() == "setup":
+        return str(actual or "").lower() in {"setup", "admin"}
     return ROLE_LEVELS.get(str(actual or "").lower(), 0) >= ROLE_LEVELS.get(str(required).lower(), 999)
 
 
 def enforce_control_auth():
     """Blueprint before_request hook for control-plane endpoints."""
-    if request.endpoint == "api.login":
+    if request.endpoint in {"api.login", "api.setup_login"}:
         return _enforce_rate_limit("login", getattr(config, "LOGIN_RATE_LIMIT_PER_MINUTE", 20))
 
     required_role = _required_role_for_request()
@@ -108,7 +123,7 @@ def enforce_control_auth():
 
     payload = verify_request_token()
     if payload is None:
-        return _error_response("unauthorized", "Valid bearer token required.", 401)
+        return _error_response("unauthorized", "Valid session or bearer token required.", 401)
     if not _has_required_role(payload.get("role"), required_role):
         return _error_response("forbidden", f"{required_role.title()} role required.", 403)
     request.user_role = payload.get("role")

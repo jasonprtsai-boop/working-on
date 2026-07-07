@@ -7,9 +7,22 @@ export const boardState = {
 };
 
 export function updateBoard(payload) {
-    boardState.fen = payload.fen || boardState.fen;
-    boardState.turn = payload.turn || boardState.turn;
+    const nextFen = payload.fen || boardState.fen;
+    boardState.fen = nextFen;
+    boardState.turn = normalizeBoardTurn(payload.turn) || turnFromFen(nextFen) || boardState.turn;
     boardState.pieces = payload.pieces || boardState.pieces;
     boardState.move_count = payload.move_count ?? boardState.move_count;
     boardState.last_move = payload.last_move ?? payload.lastMove ?? boardState.last_move;
+}
+
+function normalizeBoardTurn(value) {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (['black', 'b', 'dark'].includes(normalized)) return 'black';
+    if (['red', 'r', 'w', 'white'].includes(normalized)) return 'red';
+    return '';
+}
+
+function turnFromFen(fen) {
+    const side = String(fen || '').trim().split(/\s+/)[1];
+    return normalizeBoardTurn(side);
 }

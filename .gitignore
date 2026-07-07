@@ -42,5 +42,6 @@ node_modules/
 # Engine
 *.nnue
 *.pt
+*.onnx
 *.exe
 backend/infrastructure/vision/models/

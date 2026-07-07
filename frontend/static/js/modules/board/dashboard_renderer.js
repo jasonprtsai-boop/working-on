@@ -40,7 +40,7 @@ function renderBoard(snapshot) {
     const vision = snapshot.vision || {};
     const fen = board.fen || vision.fen_after || vision.fen || '';
 
-    setText('dashboardBoardTurn', translateTurn(board.turn));
+    setText('dashboardBoardTurn', translateTurn(board.turn || turnFromFen(fen)));
     setText('dashboardBoardFen', fen || '--');
     setText('dashboardBoardLastMove', formatMove(board.last_move || board.lastMove));
     setText('dashboardBoardMoveCount', hasValue(board.move_count) ? board.move_count : '--');
@@ -52,9 +52,19 @@ function renderVision(snapshot) {
     const count = vision.detections_count ?? detections.length;
     const confidence = formatConfidence(vision.avg_confidence ?? vision.confidence);
     const minConfidence = formatConfidence(vision.min_confidence ?? vision.confidence);
+    const calibration = calibrationSnapshot(vision);
+    const quality = calibration.quality || {};
 
     setText('visionDetectionsCount', hasValue(count) ? count : 0);
     setText('visionConfidence', `${confidence} / ${minConfidence}`);
+    setStatus(
+        'visionCalibrationStatus',
+        calibration.calibrated === undefined ? '--' : (calibration.calibrated ? 'Calibrated' : 'Not calibrated'),
+        calibration.calibrated ? 'status-ok' : 'status-warning',
+    );
+    setText('visionCalibrationSource', calibration.source || '--');
+    setText('visionCalibrationError', formatPx(quality.max_reprojection_error_px));
+    setText('visionCalibrationQuality', formatCalibrationQuality(quality));
 }
 
 function renderEngine(snapshot) {
@@ -129,6 +139,8 @@ function renderExperiment(snapshot) {
     const difficulty = firstText(
         experiment.ai_difficulty,
         experiment.aiDifficulty,
+        ui.ai_mode_label,
+        ui.aiModeLabel,
         ui.ai_difficulty,
         ui.aiDifficulty,
         engine.ai_difficulty,
@@ -188,6 +200,11 @@ function translateTurn(turn) {
     return turn || '--';
 }
 
+function turnFromFen(fen) {
+    const parts = String(fen || '').trim().split(/\s+/);
+    return parts.length > 1 ? parts[1] : '';
+}
+
 function formatMove(move) {
     if (!move) return '--';
     if (typeof move === 'string') return move || '--';
@@ -245,13 +262,51 @@ function classifyCamera(vision) {
     if (status === 'ERROR' || status === 'OFFLINE') {
         return { label: 'Not Ready', className: 'status-error' };
     }
-    if (mode === 'fallback' || status === 'FALLBACK') {
-        return { label: 'Fallback', className: 'status-warning' };
+    if (mode === 'simulation' || status === 'SIMULATION') {
+        return { label: 'Simulation', className: 'status-warning' };
     }
     if (Number(vision.fps) > 0 || ['OK', 'READY', 'LIVE', 'RUNNING'].includes(status)) {
         return { label: 'Ready', className: 'status-ok' };
     }
     return { label: '--', className: 'status-warning' };
+}
+
+function calibrationSnapshot(vision) {
+    const calibration = vision.calibration && typeof vision.calibration === 'object' ? vision.calibration : {};
+    const quality = firstObject(
+        vision.calibration_quality,
+        vision.calibrationQuality,
+        calibration.quality,
+    );
+    const calibrated = firstDefined(vision.calibrated, calibration.calibrated);
+    const source = firstText(vision.calibration_source, vision.calibrationSource, calibration.source);
+    return {
+        calibrated,
+        source,
+        quality,
+    };
+}
+
+function firstObject(...values) {
+    return values.find((value) => value && typeof value === 'object' && !Array.isArray(value)) || {};
+}
+
+function formatPx(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return '--';
+    return `${numeric.toFixed(numeric >= 10 ? 1 : 3)} px`;
+}
+
+function formatCalibrationQuality(quality) {
+    if (!quality || typeof quality !== 'object') return '--';
+    const edge = Number(quality.edge_ratio);
+    const angle = Number(quality.min_angle_deg);
+    const area = Number(quality.area_ratio);
+    const parts = [];
+    if (Number.isFinite(edge)) parts.push(`edge ${edge.toFixed(2)}`);
+    if (Number.isFinite(angle)) parts.push(`angle ${angle.toFixed(1)}deg`);
+    if (Number.isFinite(area)) parts.push(`area ${(area * 100).toFixed(1)}%`);
+    return parts.join(' / ') || '--';
 }
 
 function firstDefined(...values) {

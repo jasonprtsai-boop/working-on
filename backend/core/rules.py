@@ -7,12 +7,20 @@ from backend.utils.logger import logger
 class ChessLogic:
     @staticmethod
     def validate_move(fen: str, move_str: str) -> bool:
-        """Validate basic UCCI coordinate format and board bounds."""
+        """Validate UCCI format, board bounds, and Xiangqi move legality."""
         if not move_str or not re.match(r"^[a-i][0-9][a-i][0-9]$", move_str):
             logger.error(f"Invalid move format: {move_str}")
             return False
 
-        return ChessLogic.is_in_board(move_str)
+        if not ChessLogic.is_in_board(move_str):
+            return False
+        try:
+            from backend.domain.game.rule_engine import rule_engine
+
+            return bool(rule_engine.is_valid_move({"fen": fen}, move_str))
+        except Exception as exc:
+            logger.error(f"Move legality validation failed: {exc}", exc_info=True)
+            return False
 
     @staticmethod
     def is_in_board(move_str: str) -> bool:
@@ -28,7 +36,9 @@ class ChessLogic:
     @staticmethod
     def parse_move(fen: str, move_str: str) -> Optional[dict]:
         """Convert a UCCI move like h2e2 into a small move dictionary."""
-        if not ChessLogic.validate_move(fen, move_str):
+        if not move_str or not re.match(r"^[a-i][0-9][a-i][0-9]$", move_str):
+            return None
+        if not ChessLogic.is_in_board(move_str):
             return None
 
         try:
@@ -47,26 +57,25 @@ class ChessLogic:
 
     @staticmethod
     def apply_move(fen: str, move_str: str) -> str:
-        """Apply a UCCI move to a Xiangqi FEN using basic board mutation."""
+        """Apply a legal UCCI move to a Xiangqi FEN using board mutation."""
         if not ChessLogic.validate_move(fen, move_str):
             return fen
 
         try:
-            parts = fen.split()
-            board = ChessLogic._fen_to_board(fen)
+            from backend.utils.fen.parser import board_to_fen, fen_to_board
+
+            board = fen_to_board(fen, empty=None)
 
             col_map = {c: i for i, c in enumerate("abcdefghi")}
             c1, r1 = col_map[move_str[0]], 9 - int(move_str[1])
             c2, r2 = col_map[move_str[2]], 9 - int(move_str[3])
 
             piece = board[r1][c1]
-            board[r1][c1] = "."
+            board[r1][c1] = None
             board[r2][c2] = piece
 
-            parts[0] = "/".join(ChessLogic._board_to_fen_rows(board))
-            if len(parts) > 1:
-                parts[1] = "b" if parts[1] == "w" else "w"
-            return " ".join(parts)
+            turn = "b" if _fen_turn(fen) == "w" else "w"
+            return board_to_fen(board, turn=turn)
         except Exception as e:
             logger.error(f"apply_move failed: {e}")
             return fen
@@ -106,3 +115,10 @@ class ChessLogic:
 
 
 chess_logic = ChessLogic()
+
+
+def _fen_turn(fen: str) -> str:
+    parts = str(fen or "").split()
+    if len(parts) >= 2 and parts[1].lower() == "b":
+        return "b"
+    return "w"

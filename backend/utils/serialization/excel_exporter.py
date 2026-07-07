@@ -13,6 +13,7 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.formatting.rule import CellIsRule
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.table import Table, TableStyleInfo
 
 from backend.utils.logger import logger
 
@@ -39,6 +40,9 @@ class ExcelExporter:
     PIPELINE_SHEET = "Pipeline_Log"
     REPORT_SHEETS = [
         "Overview",
+        "Session Summary",
+        "Collection Health",
+        "Trace Timeline",
         "Game Moves",
         "Vision YOLO",
         "Vision FEN Log",
@@ -73,7 +77,6 @@ class ExcelExporter:
         "min_confidence",
         "yolo_latency_ms",
         "yolo_fps",
-        "sahi_enabled",
         "camera_status",
         "engine_score",
         "engine_depth",
@@ -148,6 +151,9 @@ class ExcelExporter:
     )
     TAB_COLORS = {
         "Overview": "2563EB",
+        "Session Summary": "0F766E",
+        "Collection Health": "0891B2",
+        "Trace Timeline": "4F46E5",
         "Pipeline_Log": "1F2937",
         "Game Moves": "16A34A",
         "Vision YOLO": "0284C7",
@@ -463,8 +469,9 @@ class ExcelExporter:
         snapshot = self._state_snapshot(game_state)
         game = snapshot.get("game", {}) if isinstance(snapshot.get("game"), dict) else {}
 
-        data = event.get("data", {}) if isinstance(event.get("data"), dict) else {}
-        event_type_raw = str(event.get("type", "UNKNOWN"))
+        data = self._payload(event)
+        metadata = event.get("metadata", {}) if isinstance(event.get("metadata"), dict) else {}
+        event_type_raw = str(event.get("type") or event.get("event_type") or data.get("type") or data.get("event_type") or "UNKNOWN")
         event_type = self._canonical_event_type(event_type_raw)
         upper_type = event_type.upper()
         vision_payload = self._dict_child(data, "vision")
@@ -535,16 +542,26 @@ class ExcelExporter:
             robot_status = self._first_value(data, "status", default="")
         robot_ms = self._first_from_sources([data, robot_payload], "robot_ms", "duration_ms", default="") if robot_context else ""
 
-        event_id_raw = event.get("event_id") or data.get("event_id")
-        session_id = data.get("session_id") or event.get("session_id") or snapshot.get("session_id") or game.get("session_id") or ""
-        trace_id = event.get("trace_id") or data.get("trace_id") or ""
+        event_id_raw = event.get("event_id") or data.get("event_id") or metadata.get("event_id")
+        session_id = (
+            event.get("session_id")
+            or data.get("session_id")
+            or metadata.get("session_id")
+            or vision_payload.get("session_id")
+            or engine_payload.get("session_id")
+            or robot_payload.get("session_id")
+            or snapshot.get("session_id")
+            or game.get("session_id")
+            or ""
+        )
+        trace_id = event.get("trace_id") or data.get("trace_id") or metadata.get("trace_id") or ""
 
         record = {
             "event_id": event_id_raw or self._next_event_id(),
             "session_id": session_id,
             "timestamp": self._timestamp_text(event.get("timestamp") or data.get("timestamp")),
             "event_type": event_type,
-            "source": event.get("source", ""),
+            "source": event.get("source") or data.get("source") or metadata.get("source") or "",
             "trace_id": trace_id,
             "fen_before": fen_before,
             "fen_after": fen_after,
@@ -559,7 +576,6 @@ class ExcelExporter:
             "min_confidence": min_confidence if vision_context else "",
             "yolo_latency_ms": self._first_from_sources([data, vision_payload], "yolo_latency_ms", "latency_ms", default="") if vision_context else "",
             "yolo_fps": self._first_from_sources([data, vision_payload], "fps", "yolo_fps", default="") if vision_context else "",
-            "sahi_enabled": self._first_from_sources([data, vision_payload], "sahi_enabled", default="") if vision_context else "",
             "camera_status": camera_status,
             "engine_score": engine_score,
             "engine_depth": engine_depth,
@@ -571,6 +587,9 @@ class ExcelExporter:
             "raw_payload": self._safe_json(data),
             "_event_type_raw": event_type_raw,
             "_event_id_generated": not bool(event_id_raw),
+            "_sequence_id": event.get("sequence_id", ""),
+            "_metadata": metadata,
+            "_row_number": event.get("sequence_id", "") or event.get("_row_number", ""),
         }
         self._apply_audit(record)
         return record
@@ -787,30 +806,47 @@ class ExcelExporter:
             self._flush_queue(timeout=2.0)
             with self._lock:
                 records = self._load_records(session_id)
-                wb = Workbook()
-                default = wb.active
-                wb.remove(default)
-
-                self._write_overview(wb, records, session_id)
-                self._write_pipeline(wb, records)
-                self._write_game_moves(wb, records)
-                self._write_vision_yolo(wb, records)
-                self._write_vision_fen(wb, records)
-                self._write_vision_detections(wb, records)
-                self._write_vision_mode_comparison(wb, records)
-                self._write_ucci_trace(wb, records)
-                self._write_engine_ai(wb, records)
-                self._write_robot_control(wb, records)
-                self._write_system_events(wb, records)
-                self._write_errors(wb, records)
-                self._write_data_quality(wb, records)
-                self._write_raw_payload(wb, records)
-
-                self._style_workbook(wb)
-                self._save_and_close(wb, target_filename)
+                self._write_report_workbook(records, session_id, target_filename)
         except Exception as exc:
             logger.error("[ExcelExporter] export_session failed: %s", exc, exc_info=True)
             raise
+
+    def export_events(self, events: Iterable[Dict[str, Any]], target_filename: str, session_id: Optional[str] = None) -> None:
+        """Build a research workbook from canonical SQLite event-store rows."""
+        try:
+            records = self._records_from_events(events)
+            if session_id:
+                records = [row for row in records if str(row.get("session_id", "")) == str(session_id)]
+            self._write_report_workbook(records, session_id, target_filename)
+        except Exception as exc:
+            logger.error("[ExcelExporter] export_events failed: %s", exc, exc_info=True)
+            raise
+
+    def _write_report_workbook(self, records: List[Dict[str, Any]], session_id: Optional[str], target_filename: str) -> None:
+        wb = Workbook()
+        default = wb.active
+        wb.remove(default)
+
+        self._write_overview(wb, records, session_id)
+        self._write_session_summary(wb, records)
+        self._write_collection_health(wb, records)
+        self._write_trace_timeline(wb, records)
+        self._write_pipeline(wb, records)
+        self._write_game_moves(wb, records)
+        self._write_vision_yolo(wb, records)
+        self._write_vision_fen(wb, records)
+        self._write_vision_detections(wb, records)
+        self._write_vision_mode_comparison(wb, records)
+        self._write_ucci_trace(wb, records)
+        self._write_engine_ai(wb, records)
+        self._write_robot_control(wb, records)
+        self._write_system_events(wb, records)
+        self._write_errors(wb, records)
+        self._write_data_quality(wb, records)
+        self._write_raw_payload(wb, records)
+
+        self._style_workbook(wb)
+        self._save_and_close(wb, target_filename)
 
     def _flush_queue(self, timeout: float = 2.0) -> None:
         deadline = time.time() + timeout
@@ -834,6 +870,18 @@ class ExcelExporter:
 
         if session_id:
             return [row for row in records if str(row.get("session_id", "")) == str(session_id)]
+        return records
+
+    def _records_from_events(self, events: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        records: List[Dict[str, Any]] = []
+        for idx, event in enumerate(events, start=1):
+            if not isinstance(event, dict):
+                continue
+            record = self._event_record({}, event)
+            if not record.get("_row_number"):
+                record["_row_number"] = event.get("sequence_id") or idx
+                self._apply_audit(record)
+            records.append(record)
         return records
 
     def _records_from_sheet(self, ws: Any, headers: List[str]) -> List[Dict[str, Any]]:
@@ -883,7 +931,6 @@ class ExcelExporter:
                     "min_confidence": legacy.get("YOLO_Confidence") or "",
                     "yolo_latency_ms": legacy.get("YOLO_Latency_ms") or "",
                     "yolo_fps": legacy.get("YOLO_FPS") or "",
-                    "sahi_enabled": "",
                     "camera_status": legacy.get("Vision_Status") or legacy.get("Vision_Mode") or "",
                     "engine_score": legacy.get("Engine_Score") or "",
                     "engine_depth": legacy.get("Engine_Depth") or "",
@@ -911,20 +958,28 @@ class ExcelExporter:
         robot_records = [row for row in records if self._is_robot(row)]
         move_records = [row for row in records if self._is_move(row)]
         warnings = self._warning_rows(records)
+        quality_rows = self._data_quality_rows(records)
+        trace_count = len({row.get("trace_id") for row in records if row.get("trace_id")})
+        session_count = len({row.get("session_id") or "unassigned" for row in records}) if records else 0
 
         self._append_safe(ws, ["Metric", "Value"])
         metrics = [
             ("Generated At", self._timestamp_text()),
             ("Session Filter", session_id or "all"),
+            ("Sessions", session_count),
+            ("Trace IDs", trace_count),
             ("Total Events", len(records)),
             ("Game Moves", len(move_records)),
             ("Vision Events", len(vision_records)),
             ("YOLO Avg Confidence", self._average(records, "avg_confidence")),
             ("YOLO Min Confidence", self._minimum(records, "min_confidence")),
             ("YOLO Avg Latency ms", self._average(records, "yolo_latency_ms")),
+            ("YOLO P95 Latency ms", self._p95_records(records, "yolo_latency_ms")),
             ("AI Avg Decision ms", self._average(engine_records, "engine_ms")),
             ("Robot Avg Execution ms", self._average(robot_records, "robot_ms")),
             ("Errors / Warnings", len(warnings)),
+            ("Data Quality Issues", len(quality_rows)),
+            ("Collection Score", self._collection_score(records)),
         ]
         for label, value in metrics:
             self._append_safe(ws, [label, value])
@@ -933,6 +988,153 @@ class ExcelExporter:
         self._append_safe(ws, ["Event Type", "Count"])
         for event_type, count in Counter(row.get("event_type", "") for row in records).most_common():
             self._append_safe(ws, [event_type, count])
+
+    def _write_session_summary(self, wb: Workbook, records: List[Dict[str, Any]]) -> None:
+        headers = [
+            "session_id",
+            "first_timestamp",
+            "last_timestamp",
+            "duration_sec",
+            "events",
+            "traces",
+            "game_moves",
+            "vision_events",
+            "engine_events",
+            "robot_events",
+            "warnings",
+            "quality_issues",
+            "avg_yolo_latency_ms",
+            "p95_yolo_latency_ms",
+            "avg_engine_ms",
+            "avg_robot_ms",
+            "avg_confidence",
+            "min_confidence",
+            "collection_score",
+        ]
+        grouped: Dict[str, List[Dict[str, Any]]] = {}
+        for row in records:
+            grouped.setdefault(str(row.get("session_id") or "unassigned"), []).append(row)
+
+        rows = []
+        for session, items in sorted(grouped.items(), key=lambda item: self._latest_timestamp_seconds(item[1]), reverse=True):
+            times = [self._timestamp_seconds(item.get("timestamp")) for item in items]
+            times = [value for value in times if value is not None]
+            first_timestamp, last_timestamp = self._timestamp_bounds(items)
+            rows.append(
+                {
+                    "session_id": session,
+                    "first_timestamp": first_timestamp,
+                    "last_timestamp": last_timestamp,
+                    "duration_sec": round(max(times) - min(times), 3) if len(times) >= 2 else "",
+                    "events": len(items),
+                    "traces": len({item.get("trace_id") for item in items if item.get("trace_id")}),
+                    "game_moves": sum(1 for item in items if self._is_move(item)),
+                    "vision_events": sum(1 for item in items if self._is_vision(item)),
+                    "engine_events": sum(1 for item in items if self._is_engine(item)),
+                    "robot_events": sum(1 for item in items if self._is_robot(item)),
+                    "warnings": len(self._warning_rows(items)),
+                    "quality_issues": len(self._data_quality_rows(items)),
+                    "avg_yolo_latency_ms": self._average(items, "yolo_latency_ms"),
+                    "p95_yolo_latency_ms": self._p95_records(items, "yolo_latency_ms"),
+                    "avg_engine_ms": self._average(items, "engine_ms"),
+                    "avg_robot_ms": self._average(items, "robot_ms"),
+                    "avg_confidence": self._average(items, "avg_confidence"),
+                    "min_confidence": self._minimum(items, "min_confidence"),
+                    "collection_score": self._collection_score(items),
+                }
+            )
+        self._write_rows(wb, "Session Summary", headers, rows)
+
+    def _write_collection_health(self, wb: Workbook, records: List[Dict[str, Any]]) -> None:
+        headers = [
+            "scope",
+            "event_type",
+            "events",
+            "missing_session",
+            "missing_trace",
+            "generated_event_id",
+            "warnings",
+            "quality_issues",
+            "avg_latency_ms",
+            "p95_latency_ms",
+            "collection_score",
+            "notes",
+        ]
+        rows = [self._collection_health_row("all", "all events", records)]
+        grouped: Dict[str, List[Dict[str, Any]]] = {}
+        for row in records:
+            grouped.setdefault(str(row.get("event_type") or "UNKNOWN"), []).append(row)
+        for event_type, items in sorted(grouped.items(), key=lambda item: (-len(item[1]), item[0])):
+            rows.append(self._collection_health_row("event_type", event_type, items))
+        self._write_rows(wb, "Collection Health", headers, rows)
+
+    def _write_trace_timeline(self, wb: Workbook, records: List[Dict[str, Any]]) -> None:
+        headers = [
+            "sequence_id",
+            "trace_id",
+            "session_id",
+            "step",
+            "timestamp",
+            "elapsed_ms",
+            "inter_event_ms",
+            "module",
+            "event_type",
+            "source",
+            "status",
+            "latency_ms",
+            "move",
+            "fen_after",
+            "audit_status",
+            "audit_notes",
+        ]
+        ordered = sorted(
+            records,
+            key=lambda row: (
+                str(row.get("session_id") or ""),
+                str(row.get("trace_id") or ""),
+                self._timestamp_seconds(row.get("timestamp")) or 0.0,
+                self._to_float(row.get("_sequence_id")) or 0.0,
+            ),
+        )
+        first_ts: Dict[str, float] = {}
+        last_ts: Dict[str, float] = {}
+        step_by_trace: Dict[str, int] = {}
+        rows = []
+        for record in ordered:
+            trace_id = str(record.get("trace_id") or "untraced")
+            current_ts = self._timestamp_seconds(record.get("timestamp"))
+            if current_ts is not None and trace_id not in first_ts:
+                first_ts[trace_id] = current_ts
+            step_by_trace[trace_id] = step_by_trace.get(trace_id, 0) + 1
+            elapsed = ""
+            delta = ""
+            if current_ts is not None:
+                if trace_id in first_ts:
+                    elapsed = round((current_ts - first_ts[trace_id]) * 1000, 3)
+                if trace_id in last_ts:
+                    delta = round((current_ts - last_ts[trace_id]) * 1000, 3)
+                last_ts[trace_id] = current_ts
+            rows.append(
+                {
+                    "sequence_id": record.get("_sequence_id", ""),
+                    "trace_id": record.get("trace_id", ""),
+                    "session_id": record.get("session_id", ""),
+                    "step": step_by_trace[trace_id],
+                    "timestamp": record.get("timestamp", ""),
+                    "elapsed_ms": elapsed,
+                    "inter_event_ms": delta,
+                    "module": self._module_for_record(record),
+                    "event_type": record.get("event_type", ""),
+                    "source": record.get("source", ""),
+                    "status": self._status_for_record(record),
+                    "latency_ms": self._record_latency(record),
+                    "move": record.get("move", ""),
+                    "fen_after": record.get("fen_after", ""),
+                    "audit_status": record.get("audit_status", ""),
+                    "audit_notes": record.get("audit_notes", ""),
+                }
+            )
+        self._write_rows(wb, "Trace Timeline", headers, rows)
 
     def _write_pipeline(self, wb: Workbook, records: List[Dict[str, Any]]) -> None:
         self._write_rows(wb, self.PIPELINE_SHEET, self.PIPELINE_HEADERS, records)
@@ -950,7 +1152,6 @@ class ExcelExporter:
             "min_confidence",
             "yolo_latency_ms",
             "yolo_fps",
-            "sahi_enabled",
             "camera_status",
             "fen_after",
             "image_path",
@@ -1039,8 +1240,6 @@ class ExcelExporter:
             "fen_valid",
             "stable_update_rate",
             "stable_update",
-            "roi_applied",
-            "roi",
             "map_50",
             "recall",
             "metric_note",
@@ -1124,8 +1323,30 @@ class ExcelExporter:
         self._write_rows(wb, "Robot Control", headers, [row for row in records if self._is_robot(row)])
 
     def _write_system_events(self, wb: Workbook, records: List[Dict[str, Any]]) -> None:
-        headers = ["event_id", "timestamp", "event_type", "source", "session_id", "trace_id", "system_status", "move", "fen_after"]
-        self._write_rows(wb, "System Events", headers, records)
+        headers = [
+            "sequence_id",
+            "event_id",
+            "timestamp",
+            "module",
+            "event_type",
+            "source",
+            "session_id",
+            "trace_id",
+            "status",
+            "latency_ms",
+            "system_status",
+            "move",
+            "fen_after",
+        ]
+        rows = []
+        for record in records:
+            row = dict(record)
+            row["sequence_id"] = record.get("_sequence_id", "")
+            row["module"] = self._module_for_record(record)
+            row["status"] = self._status_for_record(record)
+            row["latency_ms"] = self._record_latency(record)
+            rows.append(row)
+        self._write_rows(wb, "System Events", headers, rows)
 
     def _write_errors(self, wb: Workbook, records: List[Dict[str, Any]]) -> None:
         headers = ["severity", "reason", "event_id", "timestamp", "event_type", "source", "metric", "value", "raw_payload"]
@@ -1135,8 +1356,14 @@ class ExcelExporter:
         self._write_rows(wb, "Data Quality", self.DATA_QUALITY_HEADERS, self._data_quality_rows(records))
 
     def _write_raw_payload(self, wb: Workbook, records: List[Dict[str, Any]]) -> None:
-        headers = ["event_id", "timestamp", "event_type", "source", "trace_id", "session_id", "raw_payload"]
-        self._write_rows(wb, "Raw Payload", headers, records)
+        headers = ["event_id", "timestamp", "event_type", "source", "trace_id", "session_id", "raw_payload", "metadata_json"]
+        rows = []
+        for record in records:
+            row = dict(record)
+            metadata = record.get("_metadata")
+            row["metadata_json"] = self._safe_json(metadata) if isinstance(metadata, dict) and metadata else ""
+            rows.append(row)
+        self._write_rows(wb, "Raw Payload", headers, rows)
 
     def _write_rows(self, wb: Workbook, title: str, headers: List[str], rows: List[Dict[str, Any]]) -> None:
         ws = wb.create_sheet(title)
@@ -1267,12 +1494,158 @@ class ExcelExporter:
                 hits += 1
         return round(hits / len(rows), 4)
 
+    def _p95_records(self, records: List[Dict[str, Any]], key: str) -> Any:
+        return self._p95_dicts(records, key)
+
     def _minimum(self, records: List[Dict[str, Any]], key: str) -> Any:
         values = [self._to_float(row.get(key)) for row in records]
         values = [value for value in values if value is not None]
         if not values:
             return ""
         return round(min(values), 3)
+
+    def _timestamp_seconds(self, value: Any) -> Optional[float]:
+        if value in (None, ""):
+            return None
+        if isinstance(value, datetime):
+            return value.timestamp()
+        if isinstance(value, (int, float)):
+            try:
+                return float(value)
+            except Exception:
+                return None
+        text = str(value).strip()
+        if not text:
+            return None
+        try:
+            return float(text)
+        except ValueError:
+            pass
+        for fmt in ("%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S.%f", "%Y-%m-%dT%H:%M:%S"):
+            try:
+                return datetime.strptime(text.replace("Z", ""), fmt).timestamp()
+            except (ValueError, OSError, OverflowError):
+                continue
+        try:
+            return datetime.fromisoformat(text.replace("Z", "+00:00")).timestamp()
+        except Exception:
+            return None
+
+    def _latest_timestamp_seconds(self, records: List[Dict[str, Any]]) -> float:
+        values = [self._timestamp_seconds(record.get("timestamp")) for record in records]
+        values = [value for value in values if value is not None]
+        return max(values) if values else float("-inf")
+
+    def _timestamp_bounds(self, records: List[Dict[str, Any]]) -> tuple[Any, Any]:
+        values = []
+        for record in records:
+            raw = record.get("timestamp")
+            seconds = self._timestamp_seconds(raw)
+            if seconds is not None:
+                values.append((seconds, raw))
+        if not values:
+            return "", ""
+        values.sort(key=lambda item: item[0])
+        return values[0][1], values[-1][1]
+
+    def _record_latency(self, record: Dict[str, Any]) -> Any:
+        for key in ("yolo_latency_ms", "engine_ms", "robot_ms"):
+            value = self._to_float(record.get(key))
+            if value is not None:
+                return round(value, 3)
+        raw = self._load_json(record.get("raw_payload"))
+        raw = raw if isinstance(raw, dict) else {}
+        value = self._first_from_sources(
+            [raw, self._dict_child(raw, "vision"), self._dict_child(raw, "engine"), self._dict_child(raw, "robot")],
+            "latency_ms",
+            "duration_ms",
+            "elapsed_ms",
+            default="",
+        )
+        number = self._to_float(value)
+        return round(number, 3) if number is not None else ""
+
+    def _module_for_record(self, record: Dict[str, Any]) -> str:
+        event_type = str(record.get("event_type", "")).upper()
+        if self._is_vision(record):
+            return "vision"
+        if self._is_engine(record):
+            return "engine"
+        if self._is_robot(record):
+            return "robot"
+        if self._is_move(record) or "GAME" in event_type or "STATE" in event_type:
+            return "game"
+        if "DIAGNOSTIC" in event_type or "HEALTH" in event_type:
+            return "health"
+        if "QUEUE" in event_type:
+            return "queue"
+        if "PERSIST" in event_type or "STORAGE" in event_type:
+            return "storage"
+        return "system"
+
+    def _status_for_record(self, record: Dict[str, Any]) -> str:
+        raw = self._load_json(record.get("raw_payload"))
+        raw = raw if isinstance(raw, dict) else {}
+        status = self._first_from_sources(
+            [
+                raw,
+                self._dict_child(raw, "system"),
+                self._dict_child(raw, "vision"),
+                self._dict_child(raw, "engine"),
+                self._dict_child(raw, "robot"),
+                record,
+            ],
+            "status",
+            "system_status",
+            "camera_status",
+            "robot_status",
+            default="",
+        )
+        if status:
+            return str(status)
+        return str(record.get("audit_status") or "ok")
+
+    def _collection_score(self, records: List[Dict[str, Any]]) -> Any:
+        if not records:
+            return ""
+        required = ("event_id", "session_id", "trace_id", "timestamp", "event_type", "source")
+        missing = sum(1 for record in records for field in required if record.get(field) in (None, "", "N/A"))
+        total = max(1, len(records) * len(required))
+        quality_penalty = min(35.0, (len(self._data_quality_rows(records)) / max(1, len(records))) * 8.0)
+        warning_penalty = min(20.0, (len(self._warning_rows(records)) / max(1, len(records))) * 5.0)
+        completeness_penalty = (missing / total) * 55.0
+        return round(max(0.0, 100.0 - completeness_penalty - quality_penalty - warning_penalty), 1)
+
+    def _collection_health_row(self, scope: str, event_type: str, records: List[Dict[str, Any]]) -> Dict[str, Any]:
+        missing_session = sum(1 for row in records if row.get("session_id") in (None, "", "N/A"))
+        missing_trace = sum(1 for row in records if row.get("trace_id") in (None, ""))
+        generated_event_id = sum(
+            1
+            for row in records
+            if row.get("_event_id_generated") or "missing event_id; generated UUID" in str(row.get("audit_notes", ""))
+        )
+        latencies = [{"latency": self._record_latency(row)} for row in records if self._record_latency(row) not in ("", None)]
+        notes = []
+        if missing_session:
+            notes.append("missing session_id")
+        if missing_trace:
+            notes.append("missing trace_id")
+        if generated_event_id:
+            notes.append("generated event_id")
+        return {
+            "scope": scope,
+            "event_type": event_type,
+            "events": len(records),
+            "missing_session": missing_session,
+            "missing_trace": missing_trace,
+            "generated_event_id": generated_event_id,
+            "warnings": len(self._warning_rows(records)),
+            "quality_issues": len(self._data_quality_rows(records)),
+            "avg_latency_ms": self._average_dicts(latencies, "latency"),
+            "p95_latency_ms": self._p95_dicts(latencies, "latency"),
+            "collection_score": self._collection_score(records),
+            "notes": "; ".join(notes),
+        }
 
     def _style_workbook(self, wb: Workbook) -> None:
         for ws in wb.worksheets:
@@ -1290,9 +1663,12 @@ class ExcelExporter:
             return
 
         ws.sheet_view.showGridLines = False
+        ws.sheet_view.zoomScale = 90
         ws.sheet_properties.pageSetUpPr.fitToPage = True
+        ws.page_setup.orientation = "landscape"
         ws.page_setup.fitToWidth = 1
         ws.page_setup.fitToHeight = 0
+        ws.print_title_rows = f"{header_row}:{header_row}"
         ws.page_margins.left = 0.35
         ws.page_margins.right = 0.35
         ws.page_margins.top = 0.5
@@ -1323,11 +1699,33 @@ class ExcelExporter:
             limit = 95 if header in ("raw_payload", "detections_json", "board_state_json") else 60
             ws.column_dimensions[get_column_letter(col_idx)].width = min(max(max_len + 2, 10), limit)
             self._apply_column_number_format(ws, header, col_idx, header_row)
+        self._apply_excel_table(ws, header_row)
 
     def _style_sheet_tab(self, ws: Any) -> None:
         color = self.TAB_COLORS.get(ws.title)
         if color:
             ws.sheet_properties.tabColor = color
+
+    def _apply_excel_table(self, ws: Any, header_row: int) -> None:
+        if ws.title == "Overview" or ws.max_row <= header_row or ws.max_column < 1:
+            return
+        ref = f"A{header_row}:{get_column_letter(ws.max_column)}{ws.max_row}"
+        table_name = "tbl_" + "".join(ch if ch.isalnum() else "_" for ch in ws.title)
+        table_name = table_name[:30].strip("_") or "tbl_report"
+        if table_name[0].isdigit:
+            table_name = "tbl_" + table_name
+        try:
+            table = Table(displayName=table_name, ref=ref)
+            table.tableStyleInfo = TableStyleInfo(
+                name="TableStyleMedium2",
+                showFirstColumn=False,
+                showLastColumn=False,
+                showRowStripes=True,
+                showColumnStripes=False,
+            )
+            ws.add_table(table)
+        except Exception:
+            logger.debug("[ExcelExporter] table styling skipped for %s", ws.title, exc_info=True)
 
     def _style_overview(self, ws: Any) -> None:
         if ws.max_row < 1:
@@ -1372,12 +1770,36 @@ class ExcelExporter:
         lowered = header.lower()
         if lowered in ("fps", "avg_fps", "small_object_rate", "avg_small_object_rate", "fen_valid_rate", "stable_update_rate"):
             fmt = "0.00"
-        elif lowered.endswith("_ms") or "latency" in lowered or lowered in ("robot_ms", "engine_ms", "yolo_latency_ms"):
+        elif lowered.endswith("_ms") or "latency" in lowered or lowered in ("robot_ms", "engine_ms", "yolo_latency_ms", "elapsed_ms", "inter_event_ms"):
             fmt = "0.0"
-        elif lowered in ("detections_count", "small_object_count", "frames", "ok_frames", "frame_id", "engine_depth"):
+        elif lowered.endswith("_sec"):
+            fmt = "0.0"
+        elif lowered in (
+            "detections_count",
+            "small_object_count",
+            "frames",
+            "ok_frames",
+            "frame_id",
+            "engine_depth",
+            "sequence_id",
+            "step",
+            "events",
+            "traces",
+            "game_moves",
+            "vision_events",
+            "engine_events",
+            "robot_events",
+            "warnings",
+            "quality_issues",
+            "missing_session",
+            "missing_trace",
+            "generated_event_id",
+        ):
             fmt = "0"
         elif "confidence" in lowered or lowered == "engine_score":
             fmt = "0.000"
+        elif lowered == "collection_score":
+            fmt = "0.0"
         else:
             return
         for row in range(header_row + 1, ws.max_row + 1):
@@ -1395,19 +1817,32 @@ class ExcelExporter:
 
         if "Errors & Warnings" in wb.sheetnames:
             ws = wb["Errors & Warnings"]
-            if ws.max_row < 2:
-                return
-            severity_col = self._column_by_header(ws, "severity")
-            if severity_col:
-                letter = get_column_letter(severity_col)
-                ws.conditional_formatting.add(
-                    f"{letter}2:{letter}{ws.max_row}",
-                    CellIsRule(operator="equal", formula=['"Critical"'], fill=self.RED_FILL),
-                )
-                ws.conditional_formatting.add(
-                    f"{letter}2:{letter}{ws.max_row}",
-                    CellIsRule(operator="equal", formula=['"Warning"'], fill=self.ORANGE_FILL),
-                )
+            self._text_rule(ws, "severity", "Critical", self.RED_FILL)
+            self._text_rule(ws, "severity", "Warning", self.ORANGE_FILL)
+
+        if "Data Quality" in wb.sheetnames:
+            ws = wb["Data Quality"]
+            self._text_rule(ws, "severity", "Warning", self.ORANGE_FILL)
+            self._text_rule(ws, "severity", "Info", self.BLUE_FILL)
+
+        for sheet_name in ("Pipeline_Log", "Trace Timeline"):
+            if sheet_name not in wb.sheetnames:
+                continue
+            ws = wb[sheet_name]
+            self._text_rule(ws, "audit_status", "review", self.ORANGE_FILL)
+
+        for sheet_name in ("Session Summary", "Collection Health"):
+            if sheet_name not in wb.sheetnames:
+                continue
+            ws = wb[sheet_name]
+            self._numeric_rule(ws, "collection_score", "lessThan", 80, self.ORANGE_FILL)
+            self._numeric_rule(ws, "collection_score", "lessThan", 60, self.RED_FILL)
+            self._numeric_rule(ws, "p95_latency_ms", "greaterThan", 1000, self.ORANGE_FILL)
+            self._numeric_rule(ws, "p95_yolo_latency_ms", "greaterThan", 1000, self.ORANGE_FILL)
+
+        if "Trace Timeline" in wb.sheetnames:
+            ws = wb["Trace Timeline"]
+            self._numeric_rule(ws, "inter_event_ms", "greaterThan", 1000, self.ORANGE_FILL)
 
     def _numeric_rule(self, ws: Any, header: str, operator: str, threshold: float, fill: PatternFill) -> None:
         column = self._column_by_header(ws, header)
@@ -1417,6 +1852,16 @@ class ExcelExporter:
         ws.conditional_formatting.add(
             f"{letter}2:{letter}{ws.max_row}",
             CellIsRule(operator=operator, formula=[str(threshold)], fill=fill),
+        )
+
+    def _text_rule(self, ws: Any, header: str, text: str, fill: PatternFill) -> None:
+        column = self._column_by_header(ws, header)
+        if not column or ws.max_row < 2:
+            return
+        letter = get_column_letter(column)
+        ws.conditional_formatting.add(
+            f"{letter}2:{letter}{ws.max_row}",
+            CellIsRule(operator="equal", formula=[f'"{text}"'], fill=fill),
         )
 
     def _column_by_header(self, ws: Any, header: str) -> Optional[int]:

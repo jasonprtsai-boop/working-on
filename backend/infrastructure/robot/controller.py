@@ -51,8 +51,9 @@ class RobotController:
         while True:
             try:
                 if self.state_machine.current_state == RobotState.IDLE:
-                    # ping the robot
-                    pass # adapter.ping()
+                    adapter = getattr(self.executor, "adapter", None)
+                    if adapter and hasattr(adapter, "ping") and not adapter.ping():
+                        raise RuntimeError("robot adapter ping failed")
             except Exception as e:
                 logger.warning(f"[Robot] Heartbeat lost: {e}")
             await asyncio.sleep(5.0)

@@ -44,7 +44,7 @@ class FakeDetector:
     pass
 
 
-FakeDetector.__name__ = "SAHIDetector"
+FakeDetector.__name__ = "YOLODetector"
 
 
 class FakeVisionSystem:

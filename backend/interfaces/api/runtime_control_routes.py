@@ -23,6 +23,16 @@ def set_runtime_engine_depth():
     return jsonify({"ok": True, **snapshot})
 
 
+@api_bp.route("/runtime/ai-mode", methods=["POST"])
+def set_runtime_ai_mode():
+    payload = request.get_json(silent=True) or {}
+    mode = str(payload.get("mode", payload.get("ai_mode", "")) or "")
+    if not mode:
+        return error_response("invalid_ai_mode", "mode is required.", 400)
+    snapshot = runtime_control.set_ai_mode(mode)
+    return jsonify({"ok": True, **snapshot})
+
+
 @api_bp.route("/runtime/safe-mode", methods=["POST"])
 def set_runtime_safe_mode():
     payload = request.get_json(silent=True) or {}

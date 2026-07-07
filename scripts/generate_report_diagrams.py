@@ -384,7 +384,7 @@ def d01() -> Diagram:
     d.group(70, 150, 1780, 850, "研究主軸與應用情境", "#FFFFFF", "#CBD5E1")
     d.box("need", 110, 230, 350, 180, "研究需求\n高齡化社會\n陪伴不足\n認知刺激需求", PALETTE["amber_light"], PALETTE["amber"])
     d.box("system", 690, 220, 540, 250, "智慧象棋實體互動系統\n實體棋盤 + AI 對弈\n視覺辨識 + 機械手臂\nDashboard 即時回饋", PALETTE["blue_light"], PALETTE["blue"], font_size=27)
-    d.box("tech", 1460, 230, 340, 180, "技術核心\nOpenCV / YOLO / SAHI\nPikafish\nTM5-700", PALETTE["teal_light"], PALETTE["teal"], font_size=24)
+    d.box("tech", 1460, 230, 340, 180, "技術核心\nOpenCV / Homography / YOLO\nPikafish\nTM5-700", PALETTE["teal_light"], PALETTE["teal"], font_size=24)
     d.box("role1", 190, 610, 310, 160, "長者 / 使用者\n下棋互動\n理解 AI 回饋", "#F0FDF4", PALETTE["green"], font_size=24)
     d.box("role2", 610, 680, 340, 160, "照護者 / 研究員\n觀察安全\n蒐集問卷訪談", PALETTE["violet_light"], PALETTE["violet"], font_size=24)
     d.box("role3", 1020, 680, 340, 160, "AI 與機械手臂\n分析棋局\n執行實體落子", "#E0F2FE", "#0284C7", font_size=24)
@@ -406,7 +406,7 @@ def d02() -> Diagram:
         ("p1", "1 文獻整理\n高齡陪伴\n棋類活動\n安全規範", PALETTE["amber_light"], PALETTE["amber"]),
         ("p2", "2 需求定義\n互動目標\n安全邊界\n評估指標", "#F0FDF4", PALETTE["green"]),
         ("p3", "3 系統設計\n感知 / 決策\n執行 / 回饋\n事件架構", PALETTE["blue_light"], PALETTE["blue"]),
-        ("p4", "4 模型訓練\n影像蒐集\n標註增強\nYOLO + SAHI", PALETTE["teal_light"], PALETTE["teal"]),
+        ("p4", "4 模型訓練\n影像蒐集\n標註增強\nYOLO", PALETTE["teal_light"], PALETTE["teal"]),
         ("p5", "5 模組整合\nVision\nPikafish\nRobotFacade\nDashboard", PALETTE["violet_light"], PALETTE["violet"]),
         ("p6", "6 初步測試\n功能驗證\n問卷訪談\n系統修正", PALETTE["red_light"], PALETTE["red"]),
     ], 330, x0=50, gap=20, h=210)
@@ -450,10 +450,10 @@ def d04() -> Diagram:
     d.group(1430, 160, 420, 800, "使用者端與資料輸出", "#FFFFFF", "#CBD5E1")
     d.box("camera", 125, 245, 300, 130, "Camera\n棋盤影像", PALETTE["teal_light"], PALETTE["teal"])
     d.box("robot", 125, 555, 300, 130, "TM5-700\n協作型手臂", PALETTE["red_light"], PALETTE["red"])
-    d.box("engineasset", 125, 740, 300, 130, "Pikafish.exe\nNNUE / best.pt", PALETTE["amber_light"], PALETTE["amber"], font_size=23)
+    d.box("engineasset", 125, 740, 300, 130, "Pikafish.exe\nNNUE / best.onnx", PALETTE["amber_light"], PALETTE["amber"], font_size=23)
     d.box("api", 610, 250, 300, 120, "Flask API\n/api/*", PALETTE["blue_light"], PALETTE["blue"])
     d.box("socket", 975, 250, 300, 120, "Socket.IO Gateway\nSYSTEM_STATE_UPDATE", "#E0F2FE", "#0284C7", font_size=22)
-    d.box("vision", 610, 480, 300, 140, "Vision System\nOpenCV / YOLO / SAHI\nMJPEG stream", PALETTE["teal_light"], PALETTE["teal"], font_size=22)
+    d.box("vision", 610, 480, 300, 140, "Vision System\nOpenCV / Homography / YOLO\nMJPEG stream", PALETTE["teal_light"], PALETTE["teal"], font_size=22)
     d.box("event", 975, 480, 300, 140, "EventBus + StateManager\nBaseEvent / Reducer\nSSOT", PALETTE["violet_light"], PALETTE["violet"], font_size=22)
     d.box("enginesvc", 610, 740, 300, 130, "EngineService\nUCI stdin/stdout\nposition fen / go", PALETTE["amber_light"], PALETTE["amber"], font_size=22)
     d.box("robotsvc", 975, 740, 300, 130, "RobotFacade\nRobotService / FakeRobot\nE-Stop gate", PALETTE["red_light"], PALETTE["red"], font_size=22)
@@ -538,12 +538,12 @@ def d06() -> Diagram:
 
 
 def d07() -> Diagram:
-    d = Diagram("vision_pipeline", "Vision Pipeline 與 FEN 生成流程圖", "Camera frame -> OpenCV/YOLO/SAHI -> Board state -> FEN -> EventBus", "第三章、第四章", "細化影像辨識與棋局轉換流程。")
+    d = Diagram("vision_pipeline", "Vision Pipeline 與 FEN 生成流程圖", "Camera frame -> OpenCV/Homography/YOLO -> Board state -> FEN -> EventBus", "第三章、第四章", "細化影像辨識與棋局轉換流程。")
     add_step_chain(d, [
         ("v1", "Camera\nraw frame", PALETTE["teal_light"], PALETTE["teal"]),
         ("v2", "Perspective\nwarp 棋盤俯視", "#E0F2FE", "#0284C7"),
         ("v3", "Preprocess\n色彩增強\n去雜訊", PALETTE["blue_light"], PALETTE["blue"]),
-        ("v4", "Detector\nSAHI / YOLO\nGrid fallback", PALETTE["violet_light"], PALETTE["violet"]),
+        ("v4", "Detector\nYOLO\nYOLO only", PALETTE["violet_light"], PALETTE["violet"]),
         ("v5", "BoardMapper\nbbox -> 9x10\n棋格座標", PALETTE["green_light"], PALETTE["green"]),
         ("v6", "TemporalValidator\n穩定判斷\n信心摘要", PALETTE["amber_light"], PALETTE["amber"]),
         ("v7", "FENGenerator\nboard_state\n-> FEN", PALETTE["red_light"], PALETTE["red"]),
@@ -739,20 +739,20 @@ def d14() -> Diagram:
 
 
 def d15() -> Diagram:
-    d = Diagram("model_training_evaluation", "影像模型訓練與效能分析流程圖", "資料蒐集、標註、YOLOv8/SAHI 訓練、驗證、部署與指標", "第二章、第三章、第四章", "支撐視覺辨識模型建置與限制討論。")
+    d = Diagram("model_training_evaluation", "影像模型訓練與效能分析流程圖", "資料蒐集、標註、YOLO26 訓練、驗證、部署與指標", "第二章、第三章、第四章", "支撐視覺辨識模型建置與限制討論。")
     add_step_chain(d, [
         ("m1", "資料蒐集\n不同光線\n角度 / 遮擋", PALETTE["teal_light"], PALETTE["teal"]),
         ("m2", "標註\n棋子類別\nbbox / board", PALETTE["blue_light"], PALETTE["blue"]),
         ("m3", "資料增強\n旋轉 / 對比\n小目標切片", PALETTE["violet_light"], PALETTE["violet"]),
-        ("m4", "YOLOv8 訓練\nbest.pt\nvalidation set", PALETTE["amber_light"], PALETTE["amber"]),
-        ("m5", "SAHI 推論\nslice / overlap\nNMS 合併", PALETTE["green_light"], PALETTE["green"]),
-        ("m6", "部署\nvision_system.py\nGrid fallback", PALETTE["red_light"], PALETTE["red"]),
+        ("m4", "YOLO26 訓練\nbest.onnx\nvalidation set", PALETTE["amber_light"], PALETTE["amber"]),
+        ("m5", "YOLO 推論\nbbox / confidence\nNMS 合併", PALETTE["green_light"], PALETTE["green"]),
+        ("m6", "部署\nvision_system.py\nYOLO only", PALETTE["red_light"], PALETTE["red"]),
     ], 260, x0=70, gap=24, h=190)
     d.group(230, 620, 1460, 240, "效能與錯誤分析", "#FFFFFF", "#CBD5E1")
     d.box("k1", 315, 690, 280, 110, "Detection metrics\nPrecision / Recall\nmAP / confusion", "#F8FAFC", "#475569", font_size=20)
     d.box("k2", 690, 690, 280, 110, "Runtime metrics\nFPS / latency\nconfidence", "#F8FAFC", "#475569", font_size=20)
     d.box("k3", 1065, 690, 280, 110, "Failure cases\n反光 / 遮擋\n棋子重疊", "#F8FAFC", "#475569", font_size=20)
-    d.box("k4", 1440, 690, 200, 110, "改進\n光源 / ROI\n再訓練", PALETTE["green_light"], PALETTE["green"], font_size=20)
+    d.box("k4", 1440, 690, 200, 110, "改進\n光源 / Homography\n再訓練", PALETTE["green_light"], PALETTE["green"], font_size=20)
     d.arrow("m6", "k1", "驗證")
     d.arrow("k1", "k2")
     d.arrow("k2", "k3")
@@ -775,7 +775,7 @@ def d16() -> Diagram:
     for id_, label, y in faults:
         d.box(id_, 125, y, 330, 100, label, PALETTE["red_light"], PALETTE["red"], font_size=20)
     d.box("detect", 705, 260, 300, 120, "Diagnostics events\nDIAGNOSTICS_UPDATED\nhealth / ready", PALETTE["amber_light"], PALETTE["amber"], font_size=21)
-    d.box("policy", 930, 470, 300, 120, "Recovery policy\nfallback / retry\nbackoff / stop", PALETTE["blue_light"], PALETTE["blue"], font_size=21)
+    d.box("policy", 930, 470, 300, 120, "Recovery policy\nerror / retry\nbackoff / stop", PALETTE["blue_light"], PALETTE["blue"], font_size=21)
     d.box("safe", 705, 680, 300, 120, "Safety action\nE-Stop / UI lock\nmanual reset", PALETTE["red_light"], PALETTE["red"], font_size=21)
     d.box("trace", 1460, 285, 320, 120, "trace_id\n從 UI 到 worker\n全流程標記", PALETTE["violet_light"], PALETTE["violet"], font_size=21)
     d.box("replay", 1460, 500, 320, 120, "Replay / SQLite\n事件序列\n問題重現", "#F8FAFC", "#475569", font_size=21)

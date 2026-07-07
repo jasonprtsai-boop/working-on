@@ -28,6 +28,10 @@ class TestEStop(unittest.TestCase):
         self.assertEqual(lock_payloads[-1]["locked"], False)
         self.assertFalse(controller.is_triggered)
         self.assertFalse(controller.GLOBAL_STOP)
+        snapshot = controller.snapshot()
+        self.assertIn("steps", snapshot)
+        self.assertTrue(any(step.get("step") == "robot_hardware_stop" for step in snapshot["steps"]))
+        self.assertIn("last_reset_at", snapshot)
         self.assertGreaterEqual(dispatch.call_count, 2)
 
 

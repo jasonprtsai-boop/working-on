@@ -106,7 +106,7 @@ def write_alignment_notes() -> None:
                 "",
                 "- 這組圖表延續目前報告文案，不宣稱第四章已有正式使用者實驗結果。",
                 "- TMflow 與 TM5-700 實機控制一律以 RobotFacade、FakeRobot、後續整合與安全規劃描述。",
-                "- Vision/FEN 圖表保留 YOLOv8、SAHI、BoardMapper、FEN validation，但不宣稱辨識完全正確。",
+                "- Vision/FEN 圖表保留 YOLO26、Homography、BoardMapper、FEN validation，但不宣稱辨識完全正確。",
                 "- 測試矩陣定位為初步測試、品質驗證與後續研究資料規劃。",
                 "- DFD、UML、State Machine、ERD、Fault Tree 等圖表可凸顯系統工程深度，適合口試或報告審查使用。",
             ]

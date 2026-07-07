@@ -46,3 +46,31 @@ test('vision overlay writes detection coordinate summary', () => {
 
   expect(coords.textContent).toContain('black_cannon 82% [10, 20, 30, 40]');
 });
+
+test('vision overlay draws calibration grid when enabled and calibrated', () => {
+  const calls = [];
+  VisionRenderer.canvas = { width: 900, height: 1000 };
+  VisionRenderer.video = { naturalWidth: 900, naturalHeight: 1000 };
+  VisionRenderer.ctx = {
+    save: () => calls.push('save'),
+    restore: () => calls.push('restore'),
+    beginPath: () => calls.push('begin'),
+    moveTo: (x, y) => calls.push(['moveTo', x, y]),
+    lineTo: (x, y) => calls.push(['lineTo', x, y]),
+    stroke: () => calls.push('stroke'),
+    arc: (x, y) => calls.push(['arc', x, y]),
+    fill: () => calls.push('fill'),
+    set strokeStyle(_value) {},
+    set fillStyle(_value) {},
+    set lineWidth(_value) {},
+  };
+
+  VisionRenderer.calibrationGridVisible = true;
+  VisionRenderer.drawCalibrationGrid({
+    calibrated: true,
+    calibration: { output_size: [900, 1000] },
+  });
+
+  expect(calls.filter((item) => item === 'stroke')).toHaveLength(19);
+  expect(calls.filter((item) => item === 'fill')).toHaveLength(4);
+});

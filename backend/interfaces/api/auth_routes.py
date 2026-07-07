@@ -25,7 +25,7 @@ def login():
         return error_response("invalid_credentials", "Invalid admin credentials.", 401, recoverable=True)
 
     try:
-        from backend.utils.auth import create_jwt, decode_jwt_token
+        from backend.utils.auth import create_jwt, decode_jwt_token, read_bearer_token, revoke_jwt_claims
     except ModuleNotFoundError:
         from itsdangerous import URLSafeTimedSerializer
 
@@ -41,11 +41,20 @@ def login():
         "jti": claims.get("jti"),
         "sub": claims.get("sub"),
     })
-    response = jsonify({"ok": True, "token": token, "role": "admin"})
+    max_age = int(getattr(config, "JWT_TTL_MINUTES", 120)) * 60
+    response = jsonify({
+        "ok": True,
+        "token": token,
+        "role": "admin",
+        "auth_mode": "cookie",
+        "token_storage": "cookie",
+        "expires_at": claims.get("exp"),
+        "expires_in": max_age,
+    })
     response.set_cookie(
         "token",
         token,
-        max_age=24 * 60 * 60,
+        max_age=max_age,
         httponly=True,
         secure=bool(getattr(config, "IS_PRODUCTION", False)),
         samesite="Strict",
@@ -55,6 +64,21 @@ def login():
 
 @api_bp.route("/logout", methods=["POST"])
 def logout():
+    try:
+        from backend.utils.auth import read_bearer_token, decode_jwt_token, revoke_jwt_claims
+
+        token = read_bearer_token()
+        claims = decode_jwt_token(token, verify_revocation=False) if token else None
+        revoked = revoke_jwt_claims(claims)
+        if claims:
+            publish_security_event("SECURITY.LOGOUT", {
+                "client": client_ip(),
+                "jti": claims.get("jti"),
+                "sub": claims.get("sub"),
+                "revoked": revoked,
+            })
+    except Exception:
+        current_app.logger.debug("Failed to revoke JWT during logout", exc_info=True)
     response = jsonify({"ok": True})
     response.delete_cookie("token", samesite="Strict")
     return response

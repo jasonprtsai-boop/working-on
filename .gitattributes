@@ -25,6 +25,7 @@ snapshots/ export-ignore
 *.xlsx export-ignore
 *.nnue export-ignore
 *.pt export-ignore
+*.onnx export-ignore
 *.exe export-ignore
 backend/infrastructure/vision/models/ export-ignore
 .pytest_cache/ export-ignore

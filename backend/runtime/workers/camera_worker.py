@@ -35,6 +35,8 @@ class CameraWorker(BaseWorker):
                 sleep_time = max(0, self.interval - elapsed)
                 await asyncio.sleep(sleep_time)
 
+            except asyncio.CancelledError:
+                break
             except Exception as e:
                 logger.error(f"[CameraWorker] Error: {e}")
                 await asyncio.sleep(1.0)

@@ -1,18 +1,18 @@
 $ErrorActionPreference = "Stop"
 
 function Test-SupportedPythonVersion([string]$versionText) {
-  return ($versionText -match "Python 3\.(10|11|12)\.")
+  return ($versionText -match "Python 3\.(9|10|11|12)\.")
 }
 
 if (Test-Path ".\\.venv\\Scripts\\python.exe") {
   $venvVersion = & .\\.venv\\Scripts\\python.exe --version
   if (-not (Test-SupportedPythonVersion $venvVersion)) {
-    throw "Existing .venv uses $venvVersion. Recreate it with Python 3.10, 3.11, or 3.12."
+    throw "Existing .venv uses $venvVersion. Recreate it with Python 3.9, 3.10, 3.11, or 3.12."
   }
 } else {
-  Write-Host "Missing .venv. Creating venv with Python 3.10+..." -ForegroundColor Yellow
+  Write-Host "Missing .venv. Creating venv with Python 3.11 preferred..." -ForegroundColor Yellow
   $created = $false
-  foreach ($ver in @("3.12", "3.11", "3.10")) {
+  foreach ($ver in @("3.11", "3.12", "3.10", "3.9")) {
     try {
       py -$ver -m venv .venv
       $created = $true
@@ -20,7 +20,7 @@ if (Test-Path ".\\.venv\\Scripts\\python.exe") {
     } catch { }
   }
   if (-not $created) {
-    throw "Python 3.10+ was not found. Install Python 3.10, 3.11, or 3.12 and retry."
+    throw "Python 3.11 recommended, or Python 3.9, 3.10, or 3.12, was not found."
   }
 }
 

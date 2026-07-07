@@ -45,6 +45,7 @@ class EngineService:
         self._compute_lock: Optional[asyncio.Lock] = None
         self._compute_lock_loop = None
         self._closing = False
+        self._shutdown_requested = False
 
     def _build_candidate_list(self) -> List[str]:
         candidates: List[str] = []
@@ -96,12 +97,17 @@ class EngineService:
         """
         Fire-and-forget startup probe. Safe to call multiple times.
         """
+        if self._shutdown_requested:
+            return None
         if self._probe_task and not self._probe_task.done():
             return self._probe_task
         self._probe_task = asyncio.create_task(self.probe_compatible_pair())
         return self._probe_task
 
     async def probe_compatible_pair(self, force: bool = False) -> bool:
+        if self._shutdown_requested:
+            self.compatibility_status = "shutdown"
+            return False
         if self.compatibility_status == "matched" and self.active_nnue_path and not force:
             return True
         if self._probe_task and not self._probe_task.done() and not force:
@@ -134,6 +140,9 @@ class EngineService:
 
                 resolved_candidate = self._resolve_nnue_path(candidate)
                 ok, error = await self._probe_single_candidate(resolved_candidate)
+                if self._shutdown_requested:
+                    self.compatibility_status = "shutdown"
+                    return False
                 result["resolved_candidate"] = resolved_candidate
                 result["status"] = "matched" if ok else "rejected"
                 result["error"] = error
@@ -167,6 +176,8 @@ class EngineService:
             await self.close()
 
     async def _open_engine(self, nnue_path: Optional[str], perform_warmup: bool) -> None:
+        if self._shutdown_requested:
+            raise RuntimeError("Engine service is shutting down.")
         self.last_internal_error = None
         self.last_startup_error = None
 
@@ -250,11 +261,17 @@ class EngineService:
         """
         Start the engine with the already-probed compatible pair.
         """
+        if self._shutdown_requested or self._closing:
+            logger.warning("[EngineService] start skipped while engine service is shutting down.")
+            return
         process = self.process
         if process and process.returncode is None:
             return
 
         ok = await self.probe_compatible_pair()
+        if self._shutdown_requested or self._closing:
+            logger.warning("[EngineService] start aborted because shutdown began during probe.")
+            return
         if not ok or not self.active_nnue_path:
             self.last_startup_error = self.last_startup_error or "No compatible engine/NNUE pair found."
             logger.error(f"[EngineService] start aborted: {self.last_startup_error}")
@@ -350,7 +367,7 @@ class EngineService:
 
     async def _compute_locked(self, fen: str, depth: int = 12, multipv: int = 1) -> Optional[dict]:
         process = self.process
-        if self._closing:
+        if self._shutdown_requested or self._closing:
             logger.warning("[EngineService] compute skipped while engine is closing.")
             return None
 
@@ -471,6 +488,7 @@ class EngineService:
                 except Exception:
                     try:
                         process.kill()
+                        await asyncio.wait_for(process.wait(), timeout=2.0)
                     except Exception:
                         logger.debug("[EngineService] failed to kill engine process", exc_info=True)
 
@@ -489,6 +507,7 @@ class EngineService:
 
     async def shutdown(self):
         """Cancel startup probes and close any active engine subprocess."""
+        self._shutdown_requested = True
         current_task = asyncio.current_task()
         if self._probe_task and not self._probe_task.done() and self._probe_task is not current_task:
             self._probe_task.cancel()

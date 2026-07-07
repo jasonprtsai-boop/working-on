@@ -9,7 +9,7 @@ Implements the full E-Stop interlock chain:
 import logging
 import threading
 import time
-from typing import Optional
+from typing import Any, Optional
 
 logger = logging.getLogger("EStop")
 
@@ -28,6 +28,11 @@ class EStop:
         self._lock = threading.Lock()
         self._robot_ref = None
         self._socketio_ref = None
+        self._last_reason = ""
+        self._last_triggered_at: Optional[float] = None
+        self._last_reset_at: Optional[float] = None
+        self._last_steps: list[dict[str, Any]] = []
+        self._last_errors: list[dict[str, Any]] = []
 
     @property
     def GLOBAL_STOP(self) -> bool:
@@ -51,7 +56,7 @@ class EStop:
         """Register the Socket.IO instance for UI lock broadcast."""
         self._socketio_ref = sio
 
-    def _publish_event(self, event_type, payload: dict):
+    def _publish_event(self, event_type, payload: dict) -> bool:
         try:
             from backend.events.bus.event_bus import bus
             from backend.events.models.base_event import BaseEvent
@@ -61,8 +66,63 @@ class EStop:
                 source="estop",
                 payload=payload,
             ))
+            return True
         except Exception as e:
-            logger.error(f"E-Stop event publish failed: {e}")
+            logger.error(f"E-Stop event publish failed: {e}", exc_info=True)
+            return False
+
+    def _record_step(
+        self,
+        steps: list[dict[str, Any]],
+        name: str,
+        status: str,
+        message: str = "",
+    ):
+        item = {
+            "step": name,
+            "status": status,
+            "message": str(message or ""),
+            "module": "control",
+            "event_type": "ESTOP_STEP_" + ("FAILED" if status == "error" else status.upper()),
+            "severity": "error" if status == "error" else ("warning" if status == "warning" else "info"),
+            "code": f"estop_{name}",
+            "timestamp": time.time(),
+        }
+        steps.append(item)
+        if status in {"error", "warning"}:
+            with self._lock:
+                self._last_errors.append(item)
+                self._last_errors = self._last_errors[-20:]
+
+    def _publish_diagnostics(self, reason: str, steps: list[dict[str, Any]]):
+        errors = [step for step in steps if step.get("status") == "error"]
+        warnings = [step for step in steps if step.get("status") == "warning"]
+        severity = "error" if errors else ("warning" if warnings else "info")
+        snapshot = self.snapshot()
+        snapshot["steps"] = list(steps)
+        self._publish_event(
+            "DIAGNOSTICS_UPDATED",
+            {
+                "control": {"estop": snapshot},
+                "robot": {
+                    "emergency_stop": True,
+                    "status": "error" if errors else ("warning" if warnings else "success"),
+                    "error": errors[0]["message"] if errors else "",
+                },
+                "ui": {
+                    "estop": snapshot,
+                    "last_error": errors[-1] if errors else None,
+                },
+                "telemetry": {
+                    "last_error": errors[-1] if errors else None,
+                    "errors": errors,
+                },
+                "module": "control",
+                "status": "error" if errors else ("warning" if warnings else "success"),
+                "severity": severity,
+                "message": reason,
+            },
+        )
 
     def _emit_ui_lock(self, locked: bool, reason: str):
         try:
@@ -89,31 +149,52 @@ class EStop:
                 return
             self._triggered = True
             self._global_stop = True # Halt all background tasks
+            self._last_reason = reason
+            self._last_triggered_at = time.time()
+            self._last_steps = []
 
         logger.critical(f"=== E-STOP TRIGGERED === Reason: {reason}")
+        steps: list[dict[str, Any]] = []
         try:
             from backend.events.event_types import EventType
-            self._publish_event(EventType.EMERGENCY_STOP, {"reason": reason})
-        except Exception:
-            logger.debug("E-Stop emergency event publish skipped.", exc_info=True)
+            ok = self._publish_event(EventType.EMERGENCY_STOP, {"reason": reason})
+            self._record_step(
+                steps,
+                "publish_emergency_event",
+                "success" if ok else "error",
+                "" if ok else "EventBus publish failed.",
+            )
+        except Exception as exc:
+            logger.warning("E-Stop emergency event publish skipped.", exc_info=True)
+            self._record_step(steps, "publish_emergency_event", "error", str(exc))
 
         # Step 1: Clear Task Queue (prevent pending tasks from executing)
         try:
             from backend.app.task_queue import task_queue
             task_queue.clear()
             logger.info("E-Stop Step 1: Task Queue cleared.")
+            self._record_step(steps, "task_queue_clear", "success")
         except Exception as e:
-            logger.error(f"E-Stop Step 1 failed: {e}")
+            logger.error(f"E-Stop Step 1 failed: {e}", exc_info=True)
+            self._record_step(steps, "task_queue_clear", "error", str(e))
 
         # Step 2: Send hardware stop signal to robot
         try:
             if self._robot_ref and hasattr(self._robot_ref, "emergency_stop"):
                 self._robot_ref.emergency_stop()
                 logger.info("E-Stop Step 2: Robot hardware stop sent.")
+                self._record_step(steps, "robot_hardware_stop", "success")
             else:
                 logger.warning("E-Stop Step 2: No robot registered or no emergency_stop method.")
+                self._record_step(
+                    steps,
+                    "robot_hardware_stop",
+                    "warning",
+                    "No robot registered or emergency_stop method unavailable.",
+                )
         except Exception as e:
-            logger.error(f"E-Stop Step 2 failed: {e}")
+            logger.error(f"E-Stop Step 2 failed: {e}", exc_info=True)
+            self._record_step(steps, "robot_hardware_stop", "error", str(e))
 
         # Step 3: Force State into ERROR
         try:
@@ -128,11 +209,22 @@ class EStop:
                 payload={"game_status": "ERROR", "phase": SystemPhase.ERROR.value, "reason": reason}
             ))
             logger.info("E-Stop Step 3: State set to ERROR.")
+            self._record_step(steps, "state_force_error", "success")
         except Exception as e:
-            logger.error(f"E-Stop Step 3 failed: {e}")
+            logger.error(f"E-Stop Step 3 failed: {e}", exc_info=True)
+            self._record_step(steps, "state_force_error", "error", str(e))
 
         # Step 4: Lock frontend UI via Socket.IO
         self._emit_ui_lock(True, reason)
+        self._record_step(
+            steps,
+            "frontend_ui_lock",
+            "success" if self._socketio_ref else "warning",
+            "" if self._socketio_ref else "No Socket.IO registered for UI lock broadcast.",
+        )
+        with self._lock:
+            self._last_steps = list(steps)
+        self._publish_diagnostics(reason, steps)
 
         logger.critical("=== E-STOP CHAIN COMPLETE ===")
 
@@ -141,6 +233,7 @@ class EStop:
         with self._lock:
             self._triggered = False
             self._global_stop = False
+            self._last_reset_at = time.time()
         try:
             from backend.events.event_types import EventType
             from backend.state.store.state_store import state_store
@@ -162,12 +255,32 @@ class EStop:
         except Exception as e:
             logger.error(f"E-Stop reset recovery publish failed: {e}")
         self._emit_ui_lock(False, "Emergency stop cleared.")
+        self._publish_event("DIAGNOSTICS_UPDATED", {
+            "control": {"estop": self.snapshot()},
+            "ui": {"estop": self.snapshot()},
+            "module": "control",
+            "status": "success",
+            "severity": "info",
+            "message": "Emergency stop cleared.",
+        })
         logger.info("E-Stop state cleared. System can recover to IDLE.")
 
     @property
     def is_triggered(self) -> bool:
         with self._lock:
             return self._triggered
+
+    def snapshot(self) -> dict[str, Any]:
+        with self._lock:
+            return {
+                "triggered": self._triggered,
+                "global_stop": self._global_stop,
+                "reason": self._last_reason,
+                "last_triggered_at": self._last_triggered_at,
+                "last_reset_at": self._last_reset_at,
+                "steps": list(self._last_steps),
+                "errors": list(self._last_errors),
+            }
 
 # Global singleton
 estop = EStop()

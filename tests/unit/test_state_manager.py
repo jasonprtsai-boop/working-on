@@ -54,19 +54,19 @@ class TestStateManager(unittest.TestCase):
         self.assertEqual(current.cpu_percent, 22.0)
         self.assertEqual(current.memory_mb, 111.0)
 
-    def test_diagnostics_update_tracks_vision_fallback_mode(self):
+    def test_diagnostics_update_tracks_vision_simulation_mode(self):
         event = BaseEvent.create(
             event_type=EventType.DIAGNOSTICS_UPDATED,
             source="test",
-            payload={"vision": {"mode": "fallback", "fallback": True, "status": "FALLBACK"}},
+            payload={"vision": {"mode": "simulation", "simulation": True, "status": "SIMULATION"}},
         )
 
         self.manager.dispatch(event)
 
         current = self.manager.current
-        self.assertEqual(current.vision.mode, "fallback")
-        self.assertTrue(current.vision.fallback)
-        self.assertEqual(current.vision.camera_status, "FALLBACK")
+        self.assertEqual(current.vision.mode, "simulation")
+        self.assertTrue(current.vision.simulation)
+        self.assertEqual(current.vision.camera_status, "SIMULATION")
 
     def test_engine_analysis_completed_updates_engine_state(self):
         event = BaseEvent.create(
@@ -145,6 +145,7 @@ class TestStateManager(unittest.TestCase):
         self.assertEqual(current.robot.position["x"], 0.0)
 
     def test_player_move_updates_history_and_turn(self):
+        before = self.manager.current
         event = BaseEvent.create(
             event_type=EventType.GAME_PLAYER_MOVE,
             source="test",
@@ -156,6 +157,44 @@ class TestStateManager(unittest.TestCase):
         current = self.manager.current
         self.assertEqual(current.game.move_history[-1], "a0a1")
         self.assertEqual(current.game.current_turn, "b")
+        self.assertNotEqual(current.game.fen, before.game.fen)
+
+    def test_illegal_player_move_is_rejected(self):
+        before = self.manager.current
+        event = BaseEvent.create(
+            event_type=EventType.GAME_PLAYER_MOVE,
+            source="test",
+            payload={"move": "b0d1", "player": "human"},
+        )
+
+        self.manager.dispatch(event)
+
+        self.assertIs(self.manager.current, before)
+
+    def test_undo_restores_previous_game_state(self):
+        before = self.manager.current
+        self.manager.dispatch(
+            BaseEvent.create(
+                event_type=EventType.GAME_PLAYER_MOVE,
+                source="test",
+                payload={"move": "a0a1", "player": "human"},
+            )
+        )
+        moved = self.manager.current
+        self.assertNotEqual(moved.game.fen, before.game.fen)
+
+        self.manager.dispatch(
+            BaseEvent.create(
+                event_type=EventType.GAME_UNDO,
+                source="test",
+                payload={},
+            )
+        )
+
+        current = self.manager.current
+        self.assertEqual(current.game.fen, before.game.fen)
+        self.assertEqual(current.game.move_history, before.game.move_history)
+        self.assertEqual(current.game.current_turn, before.game.current_turn)
 
     def test_fen_only_move_event_does_not_flip_turn(self):
         before = self.manager.current

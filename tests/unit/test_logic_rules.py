@@ -12,6 +12,15 @@ class TestChessLogic(unittest.TestCase):
         self.assertFalse(ChessLogic.validate_move(self.start_fen, "bad"))
         self.assertFalse(ChessLogic.validate_move(self.start_fen, "j2e2"))
 
+    def test_validate_move_enforces_xiangqi_piece_rules(self):
+        self.assertTrue(ChessLogic.validate_move(self.start_fen, "b0c2"))
+        self.assertFalse(ChessLogic.validate_move(self.start_fen, "b0d1"))
+        self.assertFalse(ChessLogic.validate_move(self.start_fen, "a3a2"))
+
+    def test_validate_move_rejects_exposed_flying_general(self):
+        fen = "4k4/9/9/9/9/9/9/9/4R4/4K4 w - - 0 1"
+        self.assertFalse(ChessLogic.validate_move(fen, "e1f1"))
+
     def test_parse_move_extracts_piece(self):
         move = ChessLogic.parse_move(self.start_fen, "b2b5")
         self.assertEqual(move["from"], "b2")

@@ -21,18 +21,24 @@ class RobotStatusWorker:
         self.interval_sec = float(interval_sec)
         self._thread: Optional[threading.Thread] = None
         self._stop = threading.Event()
+        self.status = "IDLE"
+        self.last_error = None
 
     def start(self):
         if self._thread and self._thread.is_alive():
             return
         self._stop.clear()
+        self.status = "STARTING"
         self._thread = threading.Thread(target=self._run, daemon=True, name="RobotStatusWorker")
         self._thread.start()
+        self.status = "RUNNING"
 
     def stop(self):
         self._stop.set()
+        self.status = "STOPPING"
         if self._thread:
             self._thread.join(timeout=1.0)
+        self.status = "STOPPED"
 
     def _run(self):
         while not self._stop.is_set():
@@ -48,8 +54,19 @@ class RobotStatusWorker:
                     payload=status
                 ))
             except Exception as e:
+                self.last_error = str(e)
                 logger.debug(f"[RobotStatusWorker] failed to emit status: {e}", exc_info=True)
             time.sleep(self.interval_sec)
+
+    @property
+    def is_running(self):
+        return bool(self._thread and self._thread.is_alive() and not self._stop.is_set())
+
+    def stats(self):
+        return {
+            "interval_sec": self.interval_sec,
+            "last_error": self.last_error,
+        }
 
 
 robot_status_worker = RobotStatusWorker()

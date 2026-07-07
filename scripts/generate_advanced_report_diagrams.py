@@ -52,7 +52,7 @@ def advanced_dfd() -> Diagram:
     stores = [
         ("d1", 1490, 235, "D1 StateStore\nSystemState snapshot\nFEN / health / trace_id", PALETTE["green_light"], PALETTE["green"]),
         ("d2", 1490, 455, "D2 SQLite app.db\nevents(sequence_id,\nsession_id, trace_id)", "#F8FAFC", "#475569"),
-        ("d3", 1490, 675, "D3 Protected Assets\nPikafish.exe / NNUE\nYOLO best.pt", PALETTE["amber_light"], PALETTE["amber"]),
+        ("d3", 1490, 675, "D3 Protected Assets\nPikafish.exe / NNUE\nYOLO best.onnx", PALETTE["amber_light"], PALETTE["amber"]),
         ("d4", 1490, 835, "D4 Output Artifacts\nReplay / Excel / CSV\nlogs / reports", PALETTE["blue_light"], PALETTE["blue"]),
     ]
     for id_, x, y, label, fill, stroke in stores:
@@ -107,7 +107,7 @@ def component_dependency() -> Diagram:
         d.box(id_, x, y, 330, 130, label, fill, stroke, font_size=19)
 
     infra = [
-        ("vision", 1495, 220, "<<vision adapter>>\nVisionSystem\nSAHI/Yolo/Grid\nMJPEG overlay", PALETTE["teal_light"], PALETTE["teal"]),
+        ("vision", 1495, 220, "<<vision adapter>>\nVisionSystem\nOpenCV/Yolo/Homography\nMJPEG overlay", PALETTE["teal_light"], PALETTE["teal"]),
         ("engine", 1495, 410, "<<engine adapter>>\nEngineService\nPikafish UCI\nEngineParser", PALETTE["amber_light"], PALETTE["amber"]),
         ("robot", 1495, 600, "<<robot adapter>>\nRobotFacade\nRobotService / FakeRobot\nE-Stop", PALETTE["red_light"], PALETTE["red"]),
         ("db", 1495, 790, "<<storage adapter>>\nEventStore SQLite\nExcel exporter / Replay", "#F8FAFC", "#475569"),
@@ -192,7 +192,7 @@ def state_machine() -> Diagram:
     states = {
         "idle": (130, 285, "IDLE\n等待操作\nsafe mode ready", PALETTE["green_light"], PALETTE["green"]),
         "wait": (520, 285, "WAIT_MOVE\n使用者走子\n或 Vision sync", PALETTE["blue_light"], PALETTE["blue"]),
-        "detect": (910, 285, "DETECTING\nCamera frame\nYOLO/SAHI\nFEN validate", PALETTE["teal_light"], PALETTE["teal"]),
+        "detect": (910, 285, "DETECTING\nCamera frame\nYOLO\nFEN validate", PALETTE["teal_light"], PALETTE["teal"]),
         "think": (1300, 285, "THINKING\nPikafish compute\ndepth / MultiPV", PALETTE["amber_light"], PALETTE["amber"]),
         "apply": (520, 620, "APPLY_MOVE\nMoveReducer\nhistory / turn\nSTATE_UPDATED", PALETTE["violet_light"], PALETTE["violet"]),
         "exec": (910, 620, "EXECUTING\nRobotFacade\npick-and-place\nstatus worker", PALETTE["red_light"], PALETTE["red"]),
@@ -310,7 +310,7 @@ def deployment_network() -> Diagram:
     d.box("state", 820, 340, 230, 120, "EventBus\nStateManager\ncontract forwarder", PALETTE["green_light"], PALETTE["green"], font_size=19)
     d.box("camera", 1240, 230, 260, 115, "USB / IP Camera\nOpenCV capture", PALETTE["teal_light"], PALETTE["teal"], font_size=20)
     d.box("robot", 1240, 430, 260, 115, "TM5-700 Controller\nModbus TCP / fake", PALETTE["red_light"], PALETTE["red"], font_size=20)
-    d.box("assets", 1240, 630, 260, 115, "Protected assets\nPikafish.exe\nNNUE / best.pt", PALETTE["amber_light"], PALETTE["amber"], font_size=20)
+    d.box("assets", 1240, 630, 260, 115, "Protected assets\nPikafish.exe\nNNUE / best.onnx", PALETTE["amber_light"], PALETTE["amber"], font_size=20)
     d.box("fs", 1570, 360, 250, 150, "Local filesystem\nSQLite app.db\nreplays / logs\nExcel exports", "#F8FAFC", "#475569", font_size=20)
     d.arrow("browser", "flask", "HTTP REST / static")
     d.arrow("flask", "browser", "Socket.IO / MJPEG", start_side="left", end_side="right", dashed=True, points=[(500, 290), (430, 290), (430, 305), (400, 305)])
@@ -375,7 +375,7 @@ def safety_fault_tree() -> Diagram:
         d.box(id_, x, y, 290, 130, label, fill, stroke, font_size=19)
         d.arrow("top", id_, "cause", start_side="bottom", end_side="top")
     controls = [
-        ("c1", 90, 660, "TemporalValidator\nconfidence summary\nmanual sync / fallback", PALETTE["green_light"], PALETTE["green"]),
+        ("c1", 90, 660, "TemporalValidator\nconfidence summary\nmanual sync / YOLO", PALETTE["green_light"], PALETTE["green"]),
         ("c2", 460, 660, "Pydantic schemas\nKNOWN_EVENTS\nStateManager validate", PALETTE["green_light"], PALETTE["green"]),
         ("c3", 830, 660, "startup probe\ncompatibility_report\nbackoff diagnostics", PALETTE["green_light"], PALETTE["green"]),
         ("c4", 1200, 660, "E-Stop chain\nRobotFacade gate\nmanual reset", PALETTE["green_light"], PALETTE["green"]),
@@ -409,7 +409,7 @@ def test_coverage_matrix() -> Diagram:
         d.box(id_, x, 165, 300, 70, title, "#FFFFFF", "#94A3B8", font_size=22, shadow=False)
     rows = [
         ("高齡互動可用性", "Dashboard / UI state", "frontend Jest\nmanual UI check", "SUS / TAM\n訪談", "第 1/3/4/5 章"),
-        ("即時棋盤辨識", "VisionSystem\nYOLO/SAHI/FEN", "vision unit\nsimulation", "FPS / confidence\n錯誤案例", "第 3/4 章"),
+        ("即時棋盤辨識", "VisionSystem\nYOLO/FEN", "vision unit\nsimulation", "FPS / confidence\n錯誤案例", "第 3/4 章"),
         ("AI 對弈決策", "EngineWorker\nEngineService", "unit + integration\nengine status", "bestmove / depth\nscore / PV", "第 3/4 章"),
         ("實體安全落子", "RobotFacade\nE-Stop", "unit + smoke\nmanual safety", "ROBOT.STATUS\nE-Stop log", "第 3/4 章"),
         ("資料可追蹤", "EventBus\nPersistenceWorker", "integration\nDB checks", "SQLite events\nReplay / Excel", "第 4/5 章"),

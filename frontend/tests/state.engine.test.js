@@ -70,3 +70,31 @@ test('STATE_UPDATE keeps dashboard board and robot contract fields', () => {
   expect(normalized.robot.safety_status).toBe('SAFE');
   expect(normalized.robot.position).toEqual({ x: 10, y: 20, z: 30 });
 });
+
+test('STATE_UPDATE derives board turn from FEN when turn is omitted', () => {
+  const normalized = Normalizer.normalize('STATE_UPDATE', {
+    board: {
+      fen: 'rnbakabnr/9/9/9/9/9/9/9/9/RNBAKABNR b - - 0 1',
+    },
+  });
+
+  expect(normalized.board.turn).toBe('black');
+});
+
+test('DIAGNOSTICS.UPDATED preserves runtime diagnostics and queue aliases', () => {
+  const normalized = Normalizer.normalize('DIAGNOSTICS.UPDATED', {
+    queues: {
+      robot: { size: 1, blocked: true, blocked_reason: 'stale_item' },
+    },
+    event_bus: { sequence: 12 },
+    persistence: { dropped_events: 0 },
+    async_runtime: { loop_running: true },
+    control: { safe_mode: true },
+  });
+
+  expect(normalized.queue.robot.blocked).toBe(true);
+  expect(normalized.queues.robot.blocked_reason).toBe('stale_item');
+  expect(normalized.event_bus.sequence).toBe(12);
+  expect(normalized.runtime.event_bus.sequence).toBe(12);
+  expect(normalized.runtime.async_runtime.loop_running).toBe(true);
+});

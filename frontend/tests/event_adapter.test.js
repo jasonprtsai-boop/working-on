@@ -96,3 +96,20 @@ test('websocket adapter rejects invalid known payload shapes', async () => {
     reason: 'payload_not_object'
   }));
 });
+
+test('websocket adapter rejects field-level contract violations', async () => {
+  const { setupEventAdapter } = await import('../static/js/modules/websocket/event_adapter.js');
+  const socket = {
+    on: jest.fn((_event, callback) => {
+      callback({ type: 'ENGINE.INFO_UPDATED', payload: { pv: 'not-an-array' } });
+    })
+  };
+
+  setupEventAdapter(socket);
+
+  expect(commitMock).not.toHaveBeenCalledWith('ENGINE.INFO_UPDATED', expect.anything());
+  expect(commitMock).toHaveBeenCalledWith('UI_TOAST', expect.objectContaining({
+    text: 'Ignored invalid socket payload: ENGINE.INFO_UPDATED',
+    reason: 'pv_not_array'
+  }));
+});

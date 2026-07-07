@@ -9,12 +9,17 @@ class TestDiagnosticsContractKeys(unittest.TestCase):
         os.environ.setdefault("FAKE_VISION", "1")
         from backend.main import create_app
         from backend.events.bus.event_bus import bus
+        from backend.events.models.base_event import BaseEvent
 
         app, socketio = create_app()
         client = socketio.test_client(app, flask_test_client=app.test_client(), auth=socket_auth())
         try:
             client.get_received()
-            bus.publish({"type": "DIAGNOSTICS.UPDATED", "source": "test", "payload": {"engine": {"status": "OK"}}})
+            bus.publish(BaseEvent.create(
+                event_type="DIAGNOSTICS.UPDATED",
+                source="test",
+                payload={"engine": {"status": "OK"}},
+            ))
             socketio.sleep(0.05)
             received = client.get_received()
         finally:
@@ -26,6 +31,24 @@ class TestDiagnosticsContractKeys(unittest.TestCase):
         self.assertTrue(diags, "Expected DIAGNOSTICS.UPDATED emission")
 
         payload = diags[-1].get("payload") or {}
-        for k in ("ui", "sync", "engine", "robot", "vision"):
+        for k in (
+            "ui",
+            "sync",
+            "engine",
+            "robot",
+            "vision",
+            "health",
+            "telemetry",
+            "queue",
+            "queues",
+            "pipeline",
+            "topology",
+            "workers",
+            "event_bus",
+            "persistence",
+            "async_runtime",
+            "control",
+            "runtime",
+        ):
             self.assertIn(k, payload, f"DIAGNOSTICS.UPDATED missing key: {k}")
             self.assertIsInstance(payload.get(k), dict, f"DIAGNOSTICS.UPDATED key {k} must be a dict")

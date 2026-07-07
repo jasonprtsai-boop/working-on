@@ -1,0 +1,13 @@
+train: ../train/images
+val: ../valid/images
+test: ../test/images
+
+nc: 15
+names: ['chess - black - cannon', 'chess - black - car', 'chess - black - elephant', 'chess - black - guard', 'chess - black - horse', 'chess - black - king', 'chess - black - soldier', 'chess - red - cannon', 'chess - red - car', 'chess - red - elephant', 'chess - red - guard', 'chess - red - horse', 'chess - red - king', 'chess - red - soldier', 'other - hand']
+
+roboflow:
+  workspace: s-workspace-wf83g
+  project: chess_vision-mls4n
+  version: 6
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/s-workspace-wf83g/chess_vision-mls4n/dataset/6

@@ -140,6 +140,9 @@ class TestExcelExporter(unittest.TestCase):
             try:
                 expected = {
                     "Overview",
+                    "Session Summary",
+                    "Collection Health",
+                    "Trace Timeline",
                     "Pipeline_Log",
                     "Data Quality",
                     "Vision FEN Log",
@@ -206,10 +209,117 @@ class TestExcelExporter(unittest.TestCase):
                 self.assertEqual(comparison["A3"].value, "detail")
 
                 self.assertEqual(wb["Pipeline_Log"].freeze_panes, "A2")
+                self.assertEqual(wb["Session Summary"]["A2"].value, "session-a")
+                health_headers = [cell.value for cell in wb["Collection Health"][1]]
+                self.assertIn("collection_score", health_headers)
+                timeline_headers = [cell.value for cell in wb["Trace Timeline"][1]]
+                self.assertIn("module", timeline_headers)
+                self.assertIn("inter_event_ms", timeline_headers)
                 self.assertEqual(wb["Vision Mode Comparison"].sheet_properties.tabColor.rgb, "007C3AED")
                 self.assertIn("A1:B1", [str(item) for item in wb["Overview"].merged_cells.ranges])
                 self.assertEqual(wb["Overview"]["A1"].fill.fgColor.rgb, "00EFF6FF")
                 self.assertEqual(comparison["A2"].fill.fgColor.rgb, "00DBEAFE")
+            finally:
+                wb.close()
+
+    def test_export_events_uses_persisted_event_metadata(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            log_path = os.path.join(tmpdir, "source.xlsx")
+            out_path = os.path.join(tmpdir, "report.xlsx")
+            exporter = ExcelExporter(filename=log_path, subscribe=False)
+            event_id = str(uuid.uuid4())
+
+            exporter.export_events(
+                [
+                    {
+                        "sequence_id": 7,
+                        "event_id": event_id,
+                        "session_id": "session-db",
+                        "trace_id": "trace-db",
+                        "type": "VISION.FRAME_PROCESSED",
+                        "source": "vision_worker",
+                        "payload": {
+                            "fen": "9/9/9/9/9/9/9/9/9/9 w - - 0 1",
+                            "latency_ms": 33.5,
+                            "detections_count": 1,
+                            "avg_confidence": 0.88,
+                            "detections": [{"class_name": "black_cannon", "confidence": 0.88, "cell": "2,1"}],
+                        },
+                        "metadata": {"span_id": "span-db"},
+                        "timestamp": 1234.0,
+                    }
+                ],
+                out_path,
+                session_id="session-db",
+            )
+
+            wb = load_workbook(out_path, data_only=True)
+            try:
+                pipeline_headers = [cell.value for cell in wb["Pipeline_Log"][1]]
+                source_col = pipeline_headers.index("source") + 1
+                event_id_col = pipeline_headers.index("event_id") + 1
+                self.assertEqual(wb["Pipeline_Log"].cell(row=2, column=event_id_col).value, event_id)
+                self.assertEqual(wb["Pipeline_Log"].cell(row=2, column=source_col).value, "vision_worker")
+                self.assertEqual(wb["Trace Timeline"]["A2"].value, 7)
+                self.assertEqual(wb["Trace Timeline"]["H2"].value, "vision")
+                self.assertIn("span-db", wb["Raw Payload"]["H2"].value)
+            finally:
+                wb.close()
+
+    def test_export_events_session_summary_tolerates_invalid_timestamps(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            log_path = os.path.join(tmpdir, "source.xlsx")
+            out_path = os.path.join(tmpdir, "report.xlsx")
+            exporter = ExcelExporter(filename=log_path, subscribe=False)
+            first_timestamp = 1700000000.0
+            last_timestamp = 1700000006.0
+
+            exporter.export_events(
+                [
+                    {
+                        "sequence_id": 1,
+                        "event_id": str(uuid.uuid4()),
+                        "session_id": "session-bad-time",
+                        "trace_id": "trace-1",
+                        "type": "STATE_UPDATED",
+                        "source": "unit",
+                        "payload": {},
+                        "timestamp": "not-a-timestamp",
+                    },
+                    {
+                        "sequence_id": 2,
+                        "event_id": str(uuid.uuid4()),
+                        "session_id": "session-bad-time",
+                        "trace_id": "trace-2",
+                        "type": "VISION.FRAME_PROCESSED",
+                        "source": "unit",
+                        "payload": {"latency_ms": 12.0},
+                        "timestamp": first_timestamp,
+                    },
+                    {
+                        "sequence_id": 3,
+                        "event_id": str(uuid.uuid4()),
+                        "session_id": "session-bad-time",
+                        "trace_id": "trace-3",
+                        "type": "ROBOT.STATUS_UPDATED",
+                        "source": "unit",
+                        "payload": {"status": "idle"},
+                        "timestamp": last_timestamp,
+                    },
+                ],
+                out_path,
+            )
+
+            wb = load_workbook(out_path, data_only=True)
+            try:
+                headers = [cell.value for cell in wb["Session Summary"][1]]
+                first_col = headers.index("first_timestamp") + 1
+                last_col = headers.index("last_timestamp") + 1
+                duration_col = headers.index("duration_sec") + 1
+                self.assertEqual(wb["Session Summary"]["A2"].value, "session-bad-time")
+                self.assertEqual(wb["Session Summary"].cell(row=2, column=first_col).value, exporter._timestamp_text(first_timestamp))
+                self.assertEqual(wb["Session Summary"].cell(row=2, column=last_col).value, exporter._timestamp_text(last_timestamp))
+                self.assertEqual(wb["Session Summary"].cell(row=2, column=duration_col).value, 6)
             finally:
                 wb.close()
 

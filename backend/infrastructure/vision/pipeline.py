@@ -1,79 +1,200 @@
-import dataclasses
 import time
-import asyncio
-from typing import Optional, List
+from typing import Any, Dict, List, Optional, Tuple
+
 import numpy as np
 
-# New Granular Modules
-from .preprocess import Preprocessor
-from .perspective import PerspectiveTransformer
-from .morphology import MorphologyOptimizer
-from .fen.fen_generator import DetectionFENGenerator as FenGenerator
-from backend.application.dto.vision_dto import VisionResultDTO, DetectionDTO, BoundingBoxDTO
+from backend.application.dto.vision_dto import BoundingBoxDTO, DetectionDTO, VisionResultDTO
 from backend.utils.logger import logger
+
 
 class VisionPipeline:
     """
-    [Architectural Orchestrator] Vision Pipeline
-    描述 OpenCV 功能如何封裝成模組，並與 YOLO 推論及 FEN 生成串聯。
+    OpenCV preprocessing and homography correction followed by YOLO detection and FEN generation.
     """
-    def __init__(self, camera, preprocess, perspective, morphology, detector, fen_gen, roi_opt=None):
+
+    def __init__(self, camera, preprocess, perspective, morphology, detector, fen_gen, board_mapper=None):
         self.camera = camera
         self.preprocess = preprocess
         self.perspective = perspective
         self.morphology = morphology
         self.detector = detector
         self.fen_gen = fen_gen
-        self.roi_opt = roi_opt
+        self.board_mapper = board_mapper
         self._last_result = None
 
     async def process(self, frame: np.ndarray, turn: str = "w") -> Optional[VisionResultDTO]:
         """
-        論文推薦之主流程 (main.py logic):
-        frame -> transform -> [ROI Check] -> preprocess -> optimize -> detect -> generate
+        Process one frame:
+        frame -> homography transform -> OpenCV preprocess -> YOLO detect -> FEN generate.
         """
         if frame is None:
             return None
 
-        start_time = time.time()
+        if not hasattr(frame, "shape") or getattr(frame, "size", 0) == 0:
+            logger.warning("[VisionPipeline] empty or invalid frame skipped.")
+            return None
 
-        # 1. perspective.py — 透視校正
-        warped = self.perspective.transform(frame)
+        wall_timestamp = time.time()
+        total_start = time.perf_counter()
+        timings: Dict[str, float] = {}
 
-        # 2. ROI Optimizer — 變動偵測 (節省效能核心)
-        if self.roi_opt:
-            change = self.roi_opt.detect_change(warped)
-            if change is None and self._last_result:
-                # 無顯著變動，沿用上次辨識結果，跳過 YOLO 推論
-                latency = (time.time() - start_time) * 1000
-                return dataclasses.replace(self._last_result, latency_ms=latency, timestamp=time.time())
+        warped = self._timed("homography", timings, lambda: self._transform_frame(frame))
+        if warped is None:
+            warped = frame
 
-        # 3. preprocess.py — 影像前處理 (彩色增強用於偵測)
-        enhanced = self.preprocess.enhance_color(warped)
+        enhanced = self._timed("preprocess", timings, lambda: self._preprocess_frame(warped))
+        if enhanced is None:
+            enhanced = warped
 
-        # 4. detector.py — YOLO 推論
-        raw_detections = self.detector.detect(enhanced)
+        detector_input = self._timed("morphology", timings, lambda: self._apply_morphology_if_mask(enhanced))
+        if detector_input is None:
+            detector_input = enhanced
 
-        # 5. fen_generator.py — 棋譜轉換
-        fen = self.fen_gen.generate(raw_detections, turn=turn)
+        raw_detections = self._timed("inference", timings, lambda: list(self.detector.detect(detector_input) or []))
+        if raw_detections is None:
+            raw_detections = []
 
-        latency = (time.time() - start_time) * 1000
+        board_state = self._timed("board_mapping", timings, lambda: self._map_board_state(raw_detections)) or {}
+        fen = self._timed("fen", timings, lambda: self._generate_fen(raw_detections, board_state, turn))
+
+        latency = (time.perf_counter() - total_start) * 1000
+        timings["total"] = round(latency, 3)
+        coordinate_space = "rectified_board" if self._is_calibrated() else "camera_frame"
+        frame_size = self._frame_size(detector_input)
 
         self._last_result = VisionResultDTO(
-            timestamp=time.time(),
+            timestamp=wall_timestamp,
             raw_frame=frame,
             work_frame=warped,
-            detections=[
-                DetectionDTO(
-                    class_name=d.class_name,
-                    confidence=d.confidence,
-                    bbox=BoundingBoxDTO(x1=d.bbox.x1, y1=d.bbox.y1, x2=d.bbox.x2, y2=d.bbox.y2)
-                ) for d in raw_detections
-            ],
+            detections=self._to_detection_dtos(raw_detections, coordinate_space=coordinate_space, frame_size=frame_size),
             latency_ms=latency,
-            fen=fen
+            fen=fen,
+            board_state=board_state,
+            stage_timings_ms=timings,
+            calibrated=self._is_calibrated(),
+            coordinate_space=coordinate_space,
         )
         return self._last_result
 
     def update_corners(self, corners):
         self.perspective.update_corners(corners)
+
+    def _timed(self, stage: str, timings: Dict[str, float], fn):
+        start = time.perf_counter()
+        try:
+            return fn()
+        except Exception as exc:
+            logger.warning("[VisionPipeline] %s stage failed: %s", stage, exc, exc_info=True)
+            return None
+        finally:
+            timings[stage] = round((time.perf_counter() - start) * 1000, 3)
+
+    def _transform_frame(self, frame: np.ndarray) -> np.ndarray:
+        if self.perspective is None or not hasattr(self.perspective, "transform"):
+            return frame
+        return self.perspective.transform(frame)
+
+    def _preprocess_frame(self, frame: np.ndarray) -> np.ndarray:
+        if self.preprocess is None:
+            return frame
+        if hasattr(self.preprocess, "process"):
+            return self.preprocess.process(frame)
+        if hasattr(self.preprocess, "enhance_color"):
+            return self.preprocess.enhance_color(frame)
+        return frame
+
+    def _apply_morphology_if_mask(self, frame: np.ndarray) -> np.ndarray:
+        if self.morphology is None or not hasattr(self.morphology, "optimize"):
+            return frame
+        if getattr(frame, "ndim", 0) != 2:
+            return frame
+        return self.morphology.optimize(frame)
+
+    def _map_board_state(self, detections: List[Any]) -> Dict[str, str]:
+        mapper = self.board_mapper
+        if mapper is None:
+            mapper = getattr(self.fen_gen, "mapper", None)
+        if mapper is None or not hasattr(mapper, "map_detections"):
+            return {}
+        return dict(mapper.map_detections(detections) or {})
+
+    def _generate_fen(self, detections: List[Any], board_state: Dict[str, str], turn: str) -> Optional[str]:
+        if self.fen_gen is None or not hasattr(self.fen_gen, "generate"):
+            return None
+        if board_state and not hasattr(self.fen_gen, "mapper"):
+            return self.fen_gen.generate(board_state, turn=turn)
+        return self.fen_gen.generate(detections, turn=turn)
+
+    def _to_detection_dtos(
+        self,
+        detections: List[Any],
+        *,
+        coordinate_space: str,
+        frame_size: Optional[Tuple[int, int]],
+    ) -> List[DetectionDTO]:
+        if self.board_mapper is not None and hasattr(self.board_mapper, "describe_detections"):
+            payloads = self.board_mapper.describe_detections(
+                detections,
+                coordinate_space=coordinate_space,
+                frame_size=frame_size,
+            )
+        else:
+            payloads = [
+                det.to_dict(
+                    coordinate_space=coordinate_space,
+                    frame_size=frame_size,
+                )
+                if hasattr(det, "to_dict")
+                else self._detection_payload(det, coordinate_space=coordinate_space, frame_size=frame_size)
+                for det in detections
+            ]
+
+        return [self._payload_to_dto(payload) for payload in payloads]
+
+    def _payload_to_dto(self, payload: Dict[str, Any]) -> DetectionDTO:
+        bbox = payload.get("bbox_xyxy") or payload.get("bbox") or [0.0, 0.0, 0.0, 0.0]
+        metadata = {
+            key: value
+            for key, value in payload.items()
+            if key not in {"class_id", "class_name", "confidence", "bbox", "bbox_xyxy", "coordinate_space", "frame_size"}
+        }
+        return DetectionDTO(
+            class_id=payload.get("class_id"),
+            class_name=str(payload.get("class_name", "")),
+            confidence=float(payload.get("confidence", 0.0) or 0.0),
+            bbox=BoundingBoxDTO(x1=float(bbox[0]), y1=float(bbox[1]), x2=float(bbox[2]), y2=float(bbox[3])),
+            coordinate_space=str(payload.get("coordinate_space") or "detector_input"),
+            frame_size=list(payload.get("frame_size")) if isinstance(payload.get("frame_size"), (list, tuple)) else None,
+            metadata=metadata,
+        )
+
+    def _detection_payload(
+        self,
+        detection,
+        *,
+        coordinate_space: str,
+        frame_size: Optional[Tuple[int, int]],
+    ) -> Dict[str, Any]:
+        return {
+            "class_name": str(getattr(detection, "class_name", "")),
+            "confidence": float(getattr(detection, "confidence", 0.0) or 0.0),
+            "bbox": [0.0, 0.0, 0.0, 0.0],
+            "coordinate_space": coordinate_space,
+            "frame_size": list(frame_size) if frame_size else None,
+        }
+
+    def _frame_size(self, frame: np.ndarray) -> Optional[Tuple[int, int]]:
+        try:
+            height, width = frame.shape[:2]
+        except Exception:
+            return None
+        return int(width), int(height)
+
+    def _is_calibrated(self) -> bool:
+        return bool(
+            self.perspective is not None
+            and (
+                getattr(self.perspective, "is_calibrated", False)
+                or getattr(self.perspective, "matrix", None) is not None
+            )
+        )
