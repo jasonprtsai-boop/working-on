@@ -171,6 +171,13 @@ test('renderDiagnostics surfaces vision simulation mode', () => {
   expect(document.getElementById('stat-camera').className).toBe('status-warning');
 });
 
+test('renderDiagnostics surfaces stale vision as warning', () => {
+  renderDiagnostics({ vision: { status: 'STALE' } });
+
+  expect(document.getElementById('stat-camera').innerText).toBe('Stale');
+  expect(document.getElementById('stat-camera').className).toBe('status-warning');
+});
+
 test('renderDiagnostics updates YOLO FEN monitor fields', () => {
   renderDiagnostics({
     vision: {

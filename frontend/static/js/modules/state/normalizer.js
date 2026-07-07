@@ -121,6 +121,15 @@ export const Normalizer = {
         const detections = data.detections || [];
         const avgConfidence = data.avg_confidence ?? data.avgConfidence ?? data.confidence ?? 0;
         const minConfidence = data.min_confidence ?? data.minConfidence ?? avgConfidence;
+        const timestamp = data.timestamp || Date.now() / 1000;
+        const sourceTimestamp = data.source_timestamp ?? data.sourceTimestamp ?? data.stable_timestamp ?? timestamp;
+        const processedTimestamp = data.processed_timestamp ?? data.processedTimestamp ?? timestamp;
+        const visionAgeMs = firstFiniteNumber(
+            data.vision_age_ms,
+            data.visionAgeMs,
+            ageMsFromTimestamp(sourceTimestamp, processedTimestamp),
+        );
+        const stale = Boolean(data.stale ?? data.is_stale ?? data.isStale ?? (visionAgeMs > 3000));
         return {
             fps: data.fps || 0,
             latency: data.latency || data.latency_ms || 0,
@@ -142,8 +151,13 @@ export const Normalizer = {
             calibrated: data.calibrated ?? data.calibration?.calibrated ?? undefined,
             calibration_quality: data.calibration_quality || data.calibrationQuality || data.calibration?.quality || {},
             calibration_source: data.calibration_source || data.calibrationSource || data.calibration?.source || "",
-            timestamp: data.timestamp || Date.now() / 1000,
-            status: data.status || "OK"
+            timestamp,
+            source_timestamp: sourceTimestamp,
+            processed_timestamp: processedTimestamp,
+            vision_age_ms: visionAgeMs,
+            stale,
+            is_stale: stale,
+            status: stale ? (data.status || "STALE") : (data.status || "OK")
         };
     },
 
@@ -181,4 +195,25 @@ function normalizeBoardTurn(value) {
 function turnFromFen(fen) {
     const side = String(fen || '').trim().split(/\s+/)[1];
     return normalizeBoardTurn(side);
+}
+
+function firstFiniteNumber(...values) {
+    for (const value of values) {
+        const numeric = Number(value);
+        if (Number.isFinite(numeric)) return numeric;
+    }
+    return 0;
+}
+
+function timestampToMs(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || numeric <= 0) return 0;
+    return numeric < 100000000000 ? numeric * 1000 : numeric;
+}
+
+function ageMsFromTimestamp(sourceTimestamp, processedTimestamp) {
+    const sourceMs = timestampToMs(sourceTimestamp);
+    const processedMs = timestampToMs(processedTimestamp) || Date.now();
+    if (!sourceMs || !processedMs) return 0;
+    return Math.max(0, processedMs - sourceMs);
 }

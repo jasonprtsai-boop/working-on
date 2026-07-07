@@ -109,6 +109,9 @@ function summarizeDetections(detections) {
 function mapVisionStatus(status, mode) {
     const normalized = String(status || '').trim().toUpperCase();
     const normalizedMode = String(mode || '').trim().toLowerCase();
+    if (normalized === 'STALE') {
+        return { label: 'Stale', isError: false, isWarning: true };
+    }
     if (normalizedMode === 'simulation' || normalized === 'SIMULATION') {
         return { label: 'Simulation', isError: false, isWarning: true };
     }

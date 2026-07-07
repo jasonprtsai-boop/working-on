@@ -42,6 +42,19 @@ test('VISION.FRAME_PROCESSED preserves FEN and UCCI telemetry', () => {
   expect(normalized.vision.board_state['0,0']).toBe('R');
 });
 
+test('VISION.FRAME_PROCESSED marks stale vision telemetry', () => {
+  const normalized = Normalizer.normalize('VISION.FRAME_PROCESSED', {
+    timestamp: 200,
+    source_timestamp: 196,
+    processed_timestamp: 200,
+    fen: 'fen-stale',
+  });
+
+  expect(normalized.vision.vision_age_ms).toBe(4000);
+  expect(normalized.vision.stale).toBe(true);
+  expect(normalized.vision.status).toBe('STALE');
+});
+
 test('STATE_UPDATE keeps dashboard board and robot contract fields', () => {
   const normalized = Normalizer.normalize('STATE_UPDATE', {
     board: {

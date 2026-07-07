@@ -42,6 +42,7 @@ const setupWizardState = {
 };
 const VIDEO_RECONNECT_BASE_MS = 800;
 const VIDEO_RECONNECT_MAX_MS = 6000;
+const VISION_STALE_THRESHOLD_MS = 3000;
 
 document.addEventListener('DOMContentLoaded', () => {
     if (window.__SMART_DEBUG__) {
@@ -1018,6 +1019,10 @@ function updatePlayerGuide() {
         setPlayerGuideCopy('辨識失敗', '請重新擺正棋子', '確認棋子放在格線交點附近，手離開棋盤後等待系統重新辨識。');
         return;
     }
+    if (visionStatus.state === 'warning') {
+        setPlayerGuideCopy('等待影像更新', '請先不要移動棋子', '目前影像資料延遲或尚未穩定，請把手離開棋盤並等待辨識成功。');
+        return;
+    }
     if (turn === 'black') {
         setPlayerGuideCopy('等待 AI', '現在輪到黑方', '請稍候系統計算，機械手臂動作前畫面會再次提示。');
         return;
@@ -1033,8 +1038,13 @@ function setPlayerGuideCopy(step, action, detail) {
 
 function playerVisionStatus(vision = {}) {
     const status = String(vision.status || '').toLowerCase();
+    const ageMs = Number(vision.vision_age_ms ?? vision.visionAgeMs ?? 0);
+    const stale = Boolean(vision.stale || vision.is_stale || vision.isStale || ageMs > VISION_STALE_THRESHOLD_MS);
     if (vision.fen_valid === false || status.includes('error') || status.includes('fail')) {
         return { state: 'error', text: '辨識失敗' };
+    }
+    if (stale || status.includes('stale')) {
+        return { state: 'warning', text: '影像延遲' };
     }
     if (vision.stable || vision.fen || vision.fen_after) {
         return { state: 'ok', text: '辨識成功' };
