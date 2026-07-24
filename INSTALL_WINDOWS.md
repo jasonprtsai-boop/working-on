@@ -5,7 +5,7 @@ This is the recommended setup for a normal Windows test computer.
 ## Supported Versions
 
 - Windows 10/11 64-bit
-- Python 3.11 recommended
+- Python 3.11.9 recommended for lab PCs
 - Python 3.9, 3.10, 3.11, and 3.12 are supported
 - Python 3.13 is not supported yet for this project
 - Node.js 24 LTS recommended

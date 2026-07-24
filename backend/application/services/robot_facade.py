@@ -15,7 +15,8 @@ class RobotFacade(RobotInterface):
     """
     Unifies real hardware vs simulation behind a single interface.
 
-    - When Modbus deps are present and FAKE_ROBOT is false, uses Modbus-backed RobotService.
+    - When FAKE_ROBOT is false, uses the configured RobotService adapter
+      (`tmflow_json` by default, with `techmanpy` and `modbus` as compatibility options).
     - Otherwise uses FakeRobot simulation.
     """
 
@@ -67,7 +68,9 @@ class RobotFacade(RobotInterface):
             try:
                 from backend.infrastructure.robot.safety import RobotSafety
 
-                if hasattr(impl, "_build_motion_profiles"):
+                if hasattr(impl, "refresh_runtime_config"):
+                    impl.refresh_runtime_config()
+                elif hasattr(impl, "_build_motion_profiles"):
                     impl.motion_profiles = impl._build_motion_profiles()
                 if hasattr(impl, "safety"):
                     impl.safety = RobotSafety(config)
@@ -182,7 +185,7 @@ class RobotFacade(RobotInterface):
                         "host": str(getattr(config, "ROBOT_IP", "")),
                         "port": int(getattr(config, "ROBOT_PORT", 0) or 0),
                         "connected": bool(raw.get("connected", False)),
-                        "mode": "simulation" if self._fake_mode else "modbus",
+                        "mode": "simulation" if self._fake_mode else str(getattr(config, "ROBOT_ADAPTER", "tmflow_json")),
                     },
                     "fake_robot": bool(self._fake_mode),
                 }
@@ -232,7 +235,7 @@ class RobotFacade(RobotInterface):
                 "host": str(getattr(config, "ROBOT_IP", "")),
                 "port": int(getattr(config, "ROBOT_PORT", 0) or 0),
                 "connected": False,
-                "mode": "simulation" if self._fake_mode else "modbus",
+                "mode": "simulation" if self._fake_mode else str(getattr(config, "ROBOT_ADAPTER", "tmflow_json")),
             },
             "fake_robot": bool(self._fake_mode),
             "telemetry": {"enabled": bool(getattr(config, "ROBOT_TELEMETRY_ENABLED", False)), "source": "unavailable"},

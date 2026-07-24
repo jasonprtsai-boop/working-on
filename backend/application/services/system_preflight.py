@@ -50,42 +50,100 @@ def build_preflight_report(*, require_auto_execute: bool = False) -> Dict[str, A
         severity="warning" if not require_auto_execute else "error",
     )
 
-    add(
-        "robot_register_probe",
-        fake_robot or (
-            bool(getattr(config, "ROBOT_VERIFY_STATUS_ON_CONNECT", False))
-            and bool(getattr(config, "ROBOT_COMMAND_HANDSHAKE_ENABLED", True))
-            and bool(getattr(config, "ROBOT_GRIPPER_FEEDBACK_ENABLED", True))
-        ),
-        "Robot Registers",
-        (
-            "Status, command ack, and gripper feedback checks are enabled."
-            if (
-                getattr(config, "ROBOT_VERIFY_STATUS_ON_CONNECT", False)
-                and getattr(config, "ROBOT_COMMAND_HANDSHAKE_ENABLED", True)
-                and getattr(config, "ROBOT_GRIPPER_FEEDBACK_ENABLED", True)
-            )
-            else (
-                "Simulation mode does not require register verification."
+    adapter = str(getattr(config, "ROBOT_ADAPTER", "tmflow_json")).strip().lower()
+    if adapter == "modbus":
+        add(
+            "robot_communication_probe",
+            fake_robot or (
+                bool(getattr(config, "ROBOT_VERIFY_STATUS_ON_CONNECT", False))
+                and bool(getattr(config, "ROBOT_COMMAND_HANDSHAKE_ENABLED", True))
+                and bool(getattr(config, "ROBOT_GRIPPER_FEEDBACK_ENABLED", True))
+            ),
+            "Robot Communication",
+            (
+                "Status, command ack, and gripper feedback checks are enabled."
+                if (
+                    getattr(config, "ROBOT_VERIFY_STATUS_ON_CONNECT", False)
+                    and getattr(config, "ROBOT_COMMAND_HANDSHAKE_ENABLED", True)
+                    and getattr(config, "ROBOT_GRIPPER_FEEDBACK_ENABLED", True)
+                )
+                else (
+                    "Simulation mode does not require register verification."
+                    if fake_robot
+                    else "Enable status verification, command handshake, and gripper feedback before real robot play."
+                )
+            ),
+            severity="warning" if fake_robot else "error",
+            details={
+                "adapter": adapter,
+                "status_register": getattr(config, "ROBOT_STATUS_REGISTER", None),
+                "motion_register_base": getattr(config, "ROBOT_MOTION_REGISTER_BASE", None),
+                "command_id_register": getattr(config, "ROBOT_COMMAND_ID_REGISTER", None),
+                "command_trigger_register": getattr(config, "ROBOT_COMMAND_TRIGGER_REGISTER", None),
+                "command_ack_register": getattr(config, "ROBOT_COMMAND_ACK_REGISTER", None),
+                "error_code_register": getattr(config, "ROBOT_ERROR_CODE_REGISTER", None),
+                "gripper_status_register": getattr(config, "ROBOT_GRIPPER_STATUS_REGISTER", None),
+                "telemetry_enabled": getattr(config, "ROBOT_TELEMETRY_ENABLED", False),
+                "telemetry_pose_register_base": getattr(config, "ROBOT_TELEMETRY_POSE_REGISTER_BASE", None),
+                "telemetry_joint_register_base": getattr(config, "ROBOT_TELEMETRY_JOINT_REGISTER_BASE", None),
+                "telemetry_speed_register": getattr(config, "ROBOT_TELEMETRY_SPEED_REGISTER", None),
+            },
+        )
+    elif adapter == "techmanpy":
+        listen_node_active = robot_status.get("listen_node_active")
+        connected = bool(robot_status.get("connected"))
+        add(
+            "robot_communication_probe",
+            fake_robot or (connected and listen_node_active is not False),
+            "Robot Communication",
+            (
+                "Simulation mode does not require External Script verification."
                 if fake_robot
-                else "Enable status verification, command handshake, and gripper feedback before real robot play."
-            )
-        ),
-        severity="warning" if fake_robot else "error",
-        details={
-            "status_register": getattr(config, "ROBOT_STATUS_REGISTER", None),
-            "motion_register_base": getattr(config, "ROBOT_MOTION_REGISTER_BASE", None),
-            "command_id_register": getattr(config, "ROBOT_COMMAND_ID_REGISTER", None),
-            "command_trigger_register": getattr(config, "ROBOT_COMMAND_TRIGGER_REGISTER", None),
-            "command_ack_register": getattr(config, "ROBOT_COMMAND_ACK_REGISTER", None),
-            "error_code_register": getattr(config, "ROBOT_ERROR_CODE_REGISTER", None),
-            "gripper_status_register": getattr(config, "ROBOT_GRIPPER_STATUS_REGISTER", None),
-            "telemetry_enabled": getattr(config, "ROBOT_TELEMETRY_ENABLED", False),
-            "telemetry_pose_register_base": getattr(config, "ROBOT_TELEMETRY_POSE_REGISTER_BASE", None),
-            "telemetry_joint_register_base": getattr(config, "ROBOT_TELEMETRY_JOINT_REGISTER_BASE", None),
-            "telemetry_speed_register": getattr(config, "ROBOT_TELEMETRY_SPEED_REGISTER", None),
-        },
-    )
+                else (
+                    "TechmanPy External Script communication is ready."
+                    if connected and listen_node_active is not False
+                    else "Enable TMflow Listen Node / External Script before real robot play."
+                )
+            ),
+            severity="warning" if fake_robot else "error",
+            details={
+                "adapter": adapter,
+                "tmflow_version": getattr(config, "TMFLOW_VERSION", None),
+                "controller_version": getattr(config, "TM_CONTROLLER_VERSION", None),
+                "port": getattr(config, "ROBOT_PORT", None),
+                "listen_node_active": listen_node_active,
+                "require_listen_node": getattr(config, "ROBOT_TECHMANPY_REQUIRE_LISTEN_NODE", True),
+            },
+        )
+    else:
+        connected = bool(robot_status.get("connected"))
+        tmflow_state = robot_status.get("tmflow_json_state")
+        tmflow_status = robot_status.get("tmflow_json_status")
+        add(
+            "robot_communication_probe",
+            fake_robot or connected,
+            "Robot Communication",
+            (
+                "Simulation mode does not require TMflow TCP JSON verification."
+                if fake_robot
+                else (
+                    "TMflow TCP JSON communication is ready."
+                    if connected
+                    else "Start the TMflow TCP JSON socket server before real robot play."
+                )
+            ),
+            severity="warning" if fake_robot else "error",
+            details={
+                "adapter": adapter,
+                "protocol": "tcp_json",
+                "tmflow_version": getattr(config, "TMFLOW_VERSION", None),
+                "controller_version": getattr(config, "TM_CONTROLLER_VERSION", None),
+                "port": getattr(config, "ROBOT_PORT", None),
+                "wire_format": getattr(config, "ROBOT_TMFLOW_WIRE_FORMAT", "envelope"),
+                "tmflow_state": tmflow_state,
+                "tmflow_status": tmflow_status,
+            },
+        )
 
     add(
         "vision_ready",
@@ -120,6 +178,7 @@ def build_preflight_report(*, require_auto_execute: bool = False) -> Dict[str, A
         "mode": {
             "fake_robot": fake_robot,
             "auto_execute_robot": auto_execute,
+            "robot_adapter": getattr(config, "ROBOT_ADAPTER", "tmflow_json"),
             "robot_ip": getattr(config, "ROBOT_IP", ""),
             "robot_port": getattr(config, "ROBOT_PORT", None),
         },

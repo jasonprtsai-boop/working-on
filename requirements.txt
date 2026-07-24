@@ -24,5 +24,6 @@ psutil>=5.9.0
 rich>=13.0.0
 python-dotenv>=1.0.0
 
-# Real robot Modbus TCP runtime
+# Real robot compatibility adapters. Primary TMflow TCP JSON uses Python stdlib.
+techmanpy==1.2
 pyModbusTCP>=0.3.0

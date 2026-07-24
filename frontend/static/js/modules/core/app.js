@@ -562,8 +562,10 @@ function renderSetupRobotStatus(robot = {}) {
 function setupFormatEndpoint(robot = {}, connection = {}) {
     const host = robot.ip || connection.ip || connection.host || '';
     const port = robot.port ?? connection.port;
-    if (!host && (port === undefined || port === null || port === '')) return '--';
-    return port === undefined || port === null || port === '' ? String(host) : `${host || '--'}:${port}`;
+    const adapter = robot.adapter || connection.adapter || connection.mode || '';
+    if (!host && (port === undefined || port === null || port === '')) return adapter ? String(adapter) : '--';
+    const endpoint = port === undefined || port === null || port === '' ? String(host) : `${host || '--'}:${port}`;
+    return adapter ? `${adapter} ${endpoint}` : endpoint;
 }
 
 function setupFormatNumber(value) {
@@ -622,7 +624,13 @@ function applySetupSettings(settings = {}, files = {}) {
         const path = field.dataset.setupField;
         const value = getNestedValue(settings, path);
         if (value === undefined || value === null) return;
-        if (field.tagName === 'SELECT') ensureCameraOption(value);
+        if (field.tagName === 'SELECT') {
+            if (path === 'vision.camera_index') {
+                ensureCameraOption(value);
+            } else {
+                ensureSelectOption(field, value);
+            }
+        }
         if (field.type === 'checkbox') {
             field.checked = Boolean(value);
             return;
@@ -688,7 +696,7 @@ function renderSetupWizard(payload = setupWizardState.preflight) {
         setupWizardStepFromCheck(checks, 'vision_ready', 'Vision ready'),
         setupWizardStepFromCheck(checks, 'motion_profile_safe', 'Motion safe'),
         setupWizardStepFromCheck(checks, 'board_and_dead_zone_safe', 'Area safe'),
-        setupWizardStepFromCheck(checks, 'robot_register_probe', 'Register verified'),
+        setupWizardStepFromCheck(checks, 'robot_communication_probe', 'Communication ready'),
         {
             key: 'hardware_tests',
             ok: hardwareOk,
@@ -746,6 +754,15 @@ function setupWizardStepFromCheck(checks, key, okMessage) {
 
 function numericSetupField(field, path) {
     return field.type === 'number' || path === 'vision.camera_index';
+}
+
+function ensureSelectOption(select, value) {
+    const normalized = String(value);
+    if ([...select.options].some((option) => option.value === normalized)) return;
+    const option = document.createElement('option');
+    option.value = normalized;
+    option.textContent = normalized;
+    select.appendChild(option);
 }
 
 function renderCameraOptions(candidates, current) {

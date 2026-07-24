@@ -9,7 +9,6 @@ from backend.utils.logger import logger
 from backend.utils import config
 from backend.utils.kinematics import kinematics
 from backend.infrastructure.robot.safety import RobotSafety
-from backend.infrastructure.robot.modbus_adapter import ModbusAdapter
 from backend.application.services.estop import estop
 from backend.events.bus.event_bus import bus
 from backend.events.models.base_event import BaseEvent
@@ -33,7 +32,7 @@ class RobotMovePlan:
 
 
 class RobotService:
-    """Actuation service with a consistent API (real Modbus or mock)."""
+    """Actuation service with a consistent API (real TMflow JSON/TechmanPy/Modbus or mock)."""
 
     def __init__(self):
         self.connected = False
@@ -44,15 +43,67 @@ class RobotService:
         self.gripper_closed = False
         self._move_lock = threading.Lock()
         self.safety = RobotSafety(config)
-        self.adapter = ModbusAdapter(host=config.ROBOT_IP, port=config.ROBOT_PORT)
+        self.adapter_name = None
+        self.adapter = None
+        self.configure_adapter()
+        self.motion_profiles = self._build_motion_profiles()
+
+    def configure_adapter(self, *, force: bool = False):
+        adapter_name = str(getattr(config, "ROBOT_ADAPTER", "tmflow_json")).strip().lower()
+        if adapter_name not in {"tmflow_json", "techmanpy", "modbus"}:
+            adapter_name = "tmflow_json"
+        endpoint_changed = (
+            self.adapter is not None
+            and (
+                str(getattr(self.adapter, "host", "")) != str(config.ROBOT_IP)
+                or int(getattr(self.adapter, "port", 0) or 0) != int(config.ROBOT_PORT)
+            )
+        )
+        force = bool(force or endpoint_changed)
+        if not force and self.adapter is not None and self.adapter_name == adapter_name:
+            if not getattr(self.adapter, "connected", False):
+                self.adapter.host = config.ROBOT_IP
+                self.adapter.port = config.ROBOT_PORT
+            return self.adapter
+
+        old_adapter = self.adapter
+        try:
+            if old_adapter and hasattr(old_adapter, "disconnect"):
+                old_adapter.disconnect()
+        except Exception:
+            logger.debug("[RobotService] old adapter disconnect failed", exc_info=True)
+
+        if adapter_name == "modbus":
+            from backend.infrastructure.robot.modbus_adapter import ModbusAdapter
+
+            self.adapter = ModbusAdapter(host=config.ROBOT_IP, port=config.ROBOT_PORT)
+        elif adapter_name == "techmanpy":
+            from backend.infrastructure.robot.techmanpy_adapter import TechmanPyAdapter
+
+            self.adapter = TechmanPyAdapter(host=config.ROBOT_IP, port=config.ROBOT_PORT)
+        else:
+            from backend.infrastructure.robot.tmflow_json_adapter import TMflowJsonAdapter
+
+            self.adapter = TMflowJsonAdapter(host=config.ROBOT_IP, port=config.ROBOT_PORT)
+        self.adapter_name = adapter_name
+        self.connected = False
+        return self.adapter
+
+    def refresh_runtime_config(self):
+        self.configure_adapter(force=self.adapter_name != str(getattr(config, "ROBOT_ADAPTER", "tmflow_json")).strip().lower())
+        self.safety = RobotSafety(config)
         self.motion_profiles = self._build_motion_profiles()
 
     def connect(self):
-        logger.info(f"Initializing TM Robot Interface ({config.ROBOT_IP})")
+        self.configure_adapter()
+        logger.info(f"Initializing TM Robot Interface ({config.ROBOT_IP}:{config.ROBOT_PORT}, adapter={self.adapter_name})")
         ok = self.adapter.connect()
         self.connected = bool(ok)
         if self.connected:
             logger.info("TM Robot Handshake Successful.")
+            self.last_error = None
+        else:
+            self.last_error = getattr(self.adapter, "last_error", None) or "Robot connection failed."
         return self.connected
 
     def get_status(self) -> dict:
@@ -94,7 +145,8 @@ class RobotService:
                 "host": str(config.ROBOT_IP),
                 "port": int(config.ROBOT_PORT),
                 "connected": bool(self.connected),
-                "mode": "modbus",
+                "mode": str(getattr(self.adapter, "mode", self.adapter_name or getattr(config, "ROBOT_ADAPTER", "tmflow_json"))),
+                "adapter": str(getattr(self.adapter, "mode", self.adapter_name or getattr(config, "ROBOT_ADAPTER", "tmflow_json"))),
                 "checked_at": time.time(),
             },
             "telemetry": telemetry,
@@ -435,6 +487,13 @@ class RobotService:
 
     def emergency_stop(self):
         return self.stop_all()
+
+    def disconnect(self):
+        try:
+            if self.adapter and hasattr(self.adapter, "disconnect"):
+                self.adapter.disconnect()
+        finally:
+            self.connected = False
 
 
 # Optional module-level singleton (wired during bootstrap if needed)

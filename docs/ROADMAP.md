@@ -11,7 +11,7 @@ The system already includes:
 - Web console and telemetry dashboard.
 - Pikafish engine integration.
 - YOLO/OpenCV vision with homography calibration.
-- Robot facade with fake and Modbus TCP modes.
+- Robot facade with fake, TMflow TCP JSON, TechmanPy, and Modbus TCP compatibility modes.
 - E-Stop, replay, telemetry, and export pipelines.
 
 Latest verified command:
@@ -74,7 +74,7 @@ Goal: safely move from simulation to controlled real robot validation.
 
 Priority work:
 
-- Document the Modbus register map and motion profiles.
+- Document the TMflow TCP JSON flow, ACK/DONE lifecycle, fallback wire format, and motion profiles.
 - Validate soft limits, capture dead zone, gripper actions, and timeouts.
 - Keep `AUTO_EXECUTE_ROBOT=false` as the safe default.
 - Require explicit operator action for real motion.

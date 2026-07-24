@@ -98,8 +98,38 @@ def current_setup_settings() -> dict[str, Any]:
                 "auto_execute_robot": bool(getattr(config, "AUTO_EXECUTE_ROBOT", False)),
             },
             "connection": {
-                "ip": str(getattr(config, "ROBOT_IP", "192.168.1.1")),
-                "port": int(getattr(config, "ROBOT_PORT", 502)),
+                "adapter": str(getattr(config, "ROBOT_ADAPTER", "tmflow_json")),
+                "ip": str(getattr(config, "ROBOT_IP", "169.254.47.64")),
+                "port": int(getattr(config, "ROBOT_PORT", 5890)),
+                "pc_ip": str(getattr(config, "ROBOT_PC_IP", "169.254.47.50")),
+                "subnet_mask": str(getattr(config, "ROBOT_SUBNET_MASK", "255.255.0.0")),
+                "timeout_sec": float(getattr(config, "ROBOT_CONNECT_TIMEOUT_SEC", 3.0)),
+                "tmflow_version": str(getattr(config, "TMFLOW_VERSION", "1.82")),
+                "controller_version": str(getattr(config, "TM_CONTROLLER_VERSION", "1.82.51")),
+            },
+            "techmanpy": {
+                "require_listen_node": bool(getattr(config, "ROBOT_TECHMANPY_REQUIRE_LISTEN_NODE", True)),
+                "motion_mode": str(getattr(config, "ROBOT_TECHMANPY_MOTION_MODE", "ptp")),
+                "suppress_warnings": bool(getattr(config, "ROBOT_TECHMANPY_SUPPRESS_WARNINGS", False)),
+                "gripper_close_script": str(getattr(config, "ROBOT_GRIPPER_CLOSE_SCRIPT", "")),
+                "gripper_open_script": str(getattr(config, "ROBOT_GRIPPER_OPEN_SCRIPT", "")),
+            },
+            "tmflow_json": {
+                "protocol_version": str(getattr(config, "ROBOT_TMFLOW_PROTOCOL_VERSION", "1.0")),
+                "client_version": str(getattr(config, "ROBOT_TMFLOW_CLIENT_VERSION", "1.0")),
+                "wire_format": str(getattr(config, "ROBOT_TMFLOW_WIRE_FORMAT", "envelope")),
+                "require_hello": bool(getattr(config, "ROBOT_TMFLOW_REQUIRE_HELLO", True)),
+                "ack_timeout_sec": float(getattr(config, "ROBOT_TMFLOW_ACK_TIMEOUT_SEC", 2.0)),
+                "done_timeout_sec": float(getattr(config, "ROBOT_TMFLOW_DONE_TIMEOUT_SEC", 30.0)),
+                "long_task_timeout_sec": float(getattr(config, "ROBOT_TMFLOW_LONG_TASK_TIMEOUT_SEC", 90.0)),
+                "heartbeat_interval_sec": float(getattr(config, "ROBOT_TMFLOW_HEARTBEAT_INTERVAL_SEC", 1.0)),
+                "reconnect_interval_sec": float(getattr(config, "ROBOT_TMFLOW_RECONNECT_INTERVAL_SEC", 2.0)),
+                "max_retry": int(getattr(config, "ROBOT_TMFLOW_MAX_RETRY", 2)),
+                "max_message_bytes": int(getattr(config, "ROBOT_TMFLOW_MAX_MESSAGE_BYTES", 4096)),
+                "base": str(getattr(config, "ROBOT_TMFLOW_BASE", "ChessBoard_Base")),
+                "tcp": str(getattr(config, "ROBOT_TMFLOW_TCP", "ChessGripper_TCP")),
+                "gripper_wait_ms": int(getattr(config, "ROBOT_TMFLOW_GRIPPER_WAIT_MS", 300)),
+                "stop_mode": str(getattr(config, "ROBOT_TMFLOW_STOP_MODE", "CONTROLLED_STOP")),
             },
             "modbus": {
                 "verify_status_on_connect": bool(getattr(config, "ROBOT_VERIFY_STATUS_ON_CONNECT", False)),
@@ -173,8 +203,69 @@ def normalize_setup_settings(payload: Mapping[str, Any], base: Mapping[str, Any]
     _set(merged, "vision.result_max_age_sec", _finite_float(_get(merged, "vision.result_max_age_sec", 3.0), "vision.result_max_age_sec"))
     _set(merged, "robot.runtime.fake_robot", _bool(_get(merged, "robot.runtime.fake_robot", True), "robot.runtime.fake_robot"))
     _set(merged, "robot.runtime.auto_execute_robot", _bool(_get(merged, "robot.runtime.auto_execute_robot", False), "robot.runtime.auto_execute_robot"))
+    adapter = _text(_get(merged, "robot.connection.adapter", "tmflow_json"), "robot.connection.adapter").strip().lower()
+    if adapter not in {"tmflow_json", "techmanpy", "modbus"}:
+        raise ValueError("robot.connection.adapter must be tmflow_json, techmanpy, or modbus.")
+    _set(merged, "robot.connection.adapter", adapter)
     _set(merged, "robot.connection.ip", _text(_get(merged, "robot.connection.ip"), "robot.connection.ip"))
     _set(merged, "robot.connection.port", _bounded_int(_get(merged, "robot.connection.port"), "robot.connection.port", 1, 65535))
+    _set(merged, "robot.connection.pc_ip", _text(_get(merged, "robot.connection.pc_ip", "169.254.47.50"), "robot.connection.pc_ip"))
+    _set(merged, "robot.connection.subnet_mask", _text(_get(merged, "robot.connection.subnet_mask", "255.255.0.0"), "robot.connection.subnet_mask"))
+    _set(merged, "robot.connection.timeout_sec", _finite_float(_get(merged, "robot.connection.timeout_sec", 3.0), "robot.connection.timeout_sec"))
+    _set(merged, "robot.connection.tmflow_version", _text(_get(merged, "robot.connection.tmflow_version", "1.82"), "robot.connection.tmflow_version"))
+    _set(merged, "robot.connection.controller_version", _text(_get(merged, "robot.connection.controller_version", "1.82.51"), "robot.connection.controller_version"))
+    _set(
+        merged,
+        "robot.techmanpy.require_listen_node",
+        _bool(_get(merged, "robot.techmanpy.require_listen_node", True), "robot.techmanpy.require_listen_node"),
+    )
+    motion_mode = _text(_get(merged, "robot.techmanpy.motion_mode", "ptp"), "robot.techmanpy.motion_mode").strip().lower()
+    if motion_mode not in {"ptp", "line"}:
+        raise ValueError("robot.techmanpy.motion_mode must be ptp or line.")
+    _set(merged, "robot.techmanpy.motion_mode", motion_mode)
+    _set(
+        merged,
+        "robot.techmanpy.suppress_warnings",
+        _bool(_get(merged, "robot.techmanpy.suppress_warnings", False), "robot.techmanpy.suppress_warnings"),
+    )
+    _set(
+        merged,
+        "robot.techmanpy.gripper_close_script",
+        str(_get(merged, "robot.techmanpy.gripper_close_script", "") or "").strip(),
+    )
+    _set(
+        merged,
+        "robot.techmanpy.gripper_open_script",
+        str(_get(merged, "robot.techmanpy.gripper_open_script", "") or "").strip(),
+    )
+    _set(merged, "robot.tmflow_json.protocol_version", _text(_get(merged, "robot.tmflow_json.protocol_version", "1.0"), "robot.tmflow_json.protocol_version"))
+    _set(merged, "robot.tmflow_json.client_version", _text(_get(merged, "robot.tmflow_json.client_version", "1.0"), "robot.tmflow_json.client_version"))
+    wire_format = _text(_get(merged, "robot.tmflow_json.wire_format", "envelope"), "robot.tmflow_json.wire_format").strip().lower()
+    if wire_format not in {"envelope", "flat_json"}:
+        raise ValueError("robot.tmflow_json.wire_format must be envelope or flat_json.")
+    _set(merged, "robot.tmflow_json.wire_format", wire_format)
+    _set(
+        merged,
+        "robot.tmflow_json.require_hello",
+        _bool(_get(merged, "robot.tmflow_json.require_hello", True), "robot.tmflow_json.require_hello"),
+    )
+    for path in (
+        "robot.tmflow_json.ack_timeout_sec",
+        "robot.tmflow_json.done_timeout_sec",
+        "robot.tmflow_json.long_task_timeout_sec",
+        "robot.tmflow_json.heartbeat_interval_sec",
+        "robot.tmflow_json.reconnect_interval_sec",
+    ):
+        _set(merged, path, _finite_float(_get(merged, path), path))
+    _set(merged, "robot.tmflow_json.max_retry", _bounded_int(_get(merged, "robot.tmflow_json.max_retry", 2), "robot.tmflow_json.max_retry", 0, 10))
+    _set(merged, "robot.tmflow_json.max_message_bytes", _bounded_int(_get(merged, "robot.tmflow_json.max_message_bytes", 4096), "robot.tmflow_json.max_message_bytes", 256, 65536))
+    _set(merged, "robot.tmflow_json.base", _text(_get(merged, "robot.tmflow_json.base", "ChessBoard_Base"), "robot.tmflow_json.base"))
+    _set(merged, "robot.tmflow_json.tcp", _text(_get(merged, "robot.tmflow_json.tcp", "ChessGripper_TCP"), "robot.tmflow_json.tcp"))
+    _set(merged, "robot.tmflow_json.gripper_wait_ms", _bounded_int(_get(merged, "robot.tmflow_json.gripper_wait_ms", 300), "robot.tmflow_json.gripper_wait_ms", 0, 60000))
+    stop_mode = _text(_get(merged, "robot.tmflow_json.stop_mode", "CONTROLLED_STOP"), "robot.tmflow_json.stop_mode").strip().upper()
+    if stop_mode not in {"CONTROLLED_STOP", "EMERGENCY_STOP"}:
+        raise ValueError("robot.tmflow_json.stop_mode must be CONTROLLED_STOP or EMERGENCY_STOP.")
+    _set(merged, "robot.tmflow_json.stop_mode", stop_mode)
     _set(
         merged,
         "robot.modbus.verify_status_on_connect",
@@ -280,9 +371,14 @@ def _validate_setup_settings(settings: Mapping[str, Any]) -> None:
     limits = _get(settings, "robot.limits", {})
     calibration = _get(settings, "robot.calibration", {})
     vision = _get(settings, "vision", {})
+    connection = _get(settings, "robot.connection", {})
 
     if float(vision["result_max_age_sec"]) <= 0:
         raise ValueError("vision.result_max_age_sec must be positive.")
+    if float(connection["timeout_sec"]) <= 0:
+        raise ValueError("robot.connection.timeout_sec must be positive.")
+    if str(connection["adapter"]).strip().lower() in {"tmflow_json", "techmanpy"} and int(connection["port"]) != 5890:
+        raise ValueError("robot.connection.port must be 5890 when adapter is tmflow_json or techmanpy.")
     z_safe = float(motion["z_safe"])
     z_grab = float(motion["z_grab"])
     place_z = z_grab + float(motion["place_z_offset"])
@@ -418,6 +514,8 @@ def _persisted_setup_payload(settings: Mapping[str, Any]) -> dict[str, Any]:
         "robot": {
             "runtime": dict(_get(settings, "robot.runtime", {})),
             "connection": dict(_get(settings, "robot.connection", {})),
+            "tmflow_json": dict(_get(settings, "robot.tmflow_json", {})),
+            "techmanpy": dict(_get(settings, "robot.techmanpy", {})),
             "modbus": dict(_get(settings, "robot.modbus", {})),
             "motion": dict(_get(settings, "robot.motion", {})),
             "limits": dict(_get(settings, "robot.limits", {})),
@@ -432,8 +530,34 @@ def _apply_runtime_settings(settings: Mapping[str, Any]) -> list[str]:
     config.VISION_RESULT_MAX_AGE_SEC = float(_get(settings, "vision.result_max_age_sec"))
     config.FAKE_ROBOT = bool(_get(settings, "robot.runtime.fake_robot"))
     config.AUTO_EXECUTE_ROBOT = bool(_get(settings, "robot.runtime.auto_execute_robot"))
+    config.ROBOT_ADAPTER = str(_get(settings, "robot.connection.adapter")).strip().lower()
     config.ROBOT_IP = str(_get(settings, "robot.connection.ip"))
     config.ROBOT_PORT = int(_get(settings, "robot.connection.port"))
+    config.ROBOT_PC_IP = str(_get(settings, "robot.connection.pc_ip"))
+    config.ROBOT_SUBNET_MASK = str(_get(settings, "robot.connection.subnet_mask"))
+    config.ROBOT_CONNECT_TIMEOUT_SEC = float(_get(settings, "robot.connection.timeout_sec"))
+    config.TMFLOW_VERSION = str(_get(settings, "robot.connection.tmflow_version"))
+    config.TM_CONTROLLER_VERSION = str(_get(settings, "robot.connection.controller_version"))
+    config.ROBOT_TECHMANPY_REQUIRE_LISTEN_NODE = bool(_get(settings, "robot.techmanpy.require_listen_node"))
+    config.ROBOT_TECHMANPY_MOTION_MODE = str(_get(settings, "robot.techmanpy.motion_mode")).strip().lower()
+    config.ROBOT_TECHMANPY_SUPPRESS_WARNINGS = bool(_get(settings, "robot.techmanpy.suppress_warnings"))
+    config.ROBOT_GRIPPER_CLOSE_SCRIPT = str(_get(settings, "robot.techmanpy.gripper_close_script") or "")
+    config.ROBOT_GRIPPER_OPEN_SCRIPT = str(_get(settings, "robot.techmanpy.gripper_open_script") or "")
+    config.ROBOT_TMFLOW_PROTOCOL_VERSION = str(_get(settings, "robot.tmflow_json.protocol_version"))
+    config.ROBOT_TMFLOW_CLIENT_VERSION = str(_get(settings, "robot.tmflow_json.client_version"))
+    config.ROBOT_TMFLOW_WIRE_FORMAT = str(_get(settings, "robot.tmflow_json.wire_format")).strip().lower()
+    config.ROBOT_TMFLOW_REQUIRE_HELLO = bool(_get(settings, "robot.tmflow_json.require_hello"))
+    config.ROBOT_TMFLOW_ACK_TIMEOUT_SEC = float(_get(settings, "robot.tmflow_json.ack_timeout_sec"))
+    config.ROBOT_TMFLOW_DONE_TIMEOUT_SEC = float(_get(settings, "robot.tmflow_json.done_timeout_sec"))
+    config.ROBOT_TMFLOW_LONG_TASK_TIMEOUT_SEC = float(_get(settings, "robot.tmflow_json.long_task_timeout_sec"))
+    config.ROBOT_TMFLOW_HEARTBEAT_INTERVAL_SEC = float(_get(settings, "robot.tmflow_json.heartbeat_interval_sec"))
+    config.ROBOT_TMFLOW_RECONNECT_INTERVAL_SEC = float(_get(settings, "robot.tmflow_json.reconnect_interval_sec"))
+    config.ROBOT_TMFLOW_MAX_RETRY = int(_get(settings, "robot.tmflow_json.max_retry"))
+    config.ROBOT_TMFLOW_MAX_MESSAGE_BYTES = int(_get(settings, "robot.tmflow_json.max_message_bytes"))
+    config.ROBOT_TMFLOW_BASE = str(_get(settings, "robot.tmflow_json.base"))
+    config.ROBOT_TMFLOW_TCP = str(_get(settings, "robot.tmflow_json.tcp"))
+    config.ROBOT_TMFLOW_GRIPPER_WAIT_MS = int(_get(settings, "robot.tmflow_json.gripper_wait_ms"))
+    config.ROBOT_TMFLOW_STOP_MODE = str(_get(settings, "robot.tmflow_json.stop_mode")).strip().upper()
     config.ROBOT_VERIFY_STATUS_ON_CONNECT = bool(_get(settings, "robot.modbus.verify_status_on_connect"))
     config.ROBOT_COMMAND_HANDSHAKE_ENABLED = bool(_get(settings, "robot.modbus.command_handshake_enabled"))
     config.ROBOT_MOTION_REGISTER_BASE = int(_get(settings, "robot.modbus.motion_register_base"))
@@ -562,11 +686,11 @@ def _hardware_test(action: str, payload: Mapping[str, Any]) -> dict[str, Any]:
     if action == "write_pose":
         target = _hardware_test_target("safe_z")
         if dry_run:
-            return {"ok": True, "action": action, "dry_run": True, "target": target, "message": "Pose register write validated only."}
+            return {"ok": True, "action": action, "dry_run": True, "target": target, "message": "Pose target validated only."}
         adapter = getattr(impl, "adapter", None)
         writer = getattr(adapter, "write_pose_registers", None)
         if not callable(writer):
-            raise RuntimeError("Active robot adapter does not support no-trigger pose register write.")
+            raise RuntimeError("No-trigger pose register write is available only with ROBOT_ADAPTER=modbus.")
         ok = bool(writer(
             [target["x"], target["y"], target["z"], config.ROBOT_TOOL_RX, config.ROBOT_TOOL_RY, config.ROBOT_TOOL_RZ],
             speed=config.ROBOT_TRAVEL_SPEED,

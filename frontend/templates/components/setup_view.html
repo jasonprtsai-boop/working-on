@@ -46,7 +46,7 @@
                 <li data-setup-step="vision_ready"><span class="setup-wizard-index">2</span><span>Calibrate camera and board</span><strong>--</strong></li>
                 <li data-setup-step="motion_profile_safe"><span class="setup-wizard-index">3</span><span>Confirm origin height and Z profile</span><strong>--</strong></li>
                 <li data-setup-step="board_and_dead_zone_safe"><span class="setup-wizard-index">4</span><span>Confirm board and dead-zone range</span><strong>--</strong></li>
-                <li data-setup-step="robot_register_probe"><span class="setup-wizard-index">5</span><span>Verify robot connection and registers</span><strong>--</strong></li>
+                <li data-setup-step="robot_communication_probe"><span class="setup-wizard-index">5</span><span>Verify robot communication</span><strong>--</strong></li>
                 <li data-setup-step="hardware_tests"><span class="setup-wizard-index">6</span><span>Run hardware validation tests</span><strong>--</strong></li>
                 <li data-setup-step="preflight_ready"><span class="setup-wizard-index">7</span><span>Pass full preflight</span><strong>--</strong></li>
             </ol>
@@ -198,6 +198,28 @@
                 <div class="setup-field-grid two">
                     <label class="setup-field"><span>Robot IP</span><input type="text" maxlength="128" data-setup-field="robot.connection.ip"></label>
                     <label class="setup-field"><span>Robot Port</span><input type="number" min="1" max="65535" step="1" data-setup-field="robot.connection.port"></label>
+                    <label class="setup-field"><span>Robot Adapter</span><select data-setup-field="robot.connection.adapter"><option value="tmflow_json">tmflow_json</option><option value="techmanpy">techmanpy</option><option value="modbus">modbus</option></select></label>
+                    <label class="setup-field"><span>PC Ethernet IP</span><input type="text" maxlength="128" data-setup-field="robot.connection.pc_ip"></label>
+                    <label class="setup-field"><span>Subnet Mask</span><input type="text" maxlength="128" data-setup-field="robot.connection.subnet_mask"></label>
+                    <label class="setup-field"><span>Connection Timeout Sec</span><input type="number" min="0.1" step="0.1" data-setup-field="robot.connection.timeout_sec"></label>
+                    <label class="setup-field"><span>TMflow Version</span><input type="text" maxlength="32" data-setup-field="robot.connection.tmflow_version"></label>
+                    <label class="setup-field"><span>Controller Version</span><input type="text" maxlength="32" data-setup-field="robot.connection.controller_version"></label>
+                    <label class="setup-field"><span>Require Listen Node</span><input type="checkbox" data-setup-field="robot.techmanpy.require_listen_node"></label>
+                    <label class="setup-field"><span>TechmanPy Motion Mode</span><select data-setup-field="robot.techmanpy.motion_mode"><option value="ptp">ptp</option><option value="line">line</option></select></label>
+                    <label class="setup-field"><span>Suppress TechmanPy Warnings</span><input type="checkbox" data-setup-field="robot.techmanpy.suppress_warnings"></label>
+                    <label class="setup-field"><span>Gripper Close Script</span><input type="text" maxlength="512" data-setup-field="robot.techmanpy.gripper_close_script"></label>
+                    <label class="setup-field"><span>Gripper Open Script</span><input type="text" maxlength="512" data-setup-field="robot.techmanpy.gripper_open_script"></label>
+                    <label class="setup-field"><span>JSON Wire Format</span><select data-setup-field="robot.tmflow_json.wire_format"><option value="envelope">envelope</option><option value="flat_json">flat_json</option></select></label>
+                    <label class="setup-field"><span>Require HELLO</span><input type="checkbox" data-setup-field="robot.tmflow_json.require_hello"></label>
+                    <label class="setup-field"><span>ACK Timeout Sec</span><input type="number" min="0.1" step="0.1" data-setup-field="robot.tmflow_json.ack_timeout_sec"></label>
+                    <label class="setup-field"><span>DONE Timeout Sec</span><input type="number" min="0.1" step="0.1" data-setup-field="robot.tmflow_json.done_timeout_sec"></label>
+                    <label class="setup-field"><span>Long Task Timeout Sec</span><input type="number" min="0.1" step="0.1" data-setup-field="robot.tmflow_json.long_task_timeout_sec"></label>
+                    <label class="setup-field"><span>Max Retry</span><input type="number" min="0" max="10" step="1" data-setup-field="robot.tmflow_json.max_retry"></label>
+                    <label class="setup-field"><span>Max Message Bytes</span><input type="number" min="256" max="65536" step="1" data-setup-field="robot.tmflow_json.max_message_bytes"></label>
+                    <label class="setup-field"><span>TMflow Base</span><input type="text" maxlength="128" data-setup-field="robot.tmflow_json.base"></label>
+                    <label class="setup-field"><span>TMflow TCP</span><input type="text" maxlength="128" data-setup-field="robot.tmflow_json.tcp"></label>
+                    <label class="setup-field"><span>Gripper Wait ms</span><input type="number" min="0" max="60000" step="1" data-setup-field="robot.tmflow_json.gripper_wait_ms"></label>
+                    <label class="setup-field"><span>Stop Mode</span><select data-setup-field="robot.tmflow_json.stop_mode"><option value="CONTROLLED_STOP">CONTROLLED_STOP</option><option value="EMERGENCY_STOP">EMERGENCY_STOP</option></select></label>
                     <label class="setup-field"><span>Register Scale</span><input type="number" min="0.01" step="0.01" data-setup-field="robot.modbus.register_scale"></label>
                     <label class="setup-field"><span>Register Encoding</span><input type="text" maxlength="16" data-setup-field="robot.modbus.register_encoding"></label>
                     <label class="setup-field"><span>Motion Register Base</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.motion_register_base"></label>

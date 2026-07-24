@@ -32,6 +32,75 @@ class TestSetupSettings(unittest.TestCase):
         self.assertEqual(normalized["vision"]["camera_index"], base["vision"]["camera_index"])
         self.assertIn("dead_zone_range", normalized["robot"]["calibration"])
 
+    def test_normalize_setup_settings_accepts_techmanpy_tmflow_baseline(self):
+        base = current_setup_settings()
+        normalized = normalize_setup_settings(
+            {
+                "robot": {
+                    "connection": {
+                        "adapter": "techmanpy",
+                        "ip": "169.254.47.64",
+                        "port": 5890,
+                        "pc_ip": "169.254.47.50",
+                        "subnet_mask": "255.255.0.0",
+                        "tmflow_version": "1.82",
+                        "controller_version": "1.82.51",
+                    },
+                    "techmanpy": {
+                        "require_listen_node": True,
+                        "motion_mode": "ptp",
+                    },
+                }
+            },
+            base=base,
+        )
+
+        self.assertEqual(normalized["robot"]["connection"]["adapter"], "techmanpy")
+        self.assertEqual(normalized["robot"]["connection"]["port"], 5890)
+        self.assertEqual(normalized["robot"]["connection"]["ip"], "169.254.47.64")
+        self.assertEqual(normalized["robot"]["techmanpy"]["motion_mode"], "ptp")
+
+    def test_normalize_setup_settings_accepts_tmflow_json_baseline(self):
+        base = current_setup_settings()
+        normalized = normalize_setup_settings(
+            {
+                "robot": {
+                    "connection": {
+                        "adapter": "tmflow_json",
+                        "ip": "169.254.47.64",
+                        "port": 5890,
+                        "pc_ip": "169.254.47.50",
+                        "subnet_mask": "255.255.0.0",
+                    },
+                    "tmflow_json": {
+                        "wire_format": "envelope",
+                        "ack_timeout_sec": 2.0,
+                        "done_timeout_sec": 30.0,
+                        "long_task_timeout_sec": 90.0,
+                    },
+                }
+            },
+            base=base,
+        )
+
+        self.assertEqual(normalized["robot"]["connection"]["adapter"], "tmflow_json")
+        self.assertEqual(normalized["robot"]["connection"]["port"], 5890)
+        self.assertEqual(normalized["robot"]["tmflow_json"]["wire_format"], "envelope")
+
+    def test_normalize_setup_settings_rejects_json_non_5890_port(self):
+        base = current_setup_settings()
+        payload = {
+            "robot": {
+                "connection": {
+                    "adapter": "tmflow_json",
+                    "port": 502,
+                }
+            }
+        }
+
+        with self.assertRaises(ValueError):
+            normalize_setup_settings(payload, base=base)
+
     def test_normalize_setup_settings_rejects_unsafe_z_profile(self):
         base = current_setup_settings()
         payload = {

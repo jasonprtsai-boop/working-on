@@ -6,11 +6,12 @@ TM5-700.
 ## Before Installing
 
 - Confirm Windows 10/11 64-bit.
-- Install Python 3.11 64-bit.
+- Install Python 3.11.9 64-bit.
 - Install Node.js 24 LTS.
 - Disable aggressive USB power saving for the camera port.
 - Connect the lab PC and robot controller to the same isolated network.
-- Confirm the robot IP, port, and Modbus register map with TMflow.
+- Configure the PC Ethernet adapter for the robot link, for example `169.254.47.50` with subnet mask `255.255.0.0`.
+- Confirm TMflow `1.82`, controller `1.82.51`, robot IP `169.254.47.64`, and the TMflow TCP JSON socket server on TCP `5890`.
 
 ## Install
 
@@ -31,8 +32,16 @@ FAKE_VISION=false
 FAKE_AI=true
 AUTO_EXECUTE_ROBOT=false
 CAMERA_INDEX=0
-ROBOT_IP=<tm5-controller-ip>
-ROBOT_PORT=502
+ROBOT_ADAPTER=tmflow_json
+ROBOT_IP=169.254.47.64
+ROBOT_PORT=5890
+ROBOT_PC_IP=169.254.47.50
+ROBOT_SUBNET_MASK=255.255.0.0
+TMFLOW_VERSION=1.82
+TM_CONTROLLER_VERSION=1.82.51
+ROBOT_TMFLOW_PROTOCOL_VERSION=1.0
+ROBOT_TMFLOW_WIRE_FORMAT=envelope
+ROBOT_TMFLOW_REQUIRE_HELLO=true
 ```
 
 Start in simulation-safe mode first:
@@ -55,7 +64,7 @@ Before connecting the real robot, run the full software check:
 4. Set origin height, safe Z, grab Z, and place offset.
 5. Set software X/Y/Z limits and dead-zone range.
 6. Run preflight.
-7. Run hardware tests only after TMflow safety limits are enabled.
+7. Run hardware tests only after TMflow safety limits and the TCP JSON socket server are enabled.
 8. Enable `FAKE_ROBOT=false` only for real robot validation.
 9. Enable `AUTO_EXECUTE_ROBOT=true` only after one-move testing succeeds.
 

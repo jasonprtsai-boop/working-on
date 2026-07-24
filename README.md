@@ -7,7 +7,7 @@ The current runtime includes:
 - Socket.IO state sync with a stable frontend event contract.
 - Pikafish engine analysis through protected engine and NNUE assets.
 - OpenCV / YOLO26-compatible vision pipeline with MJPEG streaming.
-- Robot facade with fake and real Modbus TCP modes behind E-Stop safety guards.
+- Robot facade with fake, TMflow TCP JSON, TechmanPy, and Modbus compatibility modes behind E-Stop safety guards.
 - SQLite-backed event persistence, replay, telemetry, and Excel/CSV exports.
 
 ## Quickstart
@@ -127,7 +127,7 @@ git diff --check
 Real TM5-700 robot network check:
 
 ```powershell
-Test-NetConnection <tm5-controller-ip> -Port 502
+Test-NetConnection 169.254.47.64 -Port 5890
 ```
 
 ## Installation And Runbooks
@@ -158,6 +158,8 @@ Important defaults:
 | `SETUP_PASSWORD` | placeholder | Must not be the default `login` in production. |
 | `FAKE_ROBOT` / `FAKE_AI` | `true` / `true` | Safe local defaults. Production requires both `false`. |
 | `FAKE_VISION` | `true` | Use `false` for real camera/model runtime. Production requires `false`. |
+| `ROBOT_ADAPTER` | `tmflow_json` | Primary real robot path for the TMflow 1.82 newline-delimited TCP JSON protocol. Use `techmanpy` or `modbus` only for compatibility. |
+| `ROBOT_IP` / `ROBOT_PORT` | `169.254.47.64` / `5890` | TM5-700 controller baseline confirmed for the lab. |
 | `CONTROL_AUTH_REQUIRED` | `true` | Control-plane API routes require JWT auth. |
 | `RATE_LIMITS_ENABLED` | `true` | Applies to login, control, and socket actions. |
 | `DB_PATH` | `data/runtime/app.db` | Production requires an explicit absolute path. |
@@ -175,7 +177,7 @@ Production preflight:
 Last local verification: 2026-07-15 via `.\.venv\Scripts\python.exe scripts\quality_gate.py`.
 
 Recommended install baseline:
-- Python 3.11 64-bit. Python 3.9-3.12 are supported; Python 3.13 is not supported yet.
+- Python 3.11.9 64-bit for lab PCs. Python 3.9-3.12 are supported; Python 3.13 is not supported yet.
 - Node.js 24 LTS with npm 11 or newer. `.nvmrc` and `.node-version` are set to Node 24.
 
 | Item | Verified version |
@@ -194,7 +196,7 @@ Primary dependency files:
 
 | File | Purpose |
 | --- | --- |
-| `requirements.runtime.txt` | Minimal web, websocket, auth, engine, and Modbus runtime. |
+| `requirements.runtime.txt` | Minimal web, websocket, auth, engine, TMflow TCP JSON, TechmanPy, and Modbus compatibility runtime. |
 | `requirements.vision.txt` | Camera, ML vision, ONNX, benchmark, and report tooling. |
 | `requirements.txt` | Consolidated research environment. |
 | `requirements.lock.txt` | Reproducible Python baseline from the verified `.venv`. |
@@ -242,10 +244,13 @@ Key engine parameters:
 Robot mode defaults are safe for development:
 - `FAKE_ROBOT=true`
 - `AUTO_EXECUTE_ROBOT=false`
+- `ROBOT_ADAPTER=tmflow_json`
+- `ROBOT_IP=169.254.47.64`
+- `ROBOT_PORT=5890`
 - `ROBOT_COMMAND_QUEUE_SIZE=200`
 - Conservative first-run speed defaults: `ROBOT_MAX_SPEED=80`, `ROBOT_TRAVEL_SPEED=30`, `ROBOT_LIFT_SPEED=30`, `ROBOT_APPROACH_SPEED=15`
 
-Real robot mode requires `FAKE_ROBOT=false`, a reachable Modbus TCP controller, validated motion/gripper register settings, command ID/trigger/ACK handshake, and gripper feedback from TMflow.
+Real robot mode requires `FAKE_ROBOT=false`, `ROBOT_ADAPTER=tmflow_json`, a reachable TMflow TCP JSON socket server on TCP `5890`, and ACK/DONE/ERROR responses that follow the Part 2 protocol.
 Follow `RUN_REAL_ROBOT.md` before enabling `AUTO_EXECUTE_ROBOT=true`; TMflow/controller TCP speed limits, force/collision detection, G-Sensor, safety zones, virtual walls, and a tested physical E-Stop are required for human-facing operation.
 
 ## API Summary

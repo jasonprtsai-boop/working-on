@@ -7,4 +7,5 @@ pydantic>=2.0.0
 python-dotenv>=1.0.0
 PyJWT==2.12.1
 requests==2.32.5
+techmanpy==1.2
 pyModbusTCP>=0.3.0

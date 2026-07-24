@@ -425,8 +425,174 @@ YOLO_CLASS_NAMES = tuple(_load_yolo_class_names(YOLO_DATASET_MAPPING_PATH))
 VISION_DEVICE = str(_env_or_cfg('VISION_DEVICE', 'vision.device', 'cpu'))
 
 # Robot
-ROBOT_IP = str(_setup_or_env_or_cfg('ROBOT_IP', 'robot.ip', 'robot.connection.ip', '192.168.1.1'))
-ROBOT_PORT = int(_setup_or_env_or_cfg('ROBOT_PORT', 'robot.port', 'robot.connection.port', 502))
+ROBOT_IP = str(_setup_or_env_or_cfg('ROBOT_IP', 'robot.ip', 'robot.connection.ip', '169.254.47.64'))
+ROBOT_PORT = int(_setup_or_env_or_cfg('ROBOT_PORT', 'robot.port', 'robot.connection.port', 5890))
+_ROBOT_ADAPTER_SETTING = _setup_get(_setup_settings, "robot.connection.adapter", None)
+if _ROBOT_ADAPTER_SETTING is None:
+    _ROBOT_ADAPTER_SETTING = _setup_get(_setup_settings, "robot.adapter", None)
+if _ROBOT_ADAPTER_SETTING is None:
+    _ROBOT_ADAPTER_SETTING = os.environ.get("ROBOT_ADAPTER")
+if _ROBOT_ADAPTER_SETTING is None:
+    _ROBOT_ADAPTER_SETTING = get_cfg("robot.adapter", None)
+if _ROBOT_ADAPTER_SETTING is None and ROBOT_PORT != 5890:
+    _ROBOT_ADAPTER_SETTING = "modbus"
+ROBOT_ADAPTER = str(_ROBOT_ADAPTER_SETTING or "tmflow_json").strip().lower()
+if ROBOT_ADAPTER not in {"tmflow_json", "techmanpy", "modbus"}:
+    ROBOT_ADAPTER = "tmflow_json"
+ROBOT_PC_IP = str(_setup_or_env_or_cfg("ROBOT_PC_IP", "robot.pc_ip", "robot.connection.pc_ip", "169.254.47.50"))
+ROBOT_SUBNET_MASK = str(
+    _setup_or_env_or_cfg("ROBOT_SUBNET_MASK", "robot.subnet_mask", "robot.connection.subnet_mask", "255.255.0.0")
+)
+TMFLOW_VERSION = str(
+    _setup_or_env_or_cfg("TMFLOW_VERSION", "robot.tmflow_version", "robot.connection.tmflow_version", "1.82")
+)
+TM_CONTROLLER_VERSION = str(
+    _setup_or_env_or_cfg(
+        "TM_CONTROLLER_VERSION",
+        "robot.controller_version",
+        "robot.connection.controller_version",
+        "1.82.51",
+    )
+)
+ROBOT_CONNECT_TIMEOUT_SEC = float(
+    _setup_or_env_or_cfg("ROBOT_CONNECT_TIMEOUT_SEC", "robot.connection.timeout_sec", "robot.connection.timeout_sec", 3.0)
+)
+ROBOT_TECHMANPY_REQUIRE_LISTEN_NODE = _as_bool(
+    _setup_or_env_or_cfg(
+        "ROBOT_TECHMANPY_REQUIRE_LISTEN_NODE",
+        "robot.techmanpy.require_listen_node",
+        "robot.techmanpy.require_listen_node",
+        True,
+    ),
+    default=True,
+)
+ROBOT_TECHMANPY_MOTION_MODE = str(
+    _setup_or_env_or_cfg("ROBOT_TECHMANPY_MOTION_MODE", "robot.techmanpy.motion_mode", "robot.techmanpy.motion_mode", "ptp")
+).strip().lower()
+if ROBOT_TECHMANPY_MOTION_MODE not in {"ptp", "line"}:
+    ROBOT_TECHMANPY_MOTION_MODE = "ptp"
+ROBOT_TECHMANPY_SUPPRESS_WARNINGS = _as_bool(
+    _setup_or_env_or_cfg(
+        "ROBOT_TECHMANPY_SUPPRESS_WARNINGS",
+        "robot.techmanpy.suppress_warnings",
+        "robot.techmanpy.suppress_warnings",
+        False,
+    ),
+    default=False,
+)
+ROBOT_TMFLOW_PROTOCOL_VERSION = str(
+    _setup_or_env_or_cfg(
+        "ROBOT_TMFLOW_PROTOCOL_VERSION",
+        "robot.tmflow_json.protocol_version",
+        "robot.tmflow_json.protocol_version",
+        "1.0",
+    )
+)
+ROBOT_TMFLOW_CLIENT_VERSION = str(
+    _setup_or_env_or_cfg(
+        "ROBOT_TMFLOW_CLIENT_VERSION",
+        "robot.tmflow_json.client_version",
+        "robot.tmflow_json.client_version",
+        "1.0",
+    )
+)
+ROBOT_TMFLOW_WIRE_FORMAT = str(
+    _setup_or_env_or_cfg(
+        "ROBOT_TMFLOW_WIRE_FORMAT",
+        "robot.tmflow_json.wire_format",
+        "robot.tmflow_json.wire_format",
+        "envelope",
+    )
+).strip().lower()
+if ROBOT_TMFLOW_WIRE_FORMAT not in {"envelope", "flat_json"}:
+    ROBOT_TMFLOW_WIRE_FORMAT = "envelope"
+ROBOT_TMFLOW_REQUIRE_HELLO = _as_bool(
+    _setup_or_env_or_cfg(
+        "ROBOT_TMFLOW_REQUIRE_HELLO",
+        "robot.tmflow_json.require_hello",
+        "robot.tmflow_json.require_hello",
+        True,
+    ),
+    default=True,
+)
+ROBOT_TMFLOW_ACK_TIMEOUT_SEC = float(
+    _setup_or_env_or_cfg(
+        "ROBOT_TMFLOW_ACK_TIMEOUT_SEC",
+        "robot.tmflow_json.ack_timeout_sec",
+        "robot.tmflow_json.ack_timeout_sec",
+        2.0,
+    )
+)
+ROBOT_TMFLOW_DONE_TIMEOUT_SEC = float(
+    _setup_or_env_or_cfg(
+        "ROBOT_TMFLOW_DONE_TIMEOUT_SEC",
+        "robot.tmflow_json.done_timeout_sec",
+        "robot.tmflow_json.done_timeout_sec",
+        30.0,
+    )
+)
+ROBOT_TMFLOW_LONG_TASK_TIMEOUT_SEC = float(
+    _setup_or_env_or_cfg(
+        "ROBOT_TMFLOW_LONG_TASK_TIMEOUT_SEC",
+        "robot.tmflow_json.long_task_timeout_sec",
+        "robot.tmflow_json.long_task_timeout_sec",
+        90.0,
+    )
+)
+ROBOT_TMFLOW_HEARTBEAT_INTERVAL_SEC = float(
+    _setup_or_env_or_cfg(
+        "ROBOT_TMFLOW_HEARTBEAT_INTERVAL_SEC",
+        "robot.tmflow_json.heartbeat_interval_sec",
+        "robot.tmflow_json.heartbeat_interval_sec",
+        1.0,
+    )
+)
+ROBOT_TMFLOW_RECONNECT_INTERVAL_SEC = float(
+    _setup_or_env_or_cfg(
+        "ROBOT_TMFLOW_RECONNECT_INTERVAL_SEC",
+        "robot.tmflow_json.reconnect_interval_sec",
+        "robot.tmflow_json.reconnect_interval_sec",
+        2.0,
+    )
+)
+ROBOT_TMFLOW_MAX_RETRY = int(
+    _setup_or_env_or_cfg(
+        "ROBOT_TMFLOW_MAX_RETRY",
+        "robot.tmflow_json.max_retry",
+        "robot.tmflow_json.max_retry",
+        2,
+    )
+)
+ROBOT_TMFLOW_MAX_MESSAGE_BYTES = int(
+    _setup_or_env_or_cfg(
+        "ROBOT_TMFLOW_MAX_MESSAGE_BYTES",
+        "robot.tmflow_json.max_message_bytes",
+        "robot.tmflow_json.max_message_bytes",
+        4096,
+    )
+)
+ROBOT_TMFLOW_BASE = str(
+    _setup_or_env_or_cfg("ROBOT_TMFLOW_BASE", "robot.tmflow_json.base", "robot.tmflow_json.base", "ChessBoard_Base")
+)
+ROBOT_TMFLOW_TCP = str(
+    _setup_or_env_or_cfg("ROBOT_TMFLOW_TCP", "robot.tmflow_json.tcp", "robot.tmflow_json.tcp", "ChessGripper_TCP")
+)
+ROBOT_TMFLOW_GRIPPER_WAIT_MS = int(
+    _setup_or_env_or_cfg(
+        "ROBOT_TMFLOW_GRIPPER_WAIT_MS",
+        "robot.tmflow_json.gripper_wait_ms",
+        "robot.tmflow_json.gripper_wait_ms",
+        300,
+    )
+)
+ROBOT_TMFLOW_STOP_MODE = str(
+    _setup_or_env_or_cfg(
+        "ROBOT_TMFLOW_STOP_MODE",
+        "robot.tmflow_json.stop_mode",
+        "robot.tmflow_json.stop_mode",
+        "CONTROLLED_STOP",
+    )
+).strip().upper()
 CALIBRATION_FILE = get_cfg('robot.calibration_file', 'robot/calibration.json')
 Z_SAFE = float(_setup_or_env_or_cfg("Z_SAFE", "robot.z_safe", "robot.motion.z_safe", 150.0))
 Z_GRAB = float(_setup_or_env_or_cfg("Z_GRAB", "robot.z_grab", "robot.motion.z_grab", 20.0))
@@ -583,6 +749,12 @@ ROBOT_GRIPPER_FEEDBACK_TIMEOUT_SEC = float(_setup_or_env_or_cfg(
     "robot.modbus.gripper_feedback_timeout_sec",
     2.0,
 ))
+ROBOT_GRIPPER_CLOSE_SCRIPT = str(
+    _setup_or_env_or_cfg("ROBOT_GRIPPER_CLOSE_SCRIPT", "robot.gripper.close_script", "robot.techmanpy.gripper_close_script", "")
+)
+ROBOT_GRIPPER_OPEN_SCRIPT = str(
+    _setup_or_env_or_cfg("ROBOT_GRIPPER_OPEN_SCRIPT", "robot.gripper.open_script", "robot.techmanpy.gripper_open_script", "")
+)
 ROBOT_GRIPPER_CLOSE_DWELL_SEC = float(_setup_or_env_or_cfg(
     "ROBOT_GRIPPER_CLOSE_DWELL_SEC", "robot.gripper.close_dwell_sec", "robot.modbus.gripper_close_dwell_sec", 0.5
 ))

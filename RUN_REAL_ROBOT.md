@@ -46,44 +46,69 @@ FAKE_ROBOT=false
 FAKE_VISION=false
 FAKE_AI=false
 AUTO_EXECUTE_ROBOT=false
-ROBOT_VERIFY_STATUS_ON_CONNECT=true
-ROBOT_IP=<tm5-controller-ip>
-ROBOT_PORT=502
-ROBOT_COMMAND_HANDSHAKE_ENABLED=true
-ROBOT_GRIPPER_FEEDBACK_ENABLED=true
+ROBOT_ADAPTER=tmflow_json
+ROBOT_IP=169.254.47.64
+ROBOT_PORT=5890
+ROBOT_PC_IP=169.254.47.50
+ROBOT_SUBNET_MASK=255.255.0.0
+ROBOT_CONNECT_TIMEOUT_SEC=3.0
+TMFLOW_VERSION=1.82
+TM_CONTROLLER_VERSION=1.82.51
+ROBOT_TMFLOW_PROTOCOL_VERSION=1.0
+ROBOT_TMFLOW_WIRE_FORMAT=envelope
+ROBOT_TMFLOW_REQUIRE_HELLO=true
+ROBOT_TMFLOW_ACK_TIMEOUT_SEC=2.0
+ROBOT_TMFLOW_DONE_TIMEOUT_SEC=30.0
+ROBOT_TMFLOW_LONG_TASK_TIMEOUT_SEC=90.0
+ROBOT_TMFLOW_BASE=ChessBoard_Base
+ROBOT_TMFLOW_TCP=ChessGripper_TCP
 ```
 
-## TMflow Register Contract
+## TMflow TCP JSON Contract
 
-The Python side expects TMflow to treat the pose registers as data only, then
-execute motion only after the trigger register changes:
+The primary real-robot path is the Part 2 TMflow TCP JSON protocol. Python is
+the TCP client; TMflow is the socket server. Every message is one UTF-8 JSON
+object terminated by `\n`.
+
+For the confirmed lab baseline, use:
 
 ```text
-6998       command id written by Python
-6999       command trigger, 1=start, 0=clear
-7000-7011  pose x,y,z,rx,ry,rz as scaled_int32, scale 100
-7012-7013  speed and acceleration profile
-7098       gripper command
-7099       halt command
-7100       robot status, 0=idle, 1=moving, 2=complete, 3=error
-7101       command ack, TMflow must echo command id
-7102       robot error code
-7103       gripper status, 0=opened, 1=closed, 2=error
+PC TMflow:       1.82
+Controller:      1.82.51
+Robot IP:        169.254.47.64
+Robot subnet:    255.255.0.0
+Suggested PC IP: 169.254.47.50
+Robot port:      5890
 ```
 
-Required command flow:
+Before any live motion, confirm the TMflow project is running a TCP socket
+server that accepts:
 
-1. Python writes `command_id`.
-2. Python writes speed/acceleration profile.
-3. Python writes motion coordinates.
-4. Python writes trigger `1`.
-5. TMflow echoes `command_id` to ACK.
-6. TMflow sets status `moving`.
-7. TMflow sets status `complete` or `error`. Returning to idle after complete is allowed.
-8. Python clears trigger to `0`.
+```text
+HELLO
+PING / PONG
+GET_STATE
+MOVE_L with ACK -> STARTED -> DONE or ERROR
+GRIPPER with ACK -> DONE or ERROR
+STOP
+```
 
-Do not enable `AUTO_EXECUTE_ROBOT=true` until this ACK/status flow is verified
-in the setup hardware tests.
+Quick protocol probe from Python:
+
+```powershell
+.\.venv\Scripts\python.exe -c "import json,socket`ns=socket.create_connection(('169.254.47.64',5890),3)`nmsg={'version':'1.0','type':'COMMAND','id':'CMD_MANUAL_001','timestamp':'2026-07-24T00:00:00+08:00','command':'HELLO','payload':{'client':'manual_probe'}}`ns.sendall((json.dumps(msg)+'\n').encode())`nprint(s.recv(4096).decode())`ns.close()"
+```
+
+Expected result is a JSON line with the same `id` and status `DONE`.
+
+Use `ROBOT_TMFLOW_WIRE_FORMAT=envelope` for the full Part 2 JSON envelope. If
+TMflow 1.82 parsing cannot handle nested payloads, switch to
+`ROBOT_TMFLOW_WIRE_FORMAT=flat_json` and keep RobotService / Vision / AI code
+unchanged.
+
+`techmanpy` remains available with `ROBOT_ADAPTER=techmanpy`. The older Modbus
+register bridge remains available only with `ROBOT_ADAPTER=modbus`; do not
+treat port `502` as the default real-robot path for this lab setup.
 
 ## Commissioning Order
 
@@ -94,7 +119,7 @@ in the setup hardware tests.
 5. Verify software X/Y/Z limits and dead-zone range.
 6. Run setup preflight.
 7. Run robot connect/status test.
-8. Confirm command ID, trigger, ACK, status, error-code, and gripper-status registers.
+8. Confirm TMflow TCP JSON reports HELLO/PING/GET_STATE on port `5890`.
 9. Run gripper open/close tests with the arm away from the board.
 10. Run safe Z and origin tests.
 11. Run dead-zone test.
@@ -128,9 +153,9 @@ Run this before any automatic game. Keep `AUTO_EXECUTE_ROBOT=false` until the
 last step passes.
 
 1. Ping the TM5-700 controller IP from Windows.
-2. Run `Test-NetConnection <tm5-controller-ip> -Port 502`.
-3. Use setup hardware test `status` to read only the STATUS register.
-4. Use setup hardware test `write_pose` with live hardware enabled to write one pose/profile without trigger.
+2. Run `Test-NetConnection 169.254.47.64 -Port 5890`.
+3. Use setup hardware test `connect` and `status` to verify the TMflow TCP JSON endpoint and state.
+4. Use setup hardware test `write_pose` in dry-run only; live no-trigger pose writes are a Modbus-only legacy test.
 5. Move to a0 above the board at `Z_SAFE`.
 6. Move to `corner_a0`, `corner_i0`, `corner_a9`, and `corner_i9` at `Z_SAFE`.
 7. Move to `center_e4` at `Z_SAFE`.
@@ -146,7 +171,7 @@ last step passes.
 Stop immediately if:
 
 - Camera stream freezes or detection age is stale.
-- Robot status register does not return expected completion/error values.
+- Python cannot reach port `5890`, or TMflow does not return ACK/DONE/ERROR JSON responses.
 - The arm approaches outside calibrated board/dead-zone limits.
 - Any move requires manual intervention.
 - The operator cannot predict the next arm motion.

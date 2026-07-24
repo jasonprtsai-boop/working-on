@@ -6,7 +6,9 @@ from unittest.mock import patch
 from backend.application.services.robot_service import MotionProfile, RobotService
 from backend.application.services.estop import estop
 from backend.infrastructure.robot import modbus_adapter
+from backend.infrastructure.robot import techmanpy_adapter
 from backend.infrastructure.robot.modbus_adapter import ModbusAdapter
+from backend.infrastructure.robot.techmanpy_adapter import TechmanPyAdapter
 from backend.infrastructure.robot.safety import RobotSafety
 from backend.infrastructure.simulation.fake_robot import FakeRobot
 from backend.utils import config
@@ -300,6 +302,39 @@ class TestRobotMotionFailClosed(unittest.TestCase):
             self.assertTrue(adapter.connect())
             self.assertTrue(adapter.connected)
             self.assertTrue(adapter.send_move([1, 2, 3, 0, 0, 0]))
+
+    def test_missing_techmanpy_dependency_fails_closed_in_real_mode(self):
+        with patch.object(techmanpy_adapter, "TECHMANPY_AVAILABLE", False), patch.object(
+            techmanpy_adapter.config,
+            "FAKE_ROBOT",
+            False,
+        ):
+            adapter = TechmanPyAdapter(host="169.254.47.64", port=5890)
+
+            self.assertFalse(adapter.connect())
+            self.assertFalse(adapter.connected)
+            self.assertFalse(adapter.send_motion([1, 2, 3, 0, 0, 0]))
+            self.assertIn("techmanpy is required", adapter.last_error)
+
+    def test_missing_techmanpy_dependency_still_allows_explicit_fake_mode(self):
+        with patch.object(techmanpy_adapter, "TECHMANPY_AVAILABLE", False), patch.object(
+            techmanpy_adapter.config,
+            "FAKE_ROBOT",
+            True,
+        ):
+            adapter = TechmanPyAdapter(host="169.254.47.64", port=5890)
+
+            self.assertTrue(adapter.connect())
+            self.assertTrue(adapter.connected)
+            self.assertTrue(adapter.send_motion([1, 2, 3, 0, 0, 0]))
+
+    def test_techmanpy_rejects_non_external_script_port(self):
+        with patch.object(techmanpy_adapter.config, "FAKE_ROBOT", False):
+            adapter = TechmanPyAdapter(host="169.254.47.64", port=502)
+
+            self.assertFalse(adapter.connect())
+            self.assertFalse(adapter.connected)
+            self.assertIn("5890", adapter.last_error)
 
     def test_modbus_motion_uses_configurable_register_map_and_int32_encoding(self):
         client = FakeModbusClient(status_value=config.ROBOT_STATUS_COMPLETE_VALUE)
