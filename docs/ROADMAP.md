@@ -17,7 +17,7 @@ The system already includes:
 Latest verified command:
 
 ```powershell
-npm.cmd run check:system
+.\check_system.cmd
 ```
 
 The major current risk is not a single failing test. The major risk is change
@@ -41,7 +41,7 @@ Exit criteria:
 
 - Every deleted file has an explicit keep-or-remove decision.
 - Every untracked path is classified as keep, ignore, archive, or remove.
-- `npm.cmd run check:system` passes.
+- `.\check_system.cmd` passes.
 - Release dry-run excludes runtime artifacts and includes required source/tests.
 
 ## Phase 2 - Harden Vision And Coordinate Pipeline

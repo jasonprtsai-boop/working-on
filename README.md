@@ -210,6 +210,17 @@ Primary dependency files:
 - Training metadata: `backend/infrastructure/protected_assets/vision/args.yaml`
 - Calibration file: `data/vision_calibration.json`
 
+Current recognition flow:
+
+1. `CameraManager` reads OpenCV frames and stores the newest frame in `frame_buffer`.
+2. Board calibration uses manual corners or automatic ArUco/contour detection.
+3. A homography matrix rectifies `camera_frame` into `rectified_board` coordinates, default `1000x1000`.
+4. OpenCV preprocessing applies CLAHE color enhancement, optional denoising/blur, and sharpening.
+5. `YOLODetector` runs full-frame YOLO inference with the protected ONNX model.
+6. `BoardMapper` maps detection anchors to the nearest Xiangqi board intersection.
+7. Class labels are converted to Xiangqi FEN piece codes, then `TemporalValidator` requires stable repeated states.
+8. `FENGenerator` emits Xiangqi FEN and the runtime publishes `position fen ...` for engine use.
+
 Useful commands:
 
 ```powershell
@@ -238,7 +249,7 @@ Protected engine assets:
 
 Key engine parameters:
 - `ENGINE_PROBE_ON_BOOT=false`
-- `ENGINE_AUTO_ANALYZE=false` (player mode starts analysis after pressing 開始對局)
+- `ENGINE_AUTO_ANALYZE=false` (player mode starts analysis only after the Start button)
 - `ENGINE_OUTPUT_QUEUE_SIZE=2000`
 
 Robot mode defaults are safe for development:

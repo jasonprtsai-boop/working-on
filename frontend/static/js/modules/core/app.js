@@ -44,6 +44,14 @@ const setupWizardState = {
 const VIDEO_RECONNECT_BASE_MS = 800;
 const VIDEO_RECONNECT_MAX_MS = 6000;
 const VISION_STALE_THRESHOLD_MS = 3000;
+const LAB_ROBOT_DEFAULTS = {
+    'robot.connection.adapter': 'tmflow_json',
+    'robot.connection.ip': '169.254.47.64',
+    'robot.connection.port': 5890,
+    'robot.connection.pc_ip': '169.254.47.50',
+    'robot.connection.subnet_mask': '255.255.0.0',
+    'robot.tmflow_json.wire_format': 'envelope',
+};
 
 document.addEventListener('DOMContentLoaded', () => {
     if (window.__SMART_DEBUG__) {
@@ -361,6 +369,8 @@ function setupSettingsControls() {
     bindClick('btn-setup-preflight', () => refreshSetupPreflight());
     bindClick('btn-setup-wizard-refresh', () => refreshSetupPreflight());
     bindClick('btn-setup-refresh-robot-status', () => refreshSetupRobotStatus());
+    bindClick('btn-setup-lab-defaults', applySetupLabDefaults);
+    bindClick('btn-setup-init-test', runSetupInitializationTest);
     bindSubmit('setup-settings-form', saveSetupSettings);
     subscribe('robot', (robot) => renderSetupRobotStatus(robot));
     document.querySelectorAll('[data-setup-test]').forEach((button) => {
@@ -394,7 +404,7 @@ async function saveSetupSettings(event) {
     if (!canUseSetupControls()) {
         window.showAlert?.('Setup is locked.', 'warning');
         refreshAuthorizationUI();
-        return;
+        return false;
     }
 
     try {
@@ -408,15 +418,18 @@ async function saveSetupSettings(event) {
         if (payload.commissioning) renderSetupCommissioning(payload.commissioning);
         renderSetupWizard();
         refreshSetupPreflight({ quiet: true });
+        renderSetupInitializationSummary(payload.settings || {}, 'Saved, test required');
         const warnings = Array.isArray(payload.warnings) ? payload.warnings.filter(Boolean) : [];
         if (warnings.length) {
             window.showAlert?.(warnings[0], 'warning', 5200);
         } else {
             window.showAlert?.('Settings saved.', 'success');
         }
+        return true;
     } catch (error) {
         setSetupSaveState('儲存失敗');
         window.showAlert?.(error?.message || 'Settings save failed.', 'error');
+        return false;
     }
 }
 
@@ -469,14 +482,28 @@ async function refreshSetupPreflight({ quiet = false } = {}) {
     }
 }
 
+async function runSetupInitializationTest() {
+    if (!canUseSetupControls()) {
+        window.showAlert?.('Setup is locked.', 'warning');
+        refreshAuthorizationUI();
+        return false;
+    }
+    setTextById('setup-init-result', 'Saving settings');
+    const saved = await saveSetupSettings();
+    if (!saved) return false;
+    setTextById('setup-init-result', 'Testing');
+    return runSetupHardwareTest('connect');
+}
+
 async function runSetupHardwareTest(action) {
     if (!canUseSetupControls()) {
         window.showAlert?.('Setup is locked.', 'warning');
         refreshAuthorizationUI();
-        return;
+        return false;
     }
-    if (!action) return;
+    if (!action) return false;
     setTextById('setup-hardware-test-status', 'Testing');
+    if (action === 'connect') setTextById('setup-init-result', 'Testing');
     try {
         const liveHardwareTest = document.getElementById('setup-live-hardware-test')?.checked === true;
         const payload = await apiJson('/api/setup/hardware-test', {
@@ -490,11 +517,15 @@ async function runSetupHardwareTest(action) {
         if (payload.commissioning) renderSetupCommissioning(payload.commissioning);
         const label = payload.dry_run ? 'Dry-run passed' : 'Passed';
         setTextById('setup-hardware-test-status', `${action}: ${label}`);
+        if (action === 'connect') renderSetupInitializationSummary({}, `${action}: ${label}`);
         window.showAlert?.(`${action} ${label}`, 'success');
         refreshSetupPreflight({ quiet: true });
+        return true;
     } catch (error) {
         setTextById('setup-hardware-test-status', `${action}: Failed`);
+        if (action === 'connect') renderSetupInitializationSummary({}, `${action}: Failed`);
         window.showAlert?.(error?.message || `${action} failed.`, 'error');
+        return false;
     }
 }
 
@@ -566,6 +597,74 @@ function setupFormatEndpoint(robot = {}, connection = {}) {
     if (!host && (port === undefined || port === null || port === '')) return adapter ? String(adapter) : '--';
     const endpoint = port === undefined || port === null || port === '' ? String(host) : `${host || '--'}:${port}`;
     return adapter ? `${adapter} ${endpoint}` : endpoint;
+}
+
+function applySetupLabDefaults() {
+    if (!canUseSetupControls()) {
+        window.showAlert?.('Setup is locked.', 'warning');
+        refreshAuthorizationUI();
+        return;
+    }
+    Object.entries(LAB_ROBOT_DEFAULTS).forEach(([path, value]) => setSetupFieldValue(path, value));
+    markSetupDirty();
+    renderSetupInitializationSummary({}, 'Unsaved changes');
+    window.showAlert?.('Lab robot defaults applied.', 'success');
+}
+
+function setSetupFieldValue(path, value) {
+    const field = setupFieldByPath(path);
+    if (!field) return;
+    if (field.tagName === 'SELECT') ensureSelectOption(field, value);
+    if (field.type === 'checkbox') {
+        field.checked = Boolean(value);
+        return;
+    }
+    field.value = String(value ?? '');
+}
+
+function setupFieldByPath(path) {
+    for (const field of document.querySelectorAll('[data-setup-field]')) {
+        if (field.dataset.setupField === path) return field;
+    }
+    return null;
+}
+
+function setupFieldCurrentValue(path, settings = {}) {
+    const field = setupFieldByPath(path);
+    if (field) {
+        if (field.type === 'checkbox') return Boolean(field.checked);
+        return String(field.value || '').trim();
+    }
+    const value = getNestedValue(settings, path);
+    return value === undefined || value === null ? '' : value;
+}
+
+function renderSetupInitializationSummary(settings = {}, resultText) {
+    const adapter = String(setupFieldCurrentValue('robot.connection.adapter', settings) || '').trim();
+    const ip = String(setupFieldCurrentValue('robot.connection.ip', settings) || '').trim();
+    const port = setupFieldCurrentValue('robot.connection.port', settings);
+    const pcIp = String(setupFieldCurrentValue('robot.connection.pc_ip', settings) || '').trim();
+    const subnetMask = String(setupFieldCurrentValue('robot.connection.subnet_mask', settings) || '').trim();
+    const wireFormat = String(setupFieldCurrentValue('robot.tmflow_json.wire_format', settings) || '').trim();
+    const pcNetwork = pcIp || subnetMask ? `${pcIp || '--'} / ${subnetMask || '--'}` : '--';
+
+    setTextById('setup-init-endpoint', setupFormatEndpoint({}, { adapter, ip, port }));
+    setTextById('setup-init-pc-network', pcNetwork);
+    setTextById('setup-init-protocol', setupProtocolLabel(adapter, wireFormat));
+
+    const resultElement = document.getElementById('setup-init-result');
+    if (resultText !== undefined) {
+        setTextById('setup-init-result', resultText);
+    } else if (!resultElement?.textContent || resultElement.textContent === '--') {
+        setTextById('setup-init-result', 'Not tested');
+    }
+}
+
+function setupProtocolLabel(adapter, wireFormat) {
+    if (adapter === 'tmflow_json') return `TCP JSON / ${wireFormat || 'envelope'}`;
+    if (adapter === 'techmanpy') return 'TechmanPy External Script';
+    if (adapter === 'modbus') return 'Modbus TCP';
+    return adapter || '--';
 }
 
 function setupFormatNumber(value) {
@@ -645,12 +744,14 @@ function applySetupSettings(settings = {}, files = {}) {
     setTextById('setup-settings-file', files.setup_settings || '--');
     setTextById('setup-robot-file', files.robot_calibration || robotCalibration.path || '--');
     setTextById('setup-vision-file', files.vision_calibration || '--');
+    renderSetupInitializationSummary(settings);
     setSetupSaveState('已載入');
 }
 
 function markSetupDirty() {
     setupWizardState.settingsSaved = false;
     setSetupSaveState('已修改');
+    renderSetupInitializationSummary({}, 'Unsaved changes');
     renderSetupWizard();
 }
 

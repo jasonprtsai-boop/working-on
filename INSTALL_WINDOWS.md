@@ -19,7 +19,7 @@ Run these commands from the project root in PowerShell:
 py -3.11 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install --upgrade pip
 .\.venv\Scripts\python.exe -m pip install -r requirements.runtime.txt -r requirements.vision.txt
-npm ci
+.\scripts\npm24.cmd ci
 Copy-Item .env.example .env
 .\.venv\Scripts\python.exe main.py
 ```
@@ -43,8 +43,8 @@ folder to another computer:
 
 ```powershell
 Remove-Item -Recurse -Force node_modules
-npm ci
-npm test
+.\scripts\npm24.cmd ci
+.\scripts\npm24.cmd test
 ```
 
 Keep `package-lock.json`. It is the reproducible dependency baseline.

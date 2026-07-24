@@ -36,21 +36,21 @@ The active terminal is probably not using `.venv`.
 .\.venv\Scripts\python.exe main.py
 ```
 
-## npm test Cannot Find Jest
+## Jest Cannot Be Found
 
 Recreate `node_modules` from the lockfile:
 
 ```powershell
 Remove-Item -Recurse -Force node_modules
-npm ci
-npm test
+.\scripts\npm24.cmd ci
+.\scripts\npm24.cmd test
 ```
 
 If this still fails, check:
 
 ```powershell
-node --version
-npm --version
+.\scripts\node24.cmd --version
+.\scripts\npm24.cmd --version
 ```
 
 Expected major versions:

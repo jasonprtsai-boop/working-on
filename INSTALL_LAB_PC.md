@@ -19,7 +19,7 @@ TM5-700.
 py -3.11 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install --upgrade pip
 .\.venv\Scripts\python.exe -m pip install -r requirements.runtime.txt -r requirements.vision.txt
-npm ci
+.\scripts\npm24.cmd ci
 Copy-Item .env.example .env
 ```
 

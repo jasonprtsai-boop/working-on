@@ -3346,7 +3346,8 @@ button[aria-disabled="true"] {
     color: var(--text-main);
 }
 
-.setup-actions .admin-btn.success {
+.setup-actions .admin-btn.success,
+.setup-inline-actions .admin-btn.success {
     background: var(--primary);
     border-color: var(--primary);
     color: #ffffff;
@@ -3517,6 +3518,66 @@ button[aria-disabled="true"] {
 .setup-commissioning {
     display: grid;
     gap: 12px;
+}
+
+.setup-init-panel {
+    display: grid;
+    gap: 12px;
+}
+
+.setup-init-grid {
+    display: grid;
+    grid-template-columns:
+        minmax(150px, 1fr)
+        minmax(150px, 1fr)
+        minmax(110px, 0.7fr)
+        minmax(150px, 1fr)
+        minmax(150px, 1fr)
+        minmax(140px, 0.9fr)
+        minmax(96px, 0.55fr);
+    gap: 10px;
+    align-items: end;
+}
+
+.setup-init-grid .setup-field {
+    margin-top: 0;
+}
+
+.setup-init-live-check {
+    align-self: end;
+}
+
+.setup-init-status {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.setup-init-status div {
+    min-width: 0;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #ffffff;
+}
+
+.setup-init-status span {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--text-secondary);
+    font-size: 0.65rem;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.setup-init-status strong {
+    display: block;
+    min-width: 0;
+    color: var(--text-main);
+    font-family: var(--font-mono);
+    font-size: 0.76rem;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
 }
 
 .setup-wizard-summary {
@@ -3952,6 +4013,8 @@ button[aria-disabled="true"] {
     }
     .setup-grid,
     .setup-workbench,
+    .setup-init-grid,
+    .setup-init-status,
     .setup-wizard-summary,
     .setup-field-grid.two,
     .setup-field-grid.three {

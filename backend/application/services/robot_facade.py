@@ -52,10 +52,16 @@ class RobotFacade(RobotInterface):
             self._impl = RobotService()
         self._fake_mode = fake_mode
 
+    def _is_fake_mode(self) -> bool:
+        fake_mode = getattr(self, "_fake_mode", None)
+        if fake_mode is None:
+            return bool(getattr(config, "FAKE_ROBOT", False))
+        return bool(fake_mode)
+
     def reconfigure_from_config(self) -> bool:
         """Switch between fake and real implementations after setup settings change."""
         fake_mode = bool(getattr(config, "FAKE_ROBOT", False))
-        if fake_mode != self._fake_mode:
+        if fake_mode != self._is_fake_mode():
             old_impl = self._impl
             try:
                 if old_impl and hasattr(old_impl, "disconnect"):
@@ -166,6 +172,7 @@ class RobotFacade(RobotInterface):
         return False
 
     def get_status(self) -> Dict[str, Any]:
+        fake_mode = self._is_fake_mode()
         try:
             if hasattr(self._impl, "get_status"):
                 raw = dict(self._impl.get_status())
@@ -185,9 +192,9 @@ class RobotFacade(RobotInterface):
                         "host": str(getattr(config, "ROBOT_IP", "")),
                         "port": int(getattr(config, "ROBOT_PORT", 0) or 0),
                         "connected": bool(raw.get("connected", False)),
-                        "mode": "simulation" if self._fake_mode else str(getattr(config, "ROBOT_ADAPTER", "tmflow_json")),
+                        "mode": "simulation" if fake_mode else str(getattr(config, "ROBOT_ADAPTER", "tmflow_json")),
                     },
-                    "fake_robot": bool(self._fake_mode),
+                    "fake_robot": fake_mode,
                 }
                 for key in (
                     "orientation",
@@ -235,8 +242,8 @@ class RobotFacade(RobotInterface):
                 "host": str(getattr(config, "ROBOT_IP", "")),
                 "port": int(getattr(config, "ROBOT_PORT", 0) or 0),
                 "connected": False,
-                "mode": "simulation" if self._fake_mode else str(getattr(config, "ROBOT_ADAPTER", "tmflow_json")),
+                "mode": "simulation" if fake_mode else str(getattr(config, "ROBOT_ADAPTER", "tmflow_json")),
             },
-            "fake_robot": bool(self._fake_mode),
+            "fake_robot": fake_mode,
             "telemetry": {"enabled": bool(getattr(config, "ROBOT_TELEMETRY_ENABLED", False)), "source": "unavailable"},
         }

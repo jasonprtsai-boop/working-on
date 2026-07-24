@@ -1,35 +1,71 @@
-# S.M.A.R.T. Chess Robot - Queue Policy (佇列管理原則)
+# S.M.A.R.T. Chess Robot - Queue Policy
 
-本系統作為兼具視覺處理與實體硬體控制的 Robotics 系統，其背景非同步佇列必須有明確的丟棄 (Drop) 與背壓 (Backpressure) 處理原則，以避免 OOM 或控制延遲累積。
+本文件說明目前 runtime 中各類佇列的容量、丟棄策略、診斷欄位與操作原則。目標是讓即時影像不累積延遲，同時避免機械手臂命令與事件紀錄被靜默覆蓋。
 
-## 1. 佇列屬性與 Policy 定義
+## Policy Summary
 
-系統中共維護四種主要背景佇列，透過 `AsyncQueueManager` 與 `PersistenceWorker` 管理。
+| Queue | Implementation | Max size | Policy | Behavior |
+| --- | --- | ---: | --- | --- |
+| Vision frame queue | `AsyncQueueManager.frame_queue` | `1` | `latest-only` | 新影格進來時若佇列已滿，丟棄舊影格，只保留最新影像供辨識使用。 |
+| AI detect queue | `AsyncQueueManager.detect_queue` | `1` | `latest-only` | 新辨識需求進來時若佇列已滿，丟棄舊需求，避免 engine 或 vision 使用過期狀態。 |
+| Robot command queue | `AsyncQueueManager.robot_queue` | `10` | `bounded` | 機械手臂命令不可自動覆蓋；滿載時應回報 blocked，由控制流程決定是否拒絕或等待。 |
+| Persistence queue | `PersistenceWorker._queue` | `PERSISTENCE_QUEUE_SIZE`, default `2000` | `bounded-with-warning` | 事件紀錄佇列滿時會丟棄新事件並發布 diagnostics warning，不會覆蓋已排隊事件。 |
+| Legacy camera frame buffer | `FrameBuffer.raw_frame_queue` / `detection_queue` | `3` | drop-oldest | 舊版即時串流路徑使用 drop-oldest，確保 MJPEG 與 overlay 儘量顯示最新畫面。 |
 
-| 佇列名稱 | 管理者 | 大小上限 | Policy | 說明與預期行為 |
-| --- | --- | --- | --- | --- |
-| **Vision Frame Queue** | `AsyncQueueManager` | `maxsize=1` | `latest-only` | 推送新影像時若佇列已滿，丟棄舊有影像，確保視覺分析始終拿到最新的一幀。 |
-| **AI Detect Queue** | `AsyncQueueManager` | `maxsize=1` | `latest-only` | 推送新辨識需求時丟棄舊需求，確保 Engine 始終對應最新狀態。 |
-| **Robot Command Queue** | `AsyncQueueManager` | `maxsize=10` | `bounded` | 命令有連續性，不應被靜默丟棄。若佇列滿則觸發 `blocked` 狀態。 |
-| **Persistence Queue** | `PersistenceWorker` | `2000` | `bounded-with-warning` | 非同步寫入 SQLite。允許有限的 Drop，但觸發警報，以保護系統記憶體不被突發高頻事件佔滿。 |
+## Runtime Diagnostics
 
-## 2. Metrics 與診斷機制 (Diagnostics)
+`AsyncQueueManager.stats()` 會輸出到 `DIAGNOSTICS.UPDATED.queue` 與 `DIAGNOSTICS.UPDATED.queues`。每個 managed queue 會包含：
 
-### 2.1 Queue Stats (`AsyncQueueManager`)
-`AsyncQueueManager` 負責蒐集 frame, detect, robot 的資料，並透過 `MonitoringWorker` 每 2 秒封裝進 `DIAGNOSTICS.UPDATED.queue` 中。
+| Field | Meaning |
+| --- | --- |
+| `initialized` | 該 queue 是否已被建立。 |
+| `size` / `maxsize` | 目前排隊數量與容量上限。 |
+| `policy` | `latest-only`, `bounded`, 或 `bounded-with-warning`。 |
+| `dropped_oldest` | latest-only queue 已丟棄舊資料的次數。 |
+| `put_count` / `get_count` | 累積寫入與讀取次數。 |
+| `age_sec` | 最新寫入資料的年齡。 |
+| `consumer_idle_sec` | consumer 距離上次讀取的時間。 |
+| `utilization` | `size / maxsize`，用於 dashboard 顯示壅塞程度。 |
+| `blocked` | queue 是否已滿或資料過久未被消耗。 |
+| `blocked_reason` | `full`, `stale_item`, 或 `null`。 |
+| `status` | `idle`, `processing`, `warning`, 或 `blocked`。 |
 
-- **`dropped_oldest`**: 記錄因為佇列已滿而被丟棄的次數。
-- **`status`**: 包含 `idle`, `processing`, `warning` (有 dropped 發生), `blocked` (佇列滿且無法丟棄，或存在 stale item 超過 5 秒未消費)。
-- **`blocked_reason`**: `full` 或是 `stale_item`。
+`PersistenceWorker.stats()` 會輸出到 `DIAGNOSTICS.UPDATED.persistence`，重點欄位包含：
 
-### 2.2 Persistence Stats (`PersistenceWorker`)
-Persistence Queue 使用 Python 原生的 `queue.Queue` 搭配背景執行緒收集，寫入 SQLite。
+- `queue_size`
+- `queue_maxsize`
+- `queue_full`
+- `received_events`
+- `persisted_events`
+- `dropped_events`
+- `drop_warning`
+- `drop_rate`
+- `last_drop_at`
+- `last_persist_at`
+- `last_error`
 
-- 當 Queue Full 時，會觸發 `dropped_events` 累加。
-- **Warning 機制**: Drop 次數若超過 `PERSISTENCE_DROP_WARNING_THRESHOLD` (預設 1)，且距離上次發送警告超過 5 秒，則主動推送一筆 source 為 `persistence_worker` 的 `DIAGNOSTICS_UPDATED` 事件，內含 `dropped_event_type` 與當下 stats。
+當 persistence queue 滿載且丟棄事件數達到 `PERSISTENCE_DROP_WARNING_THRESHOLD` 時，worker 會以 `persistence_worker` 為 source 發布 diagnostics。發布間隔由 `PERSISTENCE_DROP_WARNING_INTERVAL_SEC` 控制，預設 5 秒，避免 warning 本身造成事件風暴。
 
-## 3. UI 對應 (Dashboard)
+## Dashboard Interpretation
 
-- **Vision FPS 與 Drop Rate**: 讀取 `frame.dropped_oldest` 計算攝影機處理效能。
-- **Robot Topology 警告**: 若 `robot` 佇列呈現 `blocked` 狀態，控制面板將呈現警告燈號，代表無法消化更多物理移動指令。
-- **Error Panel**: 當收到由 `PersistenceWorker` 觸發的 Drop Diagnostics，代表本地儲存 I/O 發生瓶頸，此警告應出現在 Dashboard 錯誤面板。
+- Vision FPS 與 drop rate 應優先參考 `queue.frame.dropped_oldest`、vision latency 與 `VISION.FRAME_PROCESSED` 的 age。
+- Robot queue 出現 `blocked=true` 時，不應再自動送出新 robot command；UI 應提示操作者等待或執行停止流程。
+- Persistence `drop_warning=true` 表示事件紀錄已不完整，仍可繼續操作，但該段 replay/export 不應被視為完整實驗資料。
+- `stale_item` 代表資料已排隊超過目前的 5 秒 blocked threshold，通常表示 consumer 停止、worker 異常或下游 I/O 卡住。
+
+## Operational Rules
+
+1. 影像與辨識需求使用 latest-only，因為舊資料會導致高延遲與錯誤棋局。
+2. 機械手臂命令使用 bounded，不自動 drop，因為每一道命令都有安全語意。
+3. Persistence queue 可以丟棄新事件，但必須留下 diagnostics，避免操作者誤以為紀錄完整。
+4. 若 dashboard 顯示 queue 長時間 blocked，先停止自動流程，再檢查 worker 狀態、camera stream、SQLite I/O 與 robot socket。
+5. 調整容量時應同步更新本文件、`.env.example` 與相關測試。
+
+## Verification
+
+建議修改 queue policy 或 worker lifecycle 後執行：
+
+```powershell
+.\.venv\Scripts\python.exe -m unittest tests.unit.test_queue_manager tests.unit.test_persistence_worker_queue -v
+.\check_system.cmd
+```

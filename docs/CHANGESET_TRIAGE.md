@@ -103,14 +103,14 @@ Run these before freezing the baseline:
 ```powershell
 git diff --check
 .\.venv\Scripts\python.exe scripts\quality_gate.py
-npm.cmd test
-npm.cmd run check:system
+.\scripts\npm24.cmd test
+.\scripts\npm24.cmd run check:system
 ```
 
 Use strict mode only when the working tree is intentionally clean:
 
 ```powershell
-npm.cmd run check:system:strict
+.\scripts\npm24.cmd run check:system:strict
 ```
 
 ## Next Decisions

@@ -1,87 +1,94 @@
-# S.M.A.R.T. Chess Robot - Phase 1 實作計畫
+# S.M.A.R.T. Chess Robot - Development Plan
 
-根據 `system-review-20260515.md` 的審查結果，以下是接下來優先執行的 Phase 1 Quick Wins 與建議下一步的實作計畫：
+本文件整理目前專案的近期與中長期開發方向。詳細 release/changeset 分類請看 `docs/CHANGESET_TRIAGE.md`，階段性路線圖請看 `docs/ROADMAP.md`。
 
-## 1. Dashboard 資料字典 (Dashboard Data Dictionary)
-- **目標**: 建立 `reports/dashboard-data-dictionary.md`，列出 Dashboard 每個數據來源、更新頻率、stale (過期) 規則。
-- **行動**:
-  - 檢視 `backend/runtime/contract_schema.py` 與 `frontend/static/js/modules/state/schemas.js`。
-  - 整理 `DIAGNOSTICS.UPDATED` (health, telemetry, queue, pipeline, topology, workers) 及 `STATE_UPDATE` 的資料欄位。
-  - 撰寫 Markdown 文件儲存至 `reports/`。
+## Current Status
 
-## 2. Socket Viewer Policy 設定
-- **目標**: 新增 `SOCKET_PUBLIC_SNAPSHOT_ENABLED` 設定，管理未授權 Socket 連線的唯讀快照存取權。
-- **行動**:
-  - 於 `backend/utils/config.py` 及 `.env.example` 新增 `SOCKET_PUBLIC_SNAPSHOT_ENABLED`，預設為 `true`。
-  - 於 `config.py` 的 production preflight 檢查中，確保 production 模式下 `SOCKET_PUBLIC_SNAPSHOT_ENABLED = false`。
-  - 修改 `backend/interfaces/websocket/socket_handler.py`，若該設定為 `false`，則拒絕未帶 token 的連線或不發送快照。
-  - 更新/新增相關測試 (`tests/integration/test_socket_auth.py`)。
+| Area | Current state |
+| --- | --- |
+| Dashboard contract | 前端狀態 schema、runtime contract 與 diagnostics payload 已集中管理。 |
+| Socket access | `.env.example` 已提供 `SOCKET_PUBLIC_SNAPSHOT_ENABLED` 與 socket action allowlist。 |
+| Queue policy | `QueuePolicy` enum、managed queue stats 與 persistence drop diagnostics 已存在。 |
+| Production preflight | `scripts/check_production_config.py` 已提供 production profile 檢查。 |
+| Protected assets | engine、NNUE、YOLO model、dataset mapping 與 training args 已列入 protected asset manifest。 |
+| Vision pipeline | 目前以 YOLO full-frame inference、homography 校正、board mapping 與 FEN generation 為主。 |
 
-## 3. Queue Policy 文件化與測試
-- **目標**: 明確定義並測試 robot / persistence 的 queue policy (drop / dead-letter)。
-- **行動**:
-  - 於技術文件中記錄各 queue 的 maxsize、drop 條件與警告機制。
-  - 針對 queue 滿時的 drop 與 metrics 行為，增補 Python 單元測試，確保行為符合預期。
+## Phase 1 - Baseline Stabilization
 
-## 4. Production Profile Smoke Test
-- **目標**: 確保在不啟動硬體的情況下，危險設定 (unsafe config) 會被正確攔截 (fail closed)。
-- **行動**:
-  - 於 release preflight 加入 production ready 檢查。
-  - 驗證 `IS_PRODUCTION=true` 時，弱密碼、預設密鑰、`BIND_ALL=true` 且未授權等設定會導致啟動失敗。
+目標：把目前可運作的研究平台整理成可以 review、測試、交付與回復的穩定 baseline。
 
-## 5. Engine/Model Runtime Hash Verification
-- **目標**: Production 啟動前強制檢查 protected asset 的 hash，避免惡意置換。
-- **行動**:
-  - 抽取 `scripts/check_assets.py` 中的 hash 檢查邏輯。
-  - 在 `backend/application/bootstrap.py` 或相關模組啟動流程中加入 hash 驗證步驟。
-  - 若 `IS_PRODUCTION=true` 且 hash 不符，則終止啟動程序。
+Priority work:
 
----
+- 完成 `docs/CHANGESET_TRIAGE.md` 中 modified、deleted、untracked 檔案分類。
+- 保留必要 source、tests、scripts、protected assets，排除 runtime artifacts。
+- 讓 README、install guide、runbook、queue policy 與 roadmap 對齊目前實作。
+- 維持一組可重複執行的檢查指令：`.\check_system.cmd`、`.\check_system_strict.cmd`、`scripts\quality_gate.py`。
+- 確認舊版 detector 與舊 docs 的刪除是有意的。
 
-# Phase 2 Core Refactoring
+Exit criteria:
 
-## 1. EventBus 與 Legacy Dict 收斂
-- **目標**: `EventBus.publish` 僅接受 `BaseEvent`，legacy dict 需統一使用 ingress adapter 處理。
-- **行動**:
-  - 修改 `backend/events/bus/event_bus.py`，新增 `publish_from_legacy`。
-  - 更新 `backend/state/store/manager/state_manager.py` 移除對 dict 的依賴。
+- Git working tree 中每一類變更都有明確保留或移除理由。
+- 所有文件中的 setup、test、vision、robot 指令都與目前 script 名稱一致。
+- `.\check_system.cmd` 可作為非 clean-tree 開發檢查。
+- `.\check_system_strict.cmd` 可作為 release/handoff 前檢查。
 
-## 2. WorkerProtocol 正式化
-- **目標**: 為背景 Worker 建立統一的 `WorkerProtocol` 介面，統一啟動、停止與健康度檢測。
-- **行動**: 建立 `WorkerProtocol`，並實作至 `MonitoringWorker`、`PersistenceWorker` 與 `EngineWorker`。
+## Phase 2 - Core Runtime Refinement
 
-## 3. Queue Policy Enum 化
-- **目標**: 在程式碼中正式定義 Queue Policy 的 Enum。
-- **行動**: 在 `backend/runtime/messaging/queues.py` 中替換字串定義為 `Enum`。
+目標：降低 legacy path 與事件/worker 邊界的模糊度，讓 runtime 行為更容易驗證。
 
-## 4. `DIAGNOSTICS.UPDATED` Nested Schema Versioning
-- **目標**: 對 Diagnostics nested keys (如 `health`, `queue`) 加入 Schema 版本管理與警告。
-- **行動**: 於 `backend/runtime/contract_schema.py` 增加 Nested Models，初期採不強制 Hard Fail 的警告模式。
+Priority work:
 
-## 5. Dashboard 與 主控台分工定稿
-- **目標**: 確認 `/` 作為純操作與簡版燈號，`/dashboard` 作為完整觀測。
-- **行動**: 微調兩個頁面的 UI/JS 來區隔用途。
+- 收斂 `EventBus.publish` 的 legacy dict 使用方式，讓舊資料透過 adapter 進入事件系統。
+- 明確化 `WorkerProtocol` 與 worker lifecycle，包含 start、stop、status、failure/backoff。
+- 持續擴充 `DIAGNOSTICS.UPDATED` nested schema，讓 dashboard 與 tests 能檢查 health、queue、workers、pipeline、topology。
+- 決定長期 owner：即時 `VisionSystem` 與 queue-based `VisionPipeline` 的責任分界。
+- 補強 vision coordinate metadata，保留 `camera_frame`、`rectified_board`、raw inverse-mapped bbox/anchor。
 
----
+Exit criteria:
 
-# Phase 3 Long-term Optimization
+- Legacy event path 有測試保護，且 production profile 能關閉不安全相容模式。
+- Worker status snapshot 能清楚指出 running、stopped、failed、blocked。
+- Vision regression tests 涵蓋 calibration、mapping、FEN、DTO payload 與 overlay metadata。
 
-## 1. Trace Waterfall
-- **目標**: 追蹤端到端事件流 (Vision -> Engine -> Robot -> State -> Storage)。
-- **行動**: 實作或強化 TimelineTracer，記錄各階段的 Latency、Status 與 Error。
+## Phase 3 - Robot Safety And Hardware Readiness
 
-## 2. Historical Replay
-- **目標**: 讓系統能夠從 SQLite/event store 回放歷史紀錄，供 demo 與 debug 使用。
-- **行動**: 實作 Session replay 與 Trace replay 的資料讀取與推送 API。
+目標：讓 TM5-700 實機驗證保持 fail-closed，並讓每一步操作可追蹤。
 
-## 3. Performance Analytics
-- **目標**: 計算關鍵效能指標並呈現於 Dashboard。
-- **行動**: 實作 Latency percentile、Error rate、Timeout rate 等指標計算。
+Priority work:
 
-## 4. CI Quality Gate
-- **目標**: 在開發流程中導入自動化整合測試與發布檢查。
-- **行動**: 補齊或串接 unit/integration 測試指令，確保 release dry-run 可在 CI 執行。
+- 持續維護 TMflow TCP JSON ACK/STARTED/DONE/ERROR contract。
+- 將 soft limits、dead zone、gripper feedback、timeouts 與 one-move validation 納入 runbook。
+- 保持 `AUTO_EXECUTE_ROBOT=false` 作為安全預設。
+- 在 dashboard 中清楚呈現 robot queue blocked、E-Stop、socket state 與 last command。
+- 讓 robot command、vision FEN、engine move、state update 與 persistence event 使用同一 trace/session context。
 
-## 5. Hardware Fallback Strategy
-- **目標**: 在實體設備遺失時，能夠優雅降級 (Graceful Degradation)。
-- **行動**: 處理 Camera unavailable, Robot disconnected, Engine incompatible 等情境的 fallback 邏輯與 UI 提示。
+Exit criteria:
+
+- Fake robot 與 real robot mode 都能在錯誤時停止自動流程。
+- 實機前必須通過 setup preflight、connect/status、safe Z、gripper 與 one-move test。
+- Replay/export 能回溯每次機械手臂動作的來源與結果。
+
+## Phase 4 - Observability And Reproducibility
+
+目標：讓實驗資料可重播、可比較、可匯出，支援專題報告與後續研究。
+
+Priority work:
+
+- 建立 Vision -> Engine -> Robot -> State -> Persistence 的 trace waterfall。
+- 匯出 calibration quality、detection confidence、mapping distance、YOLO latency、engine time、robot execution status。
+- 建立 session replay 與 historical comparison 的穩定資料格式。
+- 將 runtime logs、database、reports、temporary screenshots 與 release source 明確分離。
+
+Exit criteria:
+
+- 單次實驗可由 persisted events 重建主要流程。
+- Excel/CSV export 足以比較 vision、engine、robot 的 latency 與錯誤率。
+- 報告用資料與 runtime artifact 有明確保存位置與排除規則。
+
+## Suggested Next Actions
+
+1. 完成 changeset triage，確認刪除舊 detector 與舊文件。
+2. 執行 `.\check_system.cmd`，保存最新可通過的檢查結果。
+3. 擴充 vision regression fixtures，加入更多校正與棋子映射案例。
+4. 檢查 real robot runbook 與實驗室 TMflow 專案是否完全一致。
+5. 在 release 前執行 `.\check_system_strict.cmd` 與 sanitized share zip 檢查。

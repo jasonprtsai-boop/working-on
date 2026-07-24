@@ -52,6 +52,31 @@
             </ol>
         </section>
 
+        <section class="setup-section setup-init-panel" aria-labelledby="setup-init-title">
+            <div class="setup-section-head">
+                <h3 id="setup-init-title">初始化連線</h3>
+                <div class="setup-inline-actions">
+                    <button type="button" class="admin-btn mini" id="btn-setup-lab-defaults" data-setup-admin="true">套用實驗室預設</button>
+                    <button type="button" class="admin-btn mini success" id="btn-setup-init-test" data-setup-admin="true">儲存並測試連線</button>
+                </div>
+            </div>
+            <div class="setup-init-grid">
+                <label class="setup-field"><span>Robot Adapter</span><select data-setup-field="robot.connection.adapter"><option value="tmflow_json">tmflow_json</option><option value="techmanpy">techmanpy</option><option value="modbus">modbus</option></select></label>
+                <label class="setup-field"><span>Robot IP</span><input type="text" maxlength="128" data-setup-field="robot.connection.ip"></label>
+                <label class="setup-field"><span>Robot Port</span><input type="number" min="1" max="65535" step="1" data-setup-field="robot.connection.port"></label>
+                <label class="setup-field"><span>PC Ethernet IP</span><input type="text" maxlength="128" data-setup-field="robot.connection.pc_ip"></label>
+                <label class="setup-field"><span>Subnet Mask</span><input type="text" maxlength="128" data-setup-field="robot.connection.subnet_mask"></label>
+                <label class="setup-field"><span>JSON Wire Format</span><select data-setup-field="robot.tmflow_json.wire_format"><option value="envelope">envelope</option><option value="flat_json">flat_json</option></select></label>
+                <label class="setup-field compact setup-init-live-check"><span>實機執行</span><input id="setup-live-hardware-test" type="checkbox" data-setup-admin="true"></label>
+            </div>
+            <div class="setup-init-status" aria-live="polite">
+                <div><span>Endpoint</span><strong id="setup-init-endpoint">--</strong></div>
+                <div><span>PC Net</span><strong id="setup-init-pc-network">--</strong></div>
+                <div><span>Protocol</span><strong id="setup-init-protocol">--</strong></div>
+                <div><span>Connection</span><strong id="setup-init-result">--</strong></div>
+            </div>
+        </section>
+
         <div class="setup-workbench">
             <aside class="setup-live-panel" aria-label="Current robot coordinates">
                 <div class="setup-section-head">
@@ -196,11 +221,6 @@
             <section class="setup-section">
                 <div class="setup-section-head"><h3>連線</h3></div>
                 <div class="setup-field-grid two">
-                    <label class="setup-field"><span>Robot IP</span><input type="text" maxlength="128" data-setup-field="robot.connection.ip"></label>
-                    <label class="setup-field"><span>Robot Port</span><input type="number" min="1" max="65535" step="1" data-setup-field="robot.connection.port"></label>
-                    <label class="setup-field"><span>Robot Adapter</span><select data-setup-field="robot.connection.adapter"><option value="tmflow_json">tmflow_json</option><option value="techmanpy">techmanpy</option><option value="modbus">modbus</option></select></label>
-                    <label class="setup-field"><span>PC Ethernet IP</span><input type="text" maxlength="128" data-setup-field="robot.connection.pc_ip"></label>
-                    <label class="setup-field"><span>Subnet Mask</span><input type="text" maxlength="128" data-setup-field="robot.connection.subnet_mask"></label>
                     <label class="setup-field"><span>Connection Timeout Sec</span><input type="number" min="0.1" step="0.1" data-setup-field="robot.connection.timeout_sec"></label>
                     <label class="setup-field"><span>TMflow Version</span><input type="text" maxlength="32" data-setup-field="robot.connection.tmflow_version"></label>
                     <label class="setup-field"><span>Controller Version</span><input type="text" maxlength="32" data-setup-field="robot.connection.controller_version"></label>
@@ -209,7 +229,6 @@
                     <label class="setup-field"><span>Suppress TechmanPy Warnings</span><input type="checkbox" data-setup-field="robot.techmanpy.suppress_warnings"></label>
                     <label class="setup-field"><span>Gripper Close Script</span><input type="text" maxlength="512" data-setup-field="robot.techmanpy.gripper_close_script"></label>
                     <label class="setup-field"><span>Gripper Open Script</span><input type="text" maxlength="512" data-setup-field="robot.techmanpy.gripper_open_script"></label>
-                    <label class="setup-field"><span>JSON Wire Format</span><select data-setup-field="robot.tmflow_json.wire_format"><option value="envelope">envelope</option><option value="flat_json">flat_json</option></select></label>
                     <label class="setup-field"><span>Require HELLO</span><input type="checkbox" data-setup-field="robot.tmflow_json.require_hello"></label>
                     <label class="setup-field"><span>ACK Timeout Sec</span><input type="number" min="0.1" step="0.1" data-setup-field="robot.tmflow_json.ack_timeout_sec"></label>
                     <label class="setup-field"><span>DONE Timeout Sec</span><input type="number" min="0.1" step="0.1" data-setup-field="robot.tmflow_json.done_timeout_sec"></label>
@@ -252,7 +271,6 @@
                     <label class="setup-field"><span>Gripper Timeout</span><input type="number" min="0.01" step="0.01" data-setup-field="robot.modbus.gripper_feedback_timeout_sec"></label>
                 </div>
                 <div class="setup-inline-actions mt-12">
-                    <label class="setup-field compact"><span>實機執行</span><input id="setup-live-hardware-test" type="checkbox"></label>
                     <button type="button" class="admin-btn mini" data-setup-test="connect">測試連線</button>
                     <button type="button" class="admin-btn mini" data-setup-test="status">讀取狀態</button>
                     <button type="button" class="admin-btn mini" data-setup-test="write_pose">寫入座標</button>
