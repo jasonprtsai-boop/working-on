@@ -53,11 +53,23 @@ class VisionFrameProcessedPayload(BaseModel):
 
 class RobotStatusUpdatedPayload(BaseModel):
     connected: bool = False
+    is_connected: bool = False
     busy: bool = False
     error: Optional[str] = None
     last_action: str = ""
     queue_size: int = 0
     position: Dict[str, float] = Field(default_factory=lambda: {"x": 0.0, "y": 0.0, "z": 0.0})
+    orientation: Dict[str, float] = Field(default_factory=dict)
+    joint_angles: Dict[str, float] = Field(default_factory=dict)
+    speed: float = 0.0
+    ip: str = ""
+    port: int = 0
+    connection: Dict[str, Any] = Field(default_factory=dict)
+    telemetry: Dict[str, Any] = Field(default_factory=dict)
+    status_code: Optional[int] = None
+    status_label: str = ""
+    error_code: Optional[int] = None
+    gripper_status_code: Optional[int] = None
 
 
 class StateUpdatePayload(BaseModel):

@@ -70,6 +70,13 @@ test('STATE_UPDATE keeps dashboard board and robot contract fields', () => {
       queue_size: 2,
       safety_status: 'SAFE',
       position: { x: 10, y: 20, z: 30 },
+      orientation: { rx: 1, ry: 2, rz: 3 },
+      joint_angles: { j1: 10, j2: 20 },
+      speed: 15.5,
+      ip: '192.168.1.50',
+      port: 502,
+      connection: { host: '192.168.1.50', port: 502, connected: true },
+      telemetry: { source: 'hardware' },
     },
   });
 
@@ -82,6 +89,12 @@ test('STATE_UPDATE keeps dashboard board and robot contract fields', () => {
   expect(normalized.robot.queue_size).toBe(2);
   expect(normalized.robot.safety_status).toBe('SAFE');
   expect(normalized.robot.position).toEqual({ x: 10, y: 20, z: 30 });
+  expect(normalized.robot.orientation).toEqual({ rx: 1, ry: 2, rz: 3 });
+  expect(normalized.robot.joint_angles).toEqual({ j1: 10, j2: 20 });
+  expect(normalized.robot.speed).toBe(15.5);
+  expect(normalized.robot.ip).toBe('192.168.1.50');
+  expect(normalized.robot.port).toBe(502);
+  expect(normalized.robot.telemetry.source).toBe('hardware');
 });
 
 test('STATE_UPDATE derives board turn from FEN when turn is omitted', () => {

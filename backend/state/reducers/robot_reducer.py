@@ -27,6 +27,30 @@ class RobotReducer:
         ]
 
     @staticmethod
+    def _dict(payload, key, fallback):
+        value = payload.get(key)
+        if isinstance(value, dict):
+            return dict(value)
+        return dict(fallback or {})
+
+    @staticmethod
+    def _optional_int(payload, key, fallback):
+        value = payload.get(key, fallback)
+        if value is None:
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return fallback
+
+    @staticmethod
+    def _float(payload, key, fallback=0.0):
+        try:
+            return float(payload.get(key, fallback) or 0.0)
+        except (TypeError, ValueError):
+            return float(fallback or 0.0)
+
+    @staticmethod
     def _action(payload, fallback="") -> str:
         return str(payload.get("action") or payload.get("command") or payload.get("move") or fallback or "")
 
@@ -83,6 +107,17 @@ class RobotReducer:
                 error=payload.get("error", state.robot.error),
                 position=position,
                 robot_position=RobotReducer._position_list(position),
+                orientation=RobotReducer._dict(payload, "orientation", state.robot.orientation),
+                joint_angles=RobotReducer._dict(payload, "joint_angles", state.robot.joint_angles),
+                speed=RobotReducer._float(payload, "speed", state.robot.speed),
+                ip=str(payload.get("ip", state.robot.ip) or ""),
+                port=RobotReducer._optional_int(payload, "port", state.robot.port) or 0,
+                connection=RobotReducer._dict(payload, "connection", state.robot.connection),
+                telemetry=RobotReducer._dict(payload, "telemetry", state.robot.telemetry),
+                status_code=RobotReducer._optional_int(payload, "status_code", state.robot.status_code),
+                status_label=str(payload.get("status_label", state.robot.status_label) or ""),
+                error_code=RobotReducer._optional_int(payload, "error_code", state.robot.error_code),
+                gripper_status_code=RobotReducer._optional_int(payload, "gripper_status_code", state.robot.gripper_status_code),
                 queue_size=max(0, int(payload.get("queue_size", state.robot.queue_size) or 0)),
                 current_command=payload.get("current_command", state.robot.current_command),
                 last_action=RobotReducer._action(payload, state.robot.last_action),

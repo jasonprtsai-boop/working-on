@@ -35,6 +35,7 @@ let playerGameStarted = false;
 let videoReconnectAttempts = 0;
 let videoReconnectTimer = null;
 let videoStreamActive = false;
+let setupStatusTimerId = null;
 const setupWizardState = {
     settingsSaved: false,
     preflight: null,
@@ -180,6 +181,11 @@ function switchView(viewId) {
         playerGameStarted = false;
     }
     updatePlayerStartGate(viewId === 'view-player');
+    if (viewId === 'view-setup') {
+        startSetupRobotStatusRefresh();
+    } else {
+        stopSetupRobotStatusRefresh();
+    }
 }
 
 function updatePlayerStartGate(isPlayerView) {
@@ -215,8 +221,7 @@ async function startPlayerGame() {
     } catch (error) {
         const message = String(error?.message || '');
         if (message.includes('Valid session') || message.includes('unauthorized') || message.includes('401')) {
-            refreshAuthorizationUI();
-            showAuthOverlay();
+            // Player mode is public; do not route player-start failures into admin auth.
             window.showAlert?.('請先登入操作權限後再開始玩家模式。', 'warning');
         } else {
             window.showAlert?.(message || '無法開始對局。', 'error');
@@ -340,6 +345,7 @@ function switchPane(paneId, buttonId) {
 
 function openSetupPane() {
     switchView('view-setup');
+    renderSetupRobotStatus(state.snapshot.robot || {});
     loadSetupCommissioning({ quiet: true });
     loadSetupSettings({ quiet: true });
     refreshSetupCameras({ quiet: true });
@@ -354,7 +360,9 @@ function setupSettingsControls() {
     bindClick('btn-setup-vision-auto', autoCalibrateSetupVision);
     bindClick('btn-setup-preflight', () => refreshSetupPreflight());
     bindClick('btn-setup-wizard-refresh', () => refreshSetupPreflight());
+    bindClick('btn-setup-refresh-robot-status', () => refreshSetupRobotStatus());
     bindSubmit('setup-settings-form', saveSetupSettings);
+    subscribe('robot', (robot) => renderSetupRobotStatus(robot));
     document.querySelectorAll('[data-setup-test]').forEach((button) => {
         button.addEventListener('click', () => runSetupHardwareTest(button.dataset.setupTest));
     });
@@ -475,6 +483,10 @@ async function runSetupHardwareTest(action) {
             method: 'POST',
             body: JSON.stringify({ action, dry_run: !liveHardwareTest }),
         }, 12000);
+        if (payload.status) {
+            renderSetupRobotStatus(payload.status);
+            commit('ROBOT.STATUS_UPDATED', payload.status);
+        }
         if (payload.commissioning) renderSetupCommissioning(payload.commissioning);
         const label = payload.dry_run ? 'Dry-run passed' : 'Passed';
         setTextById('setup-hardware-test-status', `${action}: ${label}`);
@@ -484,6 +496,107 @@ async function runSetupHardwareTest(action) {
         setTextById('setup-hardware-test-status', `${action}: Failed`);
         window.showAlert?.(error?.message || `${action} failed.`, 'error');
     }
+}
+
+function startSetupRobotStatusRefresh() {
+    renderSetupRobotStatus(state.snapshot.robot || {});
+    refreshSetupRobotStatus({ quiet: true });
+    if (setupStatusTimerId || typeof setInterval !== 'function') return;
+    setupStatusTimerId = setInterval(() => {
+        const active = document.getElementById('view-setup')?.classList.contains('active');
+        if (active) refreshSetupRobotStatus({ quiet: true });
+    }, 1000);
+}
+
+function stopSetupRobotStatusRefresh() {
+    if (!setupStatusTimerId || typeof clearInterval !== 'function') return;
+    clearInterval(setupStatusTimerId);
+    setupStatusTimerId = null;
+}
+
+async function refreshSetupRobotStatus({ quiet = false } = {}) {
+    if (!hasSetupAccess()) return;
+    try {
+        const payload = await apiJson('/api/setup/hardware-test', {
+            method: 'POST',
+            body: JSON.stringify({ action: 'status', dry_run: true }),
+        }, 5000);
+        const robot = payload.status || payload.robot || {};
+        renderSetupRobotStatus(robot);
+        if (payload.status) commit('ROBOT.STATUS_UPDATED', payload.status);
+    } catch (error) {
+        renderSetupRobotStatus({ connected: false, error: error?.message || 'status_unavailable' });
+        if (!quiet) window.showAlert?.(error?.message || 'Robot status unavailable.', 'warning');
+    }
+}
+
+function renderSetupRobotStatus(robot = {}) {
+    if (!document.getElementById('setup-current-x')) return;
+
+    const telemetry = robot.telemetry && typeof robot.telemetry === 'object' ? robot.telemetry : {};
+    const connection = robot.connection && typeof robot.connection === 'object' ? robot.connection : {};
+    const position = robot.position || robot.robot_position || telemetry.pose || {};
+    const orientation = robot.orientation || telemetry.orientation || {};
+    const connected = Boolean(robot.connected || robot.is_connected || connection.connected);
+    const busy = Boolean(robot.busy);
+    const dot = document.getElementById('setup-robot-live-dot');
+    if (dot) dot.dataset.state = busy ? 'busy' : (connected ? 'online' : 'offline');
+
+    const status = robot.error
+        ? `Error: ${robot.error}`
+        : (busy ? 'Moving' : (connected ? 'Connected' : 'Offline'));
+    setTextById('setup-robot-live-status', status);
+    setTextById('setup-robot-live-endpoint', setupFormatEndpoint(robot, connection));
+    setTextById('setup-current-x', setupFormatNumber(position.x));
+    setTextById('setup-current-y', setupFormatNumber(position.y));
+    setTextById('setup-current-z', setupFormatNumber(position.z));
+    setTextById('setup-current-rx', setupFormatNumber(orientation.rx ?? position.rx));
+    setTextById('setup-current-ry', setupFormatNumber(orientation.ry ?? position.ry));
+    setTextById('setup-current-rz', setupFormatNumber(orientation.rz ?? position.rz));
+    setTextById('setup-current-speed', setupFormatSpeed(robot.speed ?? telemetry.speed));
+    setTextById('setup-current-joints', setupFormatJoints(robot.joint_angles || robot.joints || robot.angles || telemetry.joint_angles));
+    setTextById('setup-current-telemetry', setupTelemetryLabel(telemetry, robot.fake_robot));
+    setTextById('setup-current-updated', new Date().toLocaleTimeString());
+}
+
+function setupFormatEndpoint(robot = {}, connection = {}) {
+    const host = robot.ip || connection.ip || connection.host || '';
+    const port = robot.port ?? connection.port;
+    if (!host && (port === undefined || port === null || port === '')) return '--';
+    return port === undefined || port === null || port === '' ? String(host) : `${host || '--'}:${port}`;
+}
+
+function setupFormatNumber(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return '--';
+    return numeric.toFixed(2);
+}
+
+function setupFormatSpeed(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return '--';
+    return `${numeric.toFixed(2)} mm/s`;
+}
+
+function setupFormatJoints(joints) {
+    if (!joints) return '--';
+    if (Array.isArray(joints)) {
+        return joints
+            .slice(0, 6)
+            .map((value, index) => `J${index + 1}:${setupFormatNumber(value)}`)
+            .join(' ');
+    }
+    if (typeof joints !== 'object') return '--';
+    const parts = ['j1', 'j2', 'j3', 'j4', 'j5', 'j6']
+        .filter((key) => Number.isFinite(Number(joints[key])))
+        .map((key) => `${key.toUpperCase()}:${setupFormatNumber(joints[key])}`);
+    return parts.join(' ') || '--';
+}
+
+function setupTelemetryLabel(telemetry = {}, fakeRobot = false) {
+    const source = String(telemetry.source || '').trim();
+    if (source) return source;
+    return fakeRobot ? 'simulation' : '--';
 }
 
 async function loadSetupCommissioning({ quiet = false } = {}) {
@@ -858,7 +971,8 @@ function refreshAuthorizationUI() {
 
 async function loadInitialStateSnapshot() {
     try {
-        const payload = await apiJson('/api/state', { method: 'GET' }, 5000);
+        const endpoint = hasAdminAccess() ? '/api/state' : '/api/player/state';
+        const payload = await apiJson(endpoint, { method: 'GET' }, 5000);
         commit('STATE_UPDATE', payload);
     } catch {
         document.body?.classList.add('state-fallback-unavailable');

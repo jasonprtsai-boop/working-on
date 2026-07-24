@@ -1,4 +1,9 @@
 module.exports = {
   testEnvironment: 'node',
-  transform: {}
+  transform: {},
+  testPathIgnorePatterns: [
+    '<rootDir>/build/',
+    '<rootDir>/dist/',
+    '<rootDir>/node_modules/'
+  ]
 };

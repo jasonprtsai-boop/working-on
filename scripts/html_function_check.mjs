@@ -73,6 +73,7 @@ function startServer() {
     AUTO_EXECUTE_ROBOT: 'false',
     CHESS_SECRET_KEY: `html-check-secret-${stamp}-0123456789abcdef`,
     CONTROL_AUTH_REQUIRED: 'true',
+    CORS_ALLOWED_ORIGINS: BASE_URL,
     DB_PATH,
     ENGINE_AUTO_ANALYZE: 'false',
     ENGINE_PROBE_ON_BOOT: 'false',
@@ -185,7 +186,7 @@ async function runBrowserChecks(token) {
 
   const screenshots = {};
   try {
-    await page.goto(BASE_URL, { waitUntil: 'networkidle' });
+    await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
     await page.locator('#view-landing').waitFor({ state: 'visible', timeout: 10000 });
     addResult('前台導覽', 'Landing 頁載入', true, await page.title());
     addResult('前台導覽', '玩家模式按鈕存在', await page.locator('#btn-role-player').isVisible());

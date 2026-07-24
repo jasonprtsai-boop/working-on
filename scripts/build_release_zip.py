@@ -16,8 +16,10 @@ EXCLUDED_DIR_NAMES = {
     ".mypy_cache",
     ".pytest_cache",
     ".ruff_cache",
+    ".tools",
     ".venv",
     "__pycache__",
+    "build",
     "dist",
     "env",
     "logs",
@@ -25,6 +27,10 @@ EXCLUDED_DIR_NAMES = {
     "snapshots",
     "venv",
 }
+
+EXCLUDED_DIR_PREFIXES = (
+    ".venv.broken-",
+)
 
 EXCLUDED_PATH_PREFIXES = {
     ("analysis_artifacts",),
@@ -38,6 +44,7 @@ EXCLUDED_FILE_NAMES = {
     ".env.development",
     ".env.local",
     ".env.production",
+    "test_output.txt",
 }
 
 ROOT_ONLY_EXCLUDED_FILE_NAMES = {
@@ -85,6 +92,8 @@ def exclusion_reason(path: Path, root: Path = ROOT, is_dir: bool | None = None) 
     for part in dir_parts:
         if part in EXCLUDED_DIR_NAMES:
             return f"excluded directory: {part}"
+        if any(part.startswith(prefix) for prefix in EXCLUDED_DIR_PREFIXES):
+            return f"excluded directory prefix: {part}"
 
     for prefix in EXCLUDED_PATH_PREFIXES:
         if parts[: len(prefix)] == prefix:
@@ -94,6 +103,8 @@ def exclusion_reason(path: Path, root: Path = ROOT, is_dir: bool | None = None) 
     if is_dir is True:
         if name in EXCLUDED_DIR_NAMES:
             return f"excluded directory: {name}"
+        if any(name.startswith(prefix) for prefix in EXCLUDED_DIR_PREFIXES):
+            return f"excluded directory prefix: {name}"
         return None
 
     if name in EXCLUDED_FILE_NAMES:

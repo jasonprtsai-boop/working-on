@@ -6,7 +6,7 @@ from typing import Any, Mapping
 
 from flask import jsonify, request
 
-from backend.interfaces.api.shared import api_bp, error_response, vision_system
+from backend.interfaces.api.shared import api_bp, error_response, json_object_payload, vision_system
 from backend.interfaces.api.client_identity import client_ip
 from backend.interfaces.api.shared import publish_security_event
 from backend.application.services.system_preflight import build_preflight_report
@@ -119,6 +119,12 @@ def current_setup_settings() -> dict[str, Any]:
                 "command_trigger_value": int(getattr(config, "ROBOT_COMMAND_TRIGGER_VALUE", 1)),
                 "command_clear_value": int(getattr(config, "ROBOT_COMMAND_CLEAR_VALUE", 0)),
                 "command_ack_timeout_sec": float(getattr(config, "ROBOT_COMMAND_ACK_TIMEOUT_SEC", 2.0)),
+                "register_scale": float(getattr(config, "ROBOT_REGISTER_SCALE", 100.0)),
+                "register_encoding": str(getattr(config, "ROBOT_REGISTER_ENCODING", "scaled_int32")),
+                "telemetry_enabled": bool(getattr(config, "ROBOT_TELEMETRY_ENABLED", False)),
+                "telemetry_pose_register_base": int(getattr(config, "ROBOT_TELEMETRY_POSE_REGISTER_BASE", 7110)),
+                "telemetry_joint_register_base": int(getattr(config, "ROBOT_TELEMETRY_JOINT_REGISTER_BASE", 7122)),
+                "telemetry_speed_register": int(getattr(config, "ROBOT_TELEMETRY_SPEED_REGISTER", 7134)),
                 "gripper_feedback_enabled": bool(getattr(config, "ROBOT_GRIPPER_FEEDBACK_ENABLED", True)),
                 "gripper_status_register": int(getattr(config, "ROBOT_GRIPPER_STATUS_REGISTER", 7103)),
                 "gripper_close_value": int(getattr(config, "ROBOT_GRIPPER_CLOSE_VALUE", 1)),
@@ -184,6 +190,16 @@ def normalize_setup_settings(payload: Mapping[str, Any], base: Mapping[str, Any]
         "robot.modbus.gripper_feedback_enabled",
         _bool(_get(merged, "robot.modbus.gripper_feedback_enabled", True), "robot.modbus.gripper_feedback_enabled"),
     )
+    _set(
+        merged,
+        "robot.modbus.telemetry_enabled",
+        _bool(_get(merged, "robot.modbus.telemetry_enabled", False), "robot.modbus.telemetry_enabled"),
+    )
+    _set(merged, "robot.modbus.register_scale", _finite_float(_get(merged, "robot.modbus.register_scale", 100.0), "robot.modbus.register_scale"))
+    encoding = _text(_get(merged, "robot.modbus.register_encoding", "scaled_int32"), "robot.modbus.register_encoding").strip().lower()
+    if encoding not in {"scaled_int16", "scaled_int32"}:
+        raise ValueError("robot.modbus.register_encoding must be scaled_int16 or scaled_int32.")
+    _set(merged, "robot.modbus.register_encoding", encoding)
     for path in (
         "robot.modbus.motion_register_base",
         "robot.modbus.profile_register_base",
@@ -194,6 +210,9 @@ def normalize_setup_settings(payload: Mapping[str, Any], base: Mapping[str, Any]
         "robot.modbus.command_ack_register",
         "robot.modbus.error_code_register",
         "robot.modbus.gripper_status_register",
+        "robot.modbus.telemetry_pose_register_base",
+        "robot.modbus.telemetry_joint_register_base",
+        "robot.modbus.telemetry_speed_register",
     ):
         _set(merged, path, _bounded_int(_get(merged, path), path, 0, 65535))
     for path in (
@@ -304,7 +323,13 @@ def _validate_setup_settings(settings: Mapping[str, Any]) -> None:
 
     modbus = _get(settings, "robot.modbus", {})
     register_ranges = []
-    motion_width = 12
+    if float(modbus["register_scale"]) <= 0:
+        raise ValueError("robot.modbus.register_scale must be positive.")
+    encoding = str(modbus["register_encoding"]).strip().lower()
+    if encoding not in {"scaled_int16", "scaled_int32"}:
+        raise ValueError("robot.modbus.register_encoding must be scaled_int16 or scaled_int32.")
+    value_register_width = 2 if encoding == "scaled_int32" else 1
+    motion_width = 6 * value_register_width
     profile_width = 2
     for label, start, width in (
         ("motion", int(modbus["motion_register_base"]), motion_width),
@@ -321,6 +346,16 @@ def _validate_setup_settings(settings: Mapping[str, Any]) -> None:
         if end > 65535:
             raise ValueError(f"robot.modbus.{label} register range exceeds 65535.")
         register_ranges.append((label, start, end))
+    if bool(modbus.get("telemetry_enabled", False)):
+        for label, start, width in (
+            ("telemetry_pose", int(modbus["telemetry_pose_register_base"]), 6 * value_register_width),
+            ("telemetry_joint", int(modbus["telemetry_joint_register_base"]), 6 * value_register_width),
+            ("telemetry_speed", int(modbus["telemetry_speed_register"]), value_register_width),
+        ):
+            end = start + width - 1
+            if end > 65535:
+                raise ValueError(f"robot.modbus.{label} register range exceeds 65535.")
+            register_ranges.append((label, start, end))
     for index, (label, start, end) in enumerate(register_ranges):
         for other_label, other_start, other_end in register_ranges[index + 1:]:
             if start <= other_end and other_start <= end:
@@ -416,6 +451,12 @@ def _apply_runtime_settings(settings: Mapping[str, Any]) -> list[str]:
     config.ROBOT_COMMAND_TRIGGER_VALUE = int(_get(settings, "robot.modbus.command_trigger_value"))
     config.ROBOT_COMMAND_CLEAR_VALUE = int(_get(settings, "robot.modbus.command_clear_value"))
     config.ROBOT_COMMAND_ACK_TIMEOUT_SEC = float(_get(settings, "robot.modbus.command_ack_timeout_sec"))
+    config.ROBOT_REGISTER_SCALE = float(_get(settings, "robot.modbus.register_scale"))
+    config.ROBOT_REGISTER_ENCODING = str(_get(settings, "robot.modbus.register_encoding")).strip().lower()
+    config.ROBOT_TELEMETRY_ENABLED = bool(_get(settings, "robot.modbus.telemetry_enabled"))
+    config.ROBOT_TELEMETRY_POSE_REGISTER_BASE = int(_get(settings, "robot.modbus.telemetry_pose_register_base"))
+    config.ROBOT_TELEMETRY_JOINT_REGISTER_BASE = int(_get(settings, "robot.modbus.telemetry_joint_register_base"))
+    config.ROBOT_TELEMETRY_SPEED_REGISTER = int(_get(settings, "robot.modbus.telemetry_speed_register"))
     config.ROBOT_GRIPPER_FEEDBACK_ENABLED = bool(_get(settings, "robot.modbus.gripper_feedback_enabled"))
     config.ROBOT_GRIPPER_STATUS_REGISTER = int(_get(settings, "robot.modbus.gripper_status_register"))
     config.ROBOT_GRIPPER_CLOSE_VALUE = int(_get(settings, "robot.modbus.gripper_close_value"))
@@ -589,7 +630,10 @@ def _hardware_test_target(action: str) -> dict[str, float]:
 
 @api_bp.route("/setup/login", methods=["POST"])
 def setup_login():
-    payload = request.get_json(silent=True) or {}
+    try:
+        payload = json_object_payload()
+    except ValueError as exc:
+        return error_response("validation_failed", str(exc), 400)
     password = str(payload.get("password", ""))
     if password != str(getattr(config, "SETUP_PASSWORD", "login")):
         publish_security_event("SECURITY.SETUP_LOGIN_FAILED", {
@@ -644,7 +688,10 @@ def get_setup_preflight():
 
 @api_bp.route("/setup/hardware-test", methods=["POST"])
 def setup_hardware_test():
-    payload = request.get_json(silent=True) or {}
+    try:
+        payload = json_object_payload()
+    except ValueError as exc:
+        return error_response("validation_failed", str(exc), 400)
     action = str(payload.get("action") or "").strip().lower()
     try:
         result = _hardware_test(action, payload)
@@ -660,7 +707,10 @@ def setup_hardware_test():
 
 @api_bp.route("/setup/settings", methods=["POST"])
 def save_setup_settings():
-    payload = request.get_json(silent=True) or {}
+    try:
+        payload = json_object_payload()
+    except ValueError as exc:
+        return error_response("validation_failed", str(exc), 400)
     settings_payload = payload.get("settings", payload)
     try:
         normalized = normalize_setup_settings(settings_payload, base=current_setup_settings())

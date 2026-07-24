@@ -20,6 +20,7 @@ PROTECTED_ENDPOINTS = (
     ("/api/runtime/safe-mode", None, "admin"),
     ("/api/runtime/session/start", None, "admin"),
     ("/api/runtime/session/end", None, "admin"),
+    ("/api/state", None, "operator"),
     ("/api/setup/settings", "GET", "setup"),
     ("/api/setup/settings", None, "setup"),
     ("/api/setup/preflight", None, "setup"),
@@ -39,8 +40,6 @@ PROTECTED_ENDPOINTS = (
     ("/api/robot/calibration", None, "admin"),
     ("/api/control", None, "admin"),
     ("/api/move", None, "admin"),
-    ("/api/player/start", None, "operator"),
-    ("/api/player/move", None, "operator"),
     ("/api/reset", None, "admin"),
     ("/api/simulation", None, "admin"),
     ("/api/snaplog", None, "admin"),
@@ -52,18 +51,33 @@ PROTECTED_ENDPOINTS = (
     ("/api/export_kpi", None, "admin"),
 )
 
+PUBLIC_CONTROL_ENDPOINTS = (
+    ("/api/player/state", "GET"),
+    ("/api/player/start", None),
+    ("/api/player/move", None),
+    ("/api/player/estop", None),
+)
+
 ROLE_LEVELS = {"viewer": 1, "operator": 2, "setup": 2, "admin": 3}
 
 
-def _required_role_for_request() -> str | None:
+def _matches_request(prefix: str, method: str | None) -> bool:
     path = request.path.rstrip("/")
+    if method and request.method != method:
+        return False
+    return path == prefix or path.startswith(prefix + "/")
+
+
+def _required_role_for_request() -> str | None:
     for item in PROTECTED_ENDPOINTS:
         prefix, method, role = item if len(item) == 3 else (*item, "admin")
-        if method and request.method != method:
-            continue
-        if path == prefix or path.startswith(prefix + "/"):
+        if _matches_request(prefix, method):
             return role
     return None
+
+
+def _is_public_control_request() -> bool:
+    return any(_matches_request(prefix, method) for prefix, method in PUBLIC_CONTROL_ENDPOINTS)
 
 
 def _client_identity() -> str:
@@ -111,7 +125,7 @@ def enforce_control_auth():
         return _enforce_rate_limit("login", getattr(config, "LOGIN_RATE_LIMIT_PER_MINUTE", 20))
 
     required_role = _required_role_for_request()
-    if required_role:
+    if required_role or _is_public_control_request():
         limited = _enforce_rate_limit("control", getattr(config, "CONTROL_RATE_LIMIT_PER_MINUTE", 120))
         if limited:
             return limited

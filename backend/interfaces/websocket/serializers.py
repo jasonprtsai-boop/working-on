@@ -71,6 +71,32 @@ class StateSerializer:
         if not pieces and fen:
             pieces = _pieces_from_board(_board_from_fen(fen))
 
+        robot_payload = {
+            "connected": robot.get("connected", False),
+            "is_connected": robot.get("is_connected", robot.get("connected", False)),
+            "busy": robot.get("busy", False),
+            "error": robot.get("error"),
+            "last_action": robot.get("last_action", ""),
+            "queue_size": robot.get("queue_size", 0),
+            "position": robot.get("position") or {"x": 0, "y": 0, "z": 0},
+        }
+        for key in (
+            "orientation",
+            "joint_angles",
+            "speed",
+            "ip",
+            "port",
+            "connection",
+            "telemetry",
+            "status_code",
+            "status_label",
+            "error_code",
+            "gripper_status_code",
+            "fake_robot",
+        ):
+            if key in robot:
+                robot_payload[key] = robot.get(key)
+
         return {
             "board": {
                 "fen": fen,
@@ -80,14 +106,7 @@ class StateSerializer:
                 "last_move": (game.get("move_history") or [None])[-1],
             },
             "engine": EngineInfoSerializer.serialize(engine),
-            "robot": {
-                "connected": robot.get("connected", False),
-                "busy": robot.get("busy", False),
-                "error": robot.get("error"),
-                "last_action": robot.get("last_action", ""),
-                "queue_size": robot.get("queue_size", 0),
-                "position": robot.get("position") or {"x": 0, "y": 0, "z": 0},
-            },
+            "robot": robot_payload,
             "sync": {
                 "version": raw.get("trace_id", "root"),
                 "contract_version": CONTRACT_VERSION,

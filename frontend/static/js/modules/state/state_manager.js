@@ -24,7 +24,14 @@ export const state = {
             last_action: "",
             queue_size: 0,
             safety_status: "UNKNOWN",
-            position: { x: 0, y: 0, z: 0 }
+            position: { x: 0, y: 0, z: 0 },
+            orientation: { rx: 0, ry: 0, rz: 0 },
+            joint_angles: {},
+            speed: null,
+            ip: "",
+            port: null,
+            connection: {},
+            telemetry: {}
         },
         vision: {
             fps: 0,

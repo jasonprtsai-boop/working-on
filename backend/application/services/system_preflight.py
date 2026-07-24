@@ -80,6 +80,10 @@ def build_preflight_report(*, require_auto_execute: bool = False) -> Dict[str, A
             "command_ack_register": getattr(config, "ROBOT_COMMAND_ACK_REGISTER", None),
             "error_code_register": getattr(config, "ROBOT_ERROR_CODE_REGISTER", None),
             "gripper_status_register": getattr(config, "ROBOT_GRIPPER_STATUS_REGISTER", None),
+            "telemetry_enabled": getattr(config, "ROBOT_TELEMETRY_ENABLED", False),
+            "telemetry_pose_register_base": getattr(config, "ROBOT_TELEMETRY_POSE_REGISTER_BASE", None),
+            "telemetry_joint_register_base": getattr(config, "ROBOT_TELEMETRY_JOINT_REGISTER_BASE", None),
+            "telemetry_speed_register": getattr(config, "ROBOT_TELEMETRY_SPEED_REGISTER", None),
         },
     )
 

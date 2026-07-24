@@ -1,12 +1,19 @@
+import http from 'node:http';
+
 const baseUrl = process.env.SMOKE_URL || 'http://127.0.0.1:5000/';
 
 async function serverReachable(url) {
-  try {
-    const response = await fetch(url, { method: 'GET' });
-    return response.ok;
-  } catch {
-    return false;
-  }
+  return new Promise((resolve) => {
+    const request = http.get(url, { timeout: 2500 }, (response) => {
+      response.resume();
+      response.on('end', () => resolve(response.statusCode >= 200 && response.statusCode < 400));
+    });
+    request.on('timeout', () => {
+      request.destroy();
+      resolve(false);
+    });
+    request.on('error', () => resolve(false));
+  });
 }
 
 async function main() {
@@ -32,7 +39,7 @@ async function main() {
     });
     page.on('pageerror', (error) => errors.push(error.message));
 
-    await page.goto(baseUrl, { waitUntil: 'networkidle' });
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
     await page.locator('#view-landing').waitFor({ state: 'attached', timeout: 5000 });
     await page.waitForFunction(() => (
       document.body.dataset.connectionStatus === 'online' &&

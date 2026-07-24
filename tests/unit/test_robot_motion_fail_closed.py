@@ -111,7 +111,7 @@ class FakeModbusClient:
             if self.status_sequence:
                 return [self.status_sequence.pop(0)]
             return [self.status_value]
-        return [self.registers.get(register, 0)]
+        return [self.registers.get(register + index, 0) for index in range(int(count))]
 
 
 class NoMovingFakeModbusClient(FakeModbusClient):
@@ -365,6 +365,51 @@ class TestRobotMotionFailClosed(unittest.TestCase):
         self.assertEqual(trigger_writes, [])
         self.assertEqual(client.multiple_writes[0][0], config.ROBOT_PROFILE_REGISTER_BASE)
         self.assertEqual(client.multiple_writes[1][0], config.ROBOT_MOTION_REGISTER_BASE)
+
+    def test_modbus_telemetry_reads_configured_scaled_int32_registers(self):
+        client = FakeModbusClient()
+        adapter = ModbusAdapter(host="127.0.0.1", port=502)
+        adapter.connected = True
+        adapter.client = client
+
+        pose = [-1.25, 2.5, 3.0, 4.0, 5.0, 6.0]
+        joints = [10.0, 20.0, 30.0, 40.0, 50.0, 60.0]
+        pose_regs = []
+        joint_regs = []
+        for value in pose:
+            pose_regs.extend(adapter._signed_to_register_pair(int(round(value * 100.0))))
+        for value in joints:
+            joint_regs.extend(adapter._signed_to_register_pair(int(round(value * 100.0))))
+        speed_regs = adapter._signed_to_register_pair(1250)
+        for index, value in enumerate(pose_regs):
+            client.registers[8000 + index] = value
+        for index, value in enumerate(joint_regs):
+            client.registers[8020 + index] = value
+        for index, value in enumerate(speed_regs):
+            client.registers[8040 + index] = value
+
+        patches = [
+            patch.object(modbus_adapter, "MODBUS_AVAILABLE", True),
+            patch.object(config, "ROBOT_TELEMETRY_ENABLED", True),
+            patch.object(config, "ROBOT_REGISTER_ENCODING", "scaled_int32"),
+            patch.object(config, "ROBOT_REGISTER_SCALE", 100.0),
+            patch.object(config, "ROBOT_TELEMETRY_POSE_REGISTER_BASE", 8000),
+            patch.object(config, "ROBOT_TELEMETRY_JOINT_REGISTER_BASE", 8020),
+            patch.object(config, "ROBOT_TELEMETRY_SPEED_REGISTER", 8040),
+        ]
+        for item in patches:
+            item.start()
+        try:
+            telemetry = adapter.read_telemetry()
+        finally:
+            for item in reversed(patches):
+                item.stop()
+
+        self.assertEqual(telemetry["source"], "hardware")
+        self.assertEqual(telemetry["pose"]["x"], -1.25)
+        self.assertEqual(telemetry["orientation"]["rz"], 6.0)
+        self.assertEqual(telemetry["joint_angles"]["j6"], 60.0)
+        self.assertEqual(telemetry["speed"], 12.5)
 
     def test_modbus_gripper_and_halt_use_configured_registers(self):
         client = FakeModbusClient()

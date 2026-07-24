@@ -4,6 +4,7 @@ import os
 import time
 from functools import lru_cache
 from importlib.util import find_spec
+from typing import Any, Mapping
 
 from flask import Blueprint, current_app, jsonify, request
 
@@ -51,6 +52,20 @@ def bounded_int_arg(name: str, default: int, minimum: int, maximum: int) -> int:
     except Exception:
         value = default
     return max(minimum, min(value, maximum))
+
+
+def json_object_payload() -> dict[str, Any]:
+    payload = request.get_json(silent=True)
+    if payload is None:
+        return {}
+    if not isinstance(payload, Mapping):
+        raise ValueError("Request JSON body must be an object.")
+    return dict(payload)
+
+
+def optional_json_object_payload() -> dict[str, Any]:
+    payload = request.get_json(silent=True)
+    return dict(payload) if isinstance(payload, Mapping) else {}
 
 
 @lru_cache(maxsize=64)

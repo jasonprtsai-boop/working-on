@@ -167,15 +167,41 @@ class RobotFacade(RobotInterface):
             if hasattr(self._impl, "get_status"):
                 raw = dict(self._impl.get_status())
                 # Normalize to frontend contract schema.
-                return {
-                    "connected": bool(raw.get("connected", False)),
+                status = {
+                    "connected": bool(raw.get("connected", raw.get("is_connected", False))),
+                    "is_connected": bool(raw.get("connected", raw.get("is_connected", False))),
                     "busy": bool(raw.get("busy", False)),
                     "error": raw.get("error"),
                     "last_action": raw.get("last_action", ""),
                     "queue_size": int(raw.get("queue_size", 0) or 0),
                     "position": raw.get("position") or {"x": 0.0, "y": 0.0, "z": 0.0},
+                    "ip": raw.get("ip", str(getattr(config, "ROBOT_IP", ""))),
+                    "port": raw.get("port", int(getattr(config, "ROBOT_PORT", 0) or 0)),
+                    "connection": raw.get("connection") or {
+                        "ip": str(getattr(config, "ROBOT_IP", "")),
+                        "host": str(getattr(config, "ROBOT_IP", "")),
+                        "port": int(getattr(config, "ROBOT_PORT", 0) or 0),
+                        "connected": bool(raw.get("connected", False)),
+                        "mode": "simulation" if self._fake_mode else "modbus",
+                    },
                     "fake_robot": bool(self._fake_mode),
                 }
+                for key in (
+                    "orientation",
+                    "joint_angles",
+                    "speed",
+                    "telemetry",
+                    "status_code",
+                    "status_label",
+                    "error_code",
+                    "gripper_status_code",
+                    "gripper_closed",
+                    "safety_status",
+                    "current_command",
+                ):
+                    if key in raw:
+                        status[key] = raw.get(key)
+                return status
         except Exception as exc:
             logger.warning("[RobotFacade] get_status failed", exc_info=True)
             publish_error_diagnostic(
@@ -191,4 +217,23 @@ class RobotFacade(RobotInterface):
             error = str(exc)
         else:
             error = "status_unavailable"
-        return {"connected": False, "busy": False, "error": error, "last_action": "", "queue_size": 0, "position": {"x": 0.0, "y": 0.0, "z": 0.0}}
+        return {
+            "connected": False,
+            "is_connected": False,
+            "busy": False,
+            "error": error,
+            "last_action": "",
+            "queue_size": 0,
+            "position": {"x": 0.0, "y": 0.0, "z": 0.0},
+            "ip": str(getattr(config, "ROBOT_IP", "")),
+            "port": int(getattr(config, "ROBOT_PORT", 0) or 0),
+            "connection": {
+                "ip": str(getattr(config, "ROBOT_IP", "")),
+                "host": str(getattr(config, "ROBOT_IP", "")),
+                "port": int(getattr(config, "ROBOT_PORT", 0) or 0),
+                "connected": False,
+                "mode": "simulation" if self._fake_mode else "modbus",
+            },
+            "fake_robot": bool(self._fake_mode),
+            "telemetry": {"enabled": bool(getattr(config, "ROBOT_TELEMETRY_ENABLED", False)), "source": "unavailable"},
+        }

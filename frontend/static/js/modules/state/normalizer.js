@@ -102,6 +102,8 @@ export const Normalizer = {
 
     robotStatus(data) {
         const connected = data.connected ?? data.is_connected ?? false;
+        const connection = data.connection && typeof data.connection === 'object' ? data.connection : {};
+        const telemetry = data.telemetry && typeof data.telemetry === 'object' ? data.telemetry : {};
         return {
             connected: Boolean(connected),
             is_connected: Boolean(connected),
@@ -113,7 +115,19 @@ export const Normalizer = {
             safety_status: data.safety_status || "UNKNOWN",
             estop_triggered: Boolean(data.estop_triggered || data.global_stop),
             global_stop: Boolean(data.global_stop),
-            position: data.position || data.robot_position || { x: 0, y: 0, z: 0 }
+            position: data.position || data.robot_position || telemetry.pose || { x: 0, y: 0, z: 0 },
+            orientation: data.orientation || telemetry.orientation || {},
+            joint_angles: data.joint_angles || data.joints || data.angles || telemetry.joint_angles || {},
+            speed: data.speed ?? telemetry.speed ?? null,
+            ip: data.ip || connection.ip || connection.host || "",
+            port: data.port ?? connection.port ?? null,
+            connection,
+            telemetry,
+            status_code: data.status_code ?? null,
+            status_label: data.status_label || "",
+            error_code: data.error_code ?? null,
+            gripper_status_code: data.gripper_status_code ?? null,
+            fake_robot: Boolean(data.fake_robot)
         };
     },
 

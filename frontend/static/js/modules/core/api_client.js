@@ -169,7 +169,6 @@ export async function apiFetch(url, options = {}, timeoutMs = DEFAULT_TIMEOUT_MS
     const path = String(url || '');
     const token = getAdminToken() || (
         path.startsWith('/api/setup')
-        || path.startsWith('/api/player')
         || path.startsWith('/api/vision')
         || path.startsWith('/api/video')
         || path.startsWith('/api/snapshot')

@@ -22,7 +22,7 @@ class TestApiRoutes(unittest.TestCase):
         cls.auth_headers = {"Authorization": f"Bearer {token}"}
 
     def test_state_endpoint_exposes_legacy_aliases(self):
-        resp = self.client.get("/api/state")
+        resp = self.client.get("/api/state", headers=self.auth_headers)
         self.assertEqual(resp.status_code, 200)
         payload = resp.get_json() or {}
         self.assertIn("game", payload)
@@ -31,9 +31,32 @@ class TestApiRoutes(unittest.TestCase):
         self.assertIn("history", payload)
         self.assertIn("fen", payload)
 
+    def test_player_state_is_public_and_redacted(self):
+        started = self.client.post(
+            "/api/runtime/session/start",
+            json={"participant_id": "P-SECRET"},
+            headers=self.auth_headers,
+        )
+        self.assertEqual(started.status_code, 200)
+        try:
+            resp = self.app.test_client().get("/api/player/state")
+            self.assertEqual(resp.status_code, 200)
+            payload = resp.get_json() or {}
+            self.assertIn("board", payload)
+            self.assertIn("sync", payload)
+            self.assertIn("ui", payload)
+            self.assertNotIn("game", payload)
+            self.assertNotIn("participant_id", payload.get("ui", {}))
+            self.assertNotIn("session_id", payload.get("ui", {}))
+            self.assertNotIn("record_path", payload.get("ui", {}))
+            self.assertNotIn("position", payload.get("robot", {}))
+        finally:
+            self.client.post("/api/runtime/session/end", json={}, headers=self.auth_headers)
+
     def test_sensitive_read_endpoints_require_auth(self):
         client = self.app.test_client()
         for path in (
+            "/api/state",
             "/api/health",
             "/api/vision/status",
             "/api/video_status",

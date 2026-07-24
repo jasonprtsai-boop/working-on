@@ -523,6 +523,33 @@ ROBOT_REGISTER_ENCODING = str(
         "ROBOT_REGISTER_ENCODING", "robot.modbus.register_encoding", "robot.modbus.register_encoding", "scaled_int32"
     )
 ).strip().lower()
+ROBOT_TELEMETRY_ENABLED = _as_bool(
+    _setup_or_env_or_cfg(
+        "ROBOT_TELEMETRY_ENABLED",
+        "robot.modbus.telemetry_enabled",
+        "robot.modbus.telemetry_enabled",
+        False,
+    ),
+    default=False,
+)
+ROBOT_TELEMETRY_POSE_REGISTER_BASE = int(_setup_or_env_or_cfg(
+    "ROBOT_TELEMETRY_POSE_REGISTER_BASE",
+    "robot.modbus.telemetry_pose_register_base",
+    "robot.modbus.telemetry_pose_register_base",
+    7110,
+))
+ROBOT_TELEMETRY_JOINT_REGISTER_BASE = int(_setup_or_env_or_cfg(
+    "ROBOT_TELEMETRY_JOINT_REGISTER_BASE",
+    "robot.modbus.telemetry_joint_register_base",
+    "robot.modbus.telemetry_joint_register_base",
+    7122,
+))
+ROBOT_TELEMETRY_SPEED_REGISTER = int(_setup_or_env_or_cfg(
+    "ROBOT_TELEMETRY_SPEED_REGISTER",
+    "robot.modbus.telemetry_speed_register",
+    "robot.modbus.telemetry_speed_register",
+    7134,
+))
 ROBOT_GRIPPER_REGISTER = int(_setup_or_env_or_cfg(
     "ROBOT_GRIPPER_REGISTER", "robot.gripper.register", "robot.modbus.gripper_register", 7098
 ))

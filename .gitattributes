@@ -6,9 +6,13 @@
 .env.development export-ignore
 .env.production export-ignore
 .venv/ export-ignore
+.venv.broken-*/ export-ignore
+.tools/ export-ignore
+build/ export-ignore
 dist/ export-ignore
 node_modules/ export-ignore
 __pycache__/ export-ignore
+test_output.txt export-ignore
 *.py[cod] export-ignore
 logs/ export-ignore
 data/ export-ignore

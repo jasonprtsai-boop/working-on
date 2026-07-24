@@ -17,7 +17,7 @@ Windows / PowerShell:
 ```powershell
 py -3.11 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.runtime.txt -r requirements.vision.txt
-npm ci
+.\scripts\npm24.cmd ci
 Copy-Item .env.example .env
 .\.venv\Scripts\python.exe main.py
 ```
@@ -43,6 +43,92 @@ Recommended Windows system check:
 Use `.\check_system_strict.cmd` before release packaging or handoff. The `.cmd`
 wrappers intentionally bypass local PowerShell script policy for this project
 only, then call `scripts\check_system.ps1`.
+
+## Common Commands
+
+Run these from the project root in PowerShell. Prefer `.\scripts\npm24.cmd` for
+Node/npm commands on this project; it uses the project-local Node 24 runtime and
+avoids accidentally running unsupported Node 25+.
+
+Environment setup:
+
+```powershell
+py -3.11 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -r requirements.lock.txt
+.\scripts\npm24.cmd ci
+Copy-Item .env.example .env
+```
+
+Start the app:
+
+```powershell
+.\.venv\Scripts\python.exe main.py
+.\.venv\Scripts\python.exe scripts\run_web_simulation.py
+powershell.exe -ExecutionPolicy Bypass -File scripts\run_dev.ps1
+```
+
+Version and dependency checks:
+
+```powershell
+.\scripts\npm24.cmd run check:versions
+.\.venv\Scripts\python.exe -m pip check
+.\.venv\Scripts\python.exe scripts\audit_dependencies.py
+```
+
+Quality and test commands:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\quality_gate.py
+.\check_system.cmd
+.\check_system_strict.cmd
+.\scripts\npm24.cmd test
+.\.venv\Scripts\python.exe -m unittest discover tests -v
+```
+
+Vision and camera commands:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\test_camera.py
+.\.venv\Scripts\python.exe scripts\test_vision_pipeline.py
+.\.venv\Scripts\python.exe scripts\check_vision_models.py --warmup
+.\.venv\Scripts\python.exe scripts\vision_benchmark.py
+.\.venv\Scripts\python.exe scripts\update_vision_model.py <source-folder> --warmup
+```
+
+Database, export, and report commands:
+
+```powershell
+.\.venv\Scripts\python.exe -m backend.infrastructure.database.init_db
+.\.venv\Scripts\python.exe scripts\migrate_db.py
+.\.venv\Scripts\python.exe scripts\check_db.py
+.\.venv\Scripts\python.exe scripts\test_export.py
+.\.venv\Scripts\python.exe scripts\repair_excel_workbook.py
+```
+
+Cleanup and packaging:
+
+```powershell
+.\scripts\npm24.cmd run cleanup:dry-run
+.\scripts\npm24.cmd run release:zip
+.\scripts\npm24.cmd run share:zip
+```
+
+Troubleshooting:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip check
+.\scripts\node24.cmd --version
+.\scripts\npm24.cmd --version
+rg -n "[ \t]+$" .
+git diff --check
+```
+
+Real TM5-700 robot network check:
+
+```powershell
+Test-NetConnection <tm5-controller-ip> -Port 502
+```
 
 ## Installation And Runbooks
 
@@ -86,7 +172,7 @@ Production preflight:
 
 ## Verified Environment
 
-Last local verification: 2026-07-08 via `.\check_system.cmd`.
+Last local verification: 2026-07-15 via `.\.venv\Scripts\python.exe scripts\quality_gate.py`.
 
 Recommended install baseline:
 - Python 3.11 64-bit. Python 3.9-3.12 are supported; Python 3.13 is not supported yet.
@@ -102,7 +188,7 @@ Recommended install baseline:
 | YOLO model | `backend/infrastructure/protected_assets/vision/best.onnx` |
 | ONNX Runtime | 1.19.2 |
 | Pikafish | 2026-01-31 (`pikafish-avx2.exe`) |
-| Node test stack | Node 24 LTS recommended, Jest 30.4.1, Playwright 1.60.0 |
+| Node test stack | Node 24.18.0 via `scripts\npm24.cmd`, Jest 30.4.1, Playwright 1.60.0 |
 
 Primary dependency files:
 
@@ -231,10 +317,13 @@ Fast targeted checks:
 .\.venv\Scripts\python.exe scripts\check_legacy_events.py
 .\.venv\Scripts\python.exe scripts\audit_dependencies.py
 .\.venv\Scripts\python.exe scripts\quality_gate.py
-npm.cmd test
+.\scripts\npm24.cmd test
 ```
 
-If `npm test` cannot find Jest after copying the folder to another computer, remove `node_modules` and run `npm ci` from the project root. Keep `package-lock.json`.
+If the Node wrapper cannot find the project-local Node 24 runtime, install Node.js 24 LTS
+or extract the Node 24 portable build into `.tools\node-v24.18.0-win-x64`. If tests
+cannot find Jest after copying the folder to another computer, remove `node_modules`
+and run `.\scripts\npm24.cmd ci` from the project root. Keep `package-lock.json`.
 
 Full local system check:
 
@@ -265,26 +354,28 @@ baseline.
 Dry-run cleanup:
 
 ```powershell
-npm.cmd run cleanup:dry-run
+.\scripts\npm24.cmd run cleanup:dry-run
 ```
 
 Build release zip:
 
 ```powershell
-npm.cmd run release:zip
+.\scripts\npm24.cmd run release:zip
 ```
 
 Build a sanitized source-review/share zip without local runtime data or protected
 binary/model assets:
 
 ```powershell
-npm.cmd run share:zip
+.\scripts\npm24.cmd run share:zip
 ```
 
 Runtime artifacts are intentionally excluded from Git and release output:
 - `.env`
 - `.venv/`
+- `.tools/`
 - `node_modules/`
+- `build/`
 - `logs/`
 - `data/`
 - `backend/data/`

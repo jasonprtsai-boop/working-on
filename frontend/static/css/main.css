@@ -2941,6 +2941,153 @@ input:checked + .slider:before {
     box-shadow: 0 0 0 3px var(--primary-light);
 }
 
+/* Player one-screen layout */
+.view-player.active {
+    height: 100vh;
+    min-height: 100vh;
+    overflow: hidden;
+}
+
+.view-player .top-nav {
+    flex: 0 0 56px;
+    min-height: 56px;
+    margin: 0;
+    padding: 8px 20px;
+}
+
+.view-player .logo {
+    font-size: 1rem;
+}
+
+.view-player .btn-exit {
+    min-height: 36px;
+    padding: 8px 14px;
+}
+
+.view-player .player-start-panel {
+    min-height: 0;
+    height: calc(100vh - 104px);
+    padding: 14px;
+    overflow: hidden;
+}
+
+.view-player .arena-layout-centered {
+    flex: 1 1 auto;
+    min-height: 0;
+    height: calc(100vh - 104px);
+    padding: 10px 16px 14px;
+    align-items: stretch;
+    overflow: hidden;
+}
+
+.view-player .arena-layout-centered .board-col-center {
+    display: grid;
+    grid-template-columns: minmax(230px, 0.9fr) minmax(280px, 56vh) minmax(170px, 0.7fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+    grid-template-areas:
+        "guide board turn"
+        "guide board control";
+    align-items: stretch;
+    gap: 12px;
+    width: min(100%, 1280px);
+    max-width: none;
+    min-height: 0;
+    height: 100%;
+}
+
+.view-player .board-container {
+    grid-area: board;
+    align-self: center;
+    justify-self: center;
+    width: min(100%, calc((100vh - 128px) * 0.86));
+    max-width: 560px;
+    aspect-ratio: 9 / 10;
+    margin: 0;
+    padding: clamp(8px, 1.6vh, 18px);
+    border-radius: 12px;
+    overflow: visible;
+}
+
+.view-player .player-guide-panel {
+    grid-area: guide;
+    align-self: stretch;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 10px;
+    width: 100%;
+    min-width: 0;
+    min-height: 0;
+    margin: 0;
+    padding: 12px;
+    overflow: hidden;
+}
+
+.view-player .player-guide-main {
+    min-height: 0;
+}
+
+.view-player .player-guide-main strong {
+    font-size: clamp(0.9rem, 1.7vw, 1.08rem);
+}
+
+.view-player .player-guide-main p {
+    display: -webkit-box;
+    -webkit-line-clamp: 5;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    font-size: clamp(0.72rem, 1.35vw, 0.86rem);
+    line-height: 1.42;
+}
+
+.view-player .player-guide-status-grid {
+    grid-template-columns: 1fr;
+    align-content: stretch;
+    min-height: 0;
+    gap: 7px;
+}
+
+.view-player .player-guide-status {
+    display: grid;
+    align-content: center;
+    min-height: 0;
+    padding: 8px 9px;
+}
+
+.view-player .player-guide-status span {
+    margin-bottom: 2px;
+    font-size: 0.62rem;
+}
+
+.view-player .player-guide-status strong {
+    font-size: clamp(0.68rem, 1.25vw, 0.82rem);
+    line-height: 1.22;
+}
+
+.view-player .player-turn-panel {
+    grid-area: turn;
+    align-self: start;
+    justify-self: stretch;
+    flex-direction: column;
+    gap: 8px;
+    width: 100%;
+    margin: 0;
+    padding: 12px;
+}
+
+.view-player .player-control-strip {
+    grid-area: control;
+    align-self: end;
+    justify-self: stretch;
+    width: 100%;
+    margin: 0;
+}
+
+.view-player .player-control-strip .btn-remote {
+    width: 100%;
+    justify-content: center;
+    min-height: 44px;
+}
+
 /* SIDEBAR COMPONENT TWEAKS */
 .control-group-mini h5 {
     font-size: 0.75rem;
@@ -3209,6 +3356,162 @@ button[aria-disabled="true"] {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 12px;
+}
+
+.setup-workbench {
+    display: grid;
+    grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+    gap: 14px;
+    align-items: start;
+}
+
+.setup-live-panel {
+    position: sticky;
+    top: 112px;
+    min-width: 0;
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.94);
+    box-shadow: var(--shadow-soft);
+}
+
+.setup-parameter-panel {
+    min-width: 0;
+    display: grid;
+    gap: 12px;
+}
+
+.setup-parameter-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    min-height: 42px;
+    padding: 0 2px;
+}
+
+.setup-parameter-head h3 {
+    margin: 0;
+    color: var(--text-main);
+    font-size: 0.92rem;
+    font-weight: 950;
+}
+
+.setup-parameter-head span {
+    color: var(--text-secondary);
+    font-size: 0.72rem;
+    font-weight: 850;
+    text-align: right;
+}
+
+.setup-live-connection {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 54px;
+    margin-bottom: 12px;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #ffffff;
+}
+
+.setup-live-dot {
+    width: 12px;
+    height: 12px;
+    flex: 0 0 auto;
+    border-radius: 999px;
+    background: #dc2626;
+    box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.12);
+}
+
+.setup-live-dot[data-state="online"] {
+    background: #16a34a;
+    box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.14);
+}
+
+.setup-live-dot[data-state="busy"] {
+    background: #d97706;
+    box-shadow: 0 0 0 4px rgba(217, 119, 6, 0.16);
+}
+
+.setup-live-connection strong {
+    display: block;
+    color: var(--text-main);
+    font-size: 0.88rem;
+    font-weight: 950;
+}
+
+.setup-live-connection small {
+    display: block;
+    margin-top: 2px;
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    font-weight: 850;
+    overflow-wrap: anywhere;
+}
+
+.setup-coordinate-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.setup-coordinate-grid div {
+    min-width: 0;
+    min-height: 70px;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #f8fafc;
+}
+
+.setup-coordinate-grid span,
+.setup-live-detail span {
+    display: block;
+    color: var(--text-secondary);
+    font-size: 0.66rem;
+    font-weight: 950;
+    text-transform: uppercase;
+}
+
+.setup-coordinate-grid strong {
+    display: block;
+    margin-top: 8px;
+    color: var(--text-main);
+    font-family: var(--font-mono);
+    font-size: 1rem;
+    font-weight: 950;
+    overflow-wrap: anywhere;
+}
+
+.setup-live-detail {
+    display: grid;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.setup-live-detail div {
+    display: grid;
+    grid-template-columns: 78px minmax(0, 1fr);
+    gap: 8px;
+    align-items: start;
+    min-height: 34px;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #ffffff;
+}
+
+.setup-live-detail strong {
+    min-width: 0;
+    color: var(--text-main);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    overflow-wrap: anywhere;
+    text-align: right;
 }
 
 .setup-commissioning {
@@ -3563,16 +3866,109 @@ button[aria-disabled="true"] {
         padding-left: 14px;
         padding-right: 14px;
     }
+    .view-player.active {
+        height: 100vh;
+        min-height: 100vh;
+        overflow: hidden;
+    }
+    .view-player .top-nav {
+        min-height: 44px;
+        flex-basis: 44px;
+        padding: 6px 10px;
+    }
+    .view-player .logo {
+        font-size: 0.86rem;
+    }
+    .view-player .btn-exit {
+        min-height: 32px;
+        padding: 6px 9px;
+        font-size: 0.72rem;
+    }
+    .view-player .arena-layout-centered {
+        height: calc(100vh - 92px);
+        padding: 6px 8px 8px;
+    }
+    .view-player .arena-layout-centered .board-col-center {
+        grid-template-columns: minmax(145px, 1fr) minmax(150px, 56vw);
+        grid-template-rows: minmax(0, 1fr) auto auto;
+        grid-template-areas:
+            "guide board"
+            "turn board"
+            "control board";
+        gap: 8px;
+    }
+    .view-player .board-container {
+        width: min(100%, 56vw, calc((100vh - 108px) * 0.76));
+        padding: 6px;
+        border-radius: 10px;
+    }
+    .view-player .player-guide-panel {
+        padding: 8px;
+        gap: 7px;
+    }
+    .view-player .player-guide-main {
+        gap: 3px;
+    }
+    .view-player .player-guide-main p {
+        -webkit-line-clamp: 3;
+        font-size: 0.68rem;
+        line-height: 1.32;
+    }
+    .view-player .player-guide-status-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 5px;
+    }
+    .view-player .player-guide-status {
+        padding: 6px;
+    }
+    .view-player .player-guide-status span {
+        font-size: 0.56rem;
+    }
+    .view-player .player-guide-status strong {
+        font-size: 0.64rem;
+    }
+    .view-player .player-turn-panel {
+        flex-direction: row;
+        padding: 7px;
+        gap: 6px;
+    }
+    .view-player .player-turn-label {
+        font-size: 0.62rem;
+    }
+    .view-player .player-turn-panel .turn-indicator-pill {
+        min-width: 0;
+        padding: 5px 8px;
+        font-size: 0.62rem;
+    }
+    .view-player .player-control-strip .btn-remote {
+        min-height: 34px;
+        padding: 7px 10px;
+        font-size: 0.72rem;
+    }
     .setup-toolbar,
     .setup-section-head {
         align-items: flex-start;
         flex-direction: column;
     }
     .setup-grid,
+    .setup-workbench,
     .setup-wizard-summary,
     .setup-field-grid.two,
     .setup-field-grid.three {
         grid-template-columns: 1fr;
+    }
+    .setup-live-panel {
+        position: static;
+    }
+    .setup-coordinate-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .setup-parameter-head {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+    .setup-parameter-head span {
+        text-align: left;
     }
     .setup-wizard-list li {
         grid-template-columns: 28px minmax(0, 1fr);

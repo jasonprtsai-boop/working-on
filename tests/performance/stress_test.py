@@ -23,7 +23,7 @@ def stress_test(rounds=20):
     success_count = 0
     endpoints = ["/api/health", "/api/state", "/api/engine/status"]
     auth_headers = get_auth_headers()
-    protected = {"/api/health", "/api/engine/status"}
+    protected = {"/api/health", "/api/state", "/api/engine/status"}
 
     for round_index in range(rounds):
         round_ok = True

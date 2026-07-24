@@ -40,6 +40,31 @@ class TestSocketAuth(unittest.TestCase):
             config.SOCKET_PUBLIC_SNAPSHOT_ENABLED = old_public_snapshot
             client.disconnect()
 
+    def test_socket_player_move_without_token_uses_public_player_channel(self):
+        from backend.events.event_types import EventType
+        from backend.events.models.base_event import BaseEvent
+        from backend.main import create_app
+        from backend.state.store.manager.state_manager import state_manager
+        from backend.utils import config
+
+        old_public_snapshot = config.SOCKET_PUBLIC_SNAPSHOT_ENABLED
+        config.SOCKET_PUBLIC_SNAPSHOT_ENABLED = True
+        app, socketio = create_app()
+        state_manager.dispatch(BaseEvent.create(event_type=EventType.SYSTEM_RESET, source="test", payload={}))
+        client = socketio.test_client(app, flask_test_client=app.test_client())
+        try:
+            self.assertTrue(client.is_connected())
+            result = _payload(client.emit("player_move", {"move": "a0a1", "player": "human"}, callback=True))
+            self.assertEqual(result.get("ok"), True)
+
+            admin_only = _payload(client.emit("action", {"type": "RESET"}, callback=True))
+            self.assertEqual(admin_only.get("error"), "unauthorized")
+        finally:
+            state_manager.dispatch(BaseEvent.create(event_type=EventType.SYSTEM_RESET, source="test", payload={}))
+            config.SOCKET_PUBLIC_SNAPSHOT_ENABLED = old_public_snapshot
+            if client.is_connected():
+                client.disconnect()
+
     def test_socket_connect_without_token_can_be_rejected_when_public_snapshot_disabled(self):
         from backend.main import create_app
         from backend.utils import config

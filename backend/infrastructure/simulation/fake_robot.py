@@ -70,15 +70,45 @@ class FakeRobot:
         return True
 
     def get_status(self):
+        position = {"x": float(self.pos[0]), "y": float(self.pos[1]), "z": float(self.pos[2])}
+        orientation = {
+            "rx": float(getattr(config, "ROBOT_TOOL_RX", 0.0)),
+            "ry": float(getattr(config, "ROBOT_TOOL_RY", 0.0)),
+            "rz": float(getattr(config, "ROBOT_TOOL_RZ", 0.0)),
+        }
+        joint_angles = {f"j{index}": 0.0 for index in range(1, 7)}
+        speed = float(config.ROBOT_TRAVEL_SPEED if self.busy else 0.0)
         return {
             "pos": self.pos,
             "angles": [0]*6,
             "connected": self.connected,
+            "is_connected": self.connected,
             "busy": self.busy,
             "error": self.error,
             "last_action": self.last_action,
             "queue_size": 0,
-            "position": {"x": float(self.pos[0]), "y": float(self.pos[1]), "z": float(self.pos[2])},
+            "position": position,
+            "orientation": orientation,
+            "joint_angles": joint_angles,
+            "speed": speed,
+            "ip": str(config.ROBOT_IP),
+            "port": int(config.ROBOT_PORT),
+            "connection": {
+                "ip": str(config.ROBOT_IP),
+                "host": str(config.ROBOT_IP),
+                "port": int(config.ROBOT_PORT),
+                "connected": bool(self.connected),
+                "mode": "simulation",
+                "checked_at": time.time(),
+            },
+            "telemetry": {
+                "enabled": bool(getattr(config, "ROBOT_TELEMETRY_ENABLED", False)),
+                "source": "simulation",
+                "pose": {**position, **orientation},
+                "orientation": orientation,
+                "joint_angles": joint_angles,
+                "speed": speed,
+            },
         }
 
 fake_robot = FakeRobot()

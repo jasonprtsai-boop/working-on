@@ -2,6 +2,7 @@ import math
 import re
 import asyncio
 import threading
+import time
 from dataclasses import dataclass
 from typing import Optional, Tuple
 from backend.utils.logger import logger
@@ -39,6 +40,7 @@ class RobotService:
         self.is_moving = False
         self.last_error = None
         self.pos = [0, 0, config.Z_SAFE]
+        self.current_speed = 0.0
         self.gripper_closed = False
         self._move_lock = threading.Lock()
         self.safety = RobotSafety(config)
@@ -54,14 +56,49 @@ class RobotService:
         return self.connected
 
     def get_status(self) -> dict:
+        self.connected = self._connection_alive()
+        status_registers = self._read_status_registers()
+        telemetry = self._read_telemetry()
+        pose = telemetry.get("pose") if isinstance(telemetry, dict) else None
+        position = self._position_from_pose(pose)
+        orientation = (
+            telemetry.get("orientation")
+            if isinstance(telemetry, dict) and isinstance(telemetry.get("orientation"), dict)
+            else self._orientation_dict()
+        )
+        joint_angles = (
+            telemetry.get("joint_angles")
+            if isinstance(telemetry, dict) and isinstance(telemetry.get("joint_angles"), dict)
+            else {}
+        )
+        speed = telemetry.get("speed") if isinstance(telemetry, dict) else None
+        if speed is None:
+            speed = self.current_speed if self.is_moving else 0.0
+
         return {
             "connected": bool(self.connected),
+            "is_connected": bool(self.connected),
             "busy": bool(self.is_moving),
             "error": self.last_error,
             "last_action": "",
             "queue_size": 0,
-            "position": {"x": float(self.pos[0]), "y": float(self.pos[1]), "z": float(self.pos[2])},
+            "position": position,
+            "orientation": orientation,
+            "joint_angles": joint_angles,
+            "speed": float(speed),
             "gripper_closed": bool(self.gripper_closed),
+            "ip": str(config.ROBOT_IP),
+            "port": int(config.ROBOT_PORT),
+            "connection": {
+                "ip": str(config.ROBOT_IP),
+                "host": str(config.ROBOT_IP),
+                "port": int(config.ROBOT_PORT),
+                "connected": bool(self.connected),
+                "mode": "modbus",
+                "checked_at": time.time(),
+            },
+            "telemetry": telemetry,
+            **status_registers,
         }
 
     async def move_piece(self, move_str: str, is_capture: bool = False):
@@ -249,6 +286,54 @@ class RobotService:
             float(getattr(config, "ROBOT_TOOL_RZ", 0.0)),
         ]
 
+    def _orientation_dict(self) -> dict:
+        rx, ry, rz = self._tool_pose()
+        return {"rx": rx, "ry": ry, "rz": rz}
+
+    def _position_from_pose(self, pose) -> dict:
+        if isinstance(pose, dict):
+            position = {
+                "x": float(pose.get("x", self.pos[0]) or 0.0),
+                "y": float(pose.get("y", self.pos[1]) or 0.0),
+                "z": float(pose.get("z", self.pos[2]) or 0.0),
+            }
+            self.pos = [position["x"], position["y"], position["z"]]
+            return position
+        return {"x": float(self.pos[0]), "y": float(self.pos[1]), "z": float(self.pos[2])}
+
+    def _connection_alive(self) -> bool:
+        if not self.connected:
+            return False
+        ping = getattr(self.adapter, "ping", None)
+        if callable(ping):
+            try:
+                return bool(ping())
+            except Exception as exc:
+                logger.warning(f"[Robot] connection ping failed: {exc}")
+                return False
+        return bool(getattr(self.adapter, "connected", self.connected))
+
+    def _read_status_registers(self) -> dict:
+        if not self.connected:
+            return {}
+        reader = getattr(self.adapter, "read_status_registers", None)
+        if not callable(reader):
+            return {}
+        try:
+            return dict(reader() or {})
+        except Exception as exc:
+            logger.warning(f"[Robot] status register read failed: {exc}")
+            return {"status_error": str(exc)}
+
+    def _read_telemetry(self) -> dict:
+        reader = getattr(self.adapter, "read_telemetry", None)
+        if not self.connected or not callable(reader):
+            return {"enabled": bool(getattr(config, "ROBOT_TELEMETRY_ENABLED", False)), "source": "software"}
+        telemetry = reader() or {}
+        if telemetry.get("source") in {"hardware", "unavailable"}:
+            return dict(telemetry)
+        return {**dict(telemetry), "source": telemetry.get("source") or "software"}
+
     async def _execute_pick_and_place(self, sx, sy, ex, ey):
         await self._motion(sx, sy, config.Z_SAFE, self.motion_profiles["travel"])
         await self._motion(sx, sy, config.Z_GRAB, self.motion_profiles["approach"])
@@ -267,6 +352,7 @@ class RobotService:
         ok, msg = self.safety.validate_position(coords[0], coords[1], coords[2])
         if not ok:
             raise ValueError(msg)
+        self.current_speed = float(profile.speed)
         if self.connected:
             sender = getattr(self.adapter, "send_motion", None)
             if callable(sender):
@@ -297,6 +383,7 @@ class RobotService:
             await asyncio.sleep(min(0.5, profile.timeout))
         self._check_not_stopped()
         self.pos = coords[:3]
+        self.current_speed = float(profile.speed) if self.is_moving else 0.0
 
     async def _wait_for_hardware_motion(self, awaitable, profile: MotionProfile, coords):
         try:

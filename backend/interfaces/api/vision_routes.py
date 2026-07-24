@@ -9,6 +9,7 @@ from backend.interfaces.api.shared import (
     bounded_int_arg,
     config,
     error_response,
+    json_object_payload,
     runtime_vision_status,
     vision_system,
 )
@@ -81,7 +82,10 @@ def list_cameras():
 @api_bp.route("/vision/camera", methods=["POST"])
 def set_camera():
     """Switch active camera device for the vision system."""
-    payload = request.get_json(silent=True) or {}
+    try:
+        payload = json_object_payload()
+    except ValueError as exc:
+        return error_response("validation_failed", str(exc), 400)
     try:
         idx = int(payload.get("index", getattr(config, "CAMERA_INDEX", 0)))
     except Exception:
@@ -116,7 +120,10 @@ def set_vision_calibration():
     - {"corners": [[x,y], [x,y], [x,y], [x,y]]} for manual TL/TR/BR/BL corners.
     - {"mode": "auto"} to detect corners from the latest camera frame.
     """
-    payload = request.get_json(silent=True) or {}
+    try:
+        payload = json_object_payload()
+    except ValueError as exc:
+        return error_response("validation_failed", str(exc), 400)
     persist = bool(payload.get("persist", True))
 
     try:

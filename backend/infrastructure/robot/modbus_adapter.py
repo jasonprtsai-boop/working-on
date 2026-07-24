@@ -194,6 +194,16 @@ class ModbusAdapter:
             value = int(getattr(config, "ROBOT_GRIPPER_STATUS_REGISTER"))
             if value < 0 or value > 65535:
                 raise ValueError("ROBOT_GRIPPER_STATUS_REGISTER must be a valid Modbus register address.")
+        if getattr(config, "ROBOT_TELEMETRY_ENABLED", False):
+            value_width = self._value_register_width()
+            for name, width in (
+                ("ROBOT_TELEMETRY_POSE_REGISTER_BASE", 6 * value_width),
+                ("ROBOT_TELEMETRY_JOINT_REGISTER_BASE", 6 * value_width),
+                ("ROBOT_TELEMETRY_SPEED_REGISTER", value_width),
+            ):
+                value = int(getattr(config, name))
+                if value < 0 or value + width - 1 > 65535:
+                    raise ValueError(f"{name} must be a valid Modbus register range.")
         if float(config.ROBOT_REGISTER_SCALE) <= 0:
             raise ValueError("ROBOT_REGISTER_SCALE must be positive.")
         if int(getattr(config, "ROBOT_COMMAND_ID_WRAP", 32767)) < 1:
@@ -291,6 +301,136 @@ class ModbusAdapter:
         if not values:
             return None
         return values[0]
+
+    def read_status_registers(self):
+        """Return best-effort status/diagnostic registers without blocking motion flow."""
+        if not self.connected:
+            return {}
+        if not MODBUS_AVAILABLE:
+            if getattr(config, "FAKE_ROBOT", False):
+                return {"status_code": config.ROBOT_STATUS_IDLE_VALUE, "status_label": "idle"}
+            return {}
+
+        snapshot = {}
+        status = self._read_register(config.ROBOT_STATUS_REGISTER)
+        if status is not None:
+            snapshot["status_code"] = int(status)
+            snapshot["status_label"] = self._status_label(status)
+
+        error_code = self._read_error_code()
+        if error_code is not None:
+            snapshot["error_code"] = int(error_code)
+
+        if getattr(config, "ROBOT_GRIPPER_FEEDBACK_ENABLED", True):
+            gripper_status = self._read_register(config.ROBOT_GRIPPER_STATUS_REGISTER)
+            if gripper_status is not None:
+                snapshot["gripper_status_code"] = int(gripper_status)
+        return snapshot
+
+    def read_telemetry(self):
+        """
+        Read optional robot feedback registers.
+
+        The register map must be provided by the TMflow/PLC project. When disabled
+        this returns a clear marker so callers can fall back to software state.
+        """
+        if not getattr(config, "ROBOT_TELEMETRY_ENABLED", False):
+            return {"enabled": False, "source": "disabled"}
+        if not self.connected:
+            return {"enabled": True, "source": "unavailable", "error": "not_connected"}
+        if not MODBUS_AVAILABLE:
+            if getattr(config, "FAKE_ROBOT", False):
+                return {"enabled": True, "source": "simulation"}
+            return {"enabled": True, "source": "unavailable", "error": "modbus_dependency_unavailable"}
+
+        try:
+            pose_values = self._read_scaled_values(config.ROBOT_TELEMETRY_POSE_REGISTER_BASE, 6)
+            joint_values = self._read_scaled_values(config.ROBOT_TELEMETRY_JOINT_REGISTER_BASE, 6)
+            speed_values = self._read_scaled_values(config.ROBOT_TELEMETRY_SPEED_REGISTER, 1)
+            return {
+                "enabled": True,
+                "source": "hardware",
+                "pose": {
+                    "x": pose_values[0],
+                    "y": pose_values[1],
+                    "z": pose_values[2],
+                    "rx": pose_values[3],
+                    "ry": pose_values[4],
+                    "rz": pose_values[5],
+                },
+                "orientation": {
+                    "rx": pose_values[3],
+                    "ry": pose_values[4],
+                    "rz": pose_values[5],
+                },
+                "joint_angles": {
+                    "j1": joint_values[0],
+                    "j2": joint_values[1],
+                    "j3": joint_values[2],
+                    "j4": joint_values[3],
+                    "j5": joint_values[4],
+                    "j6": joint_values[5],
+                },
+                "speed": speed_values[0],
+            }
+        except Exception as exc:
+            logger.warning(f"Robot telemetry read failed: {exc}")
+            return {"enabled": True, "source": "unavailable", "error": str(exc)}
+
+    def _status_label(self, status) -> str:
+        value = int(status)
+        if value == int(getattr(config, "ROBOT_STATUS_IDLE_VALUE", 0)):
+            return "idle"
+        if value == int(getattr(config, "ROBOT_STATUS_MOVING_VALUE", 1)):
+            return "moving"
+        if value == int(getattr(config, "ROBOT_STATUS_COMPLETE_VALUE", 2)):
+            return "complete"
+        if value == int(getattr(config, "ROBOT_STATUS_ERROR_VALUE", 3)):
+            return "error"
+        return "unknown"
+
+    def _value_register_width(self) -> int:
+        return 2 if str(config.ROBOT_REGISTER_ENCODING).strip().lower() == "scaled_int32" else 1
+
+    def _read_scaled_values(self, register, value_count):
+        width = self._value_register_width()
+        raw_registers = self._read_register_block(register, int(value_count) * width)
+        return self._decode_scaled_values(raw_registers, int(value_count))
+
+    def _read_register_block(self, register, count):
+        values = self.client.read_holding_registers(int(register), int(count))
+        if not values or len(values) < int(count):
+            raise RuntimeError(f"register block {register}:{count} did not return enough values")
+        return list(values[:int(count)])
+
+    def _decode_scaled_values(self, registers, value_count):
+        scale = float(config.ROBOT_REGISTER_SCALE)
+        if scale <= 0:
+            raise ValueError("ROBOT_REGISTER_SCALE must be positive.")
+
+        width = self._value_register_width()
+        expected = int(value_count) * width
+        if len(registers) < expected:
+            raise ValueError("not enough registers to decode telemetry values")
+
+        values = []
+        for index in range(int(value_count)):
+            offset = index * width
+            if width == 1:
+                raw = self._register_to_signed(registers[offset], bits=16)
+            else:
+                raw = self._register_pair_to_signed(registers[offset], registers[offset + 1])
+            values.append(raw / scale)
+        return values
+
+    def _register_to_signed(self, value: int, bits: int = 16) -> int:
+        value = int(value) & ((1 << bits) - 1)
+        sign_bit = 1 << (bits - 1)
+        return value - (1 << bits) if value & sign_bit else value
+
+    def _register_pair_to_signed(self, high: int, low: int) -> int:
+        value = ((int(high) & 0xFFFF) << 16) | (int(low) & 0xFFFF)
+        return self._register_to_signed(value, bits=32)
 
     def _wait_for_ack(self, command_id, timeout=2.0):
         """Wait until TMflow echoes the command id, proving it consumed the request."""

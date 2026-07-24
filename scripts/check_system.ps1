@@ -8,10 +8,15 @@ $ErrorActionPreference = "Stop"
 
 $root = Resolve-Path (Join-Path $PSScriptRoot "..")
 $python = Join-Path $root ".venv\Scripts\python.exe"
+$nodeHome = Join-Path $root ".tools\node-v24.18.0-win-x64"
 $baseUrl = "http://127.0.0.1:5000"
 $gitSafeDirectory = ($root.Path -replace "\\", "/")
 
 Set-Location $root
+
+if (Test-Path (Join-Path $nodeHome "node.exe")) {
+  $env:Path = "$nodeHome;$env:Path"
+}
 
 function Invoke-Step($name, $scriptBlock) {
   Write-Host ""

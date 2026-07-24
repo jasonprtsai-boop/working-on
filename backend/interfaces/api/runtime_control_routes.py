@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from flask import jsonify, request
+from flask import jsonify
 
 from backend.application.services.runtime_control import runtime_control
-from backend.interfaces.api.shared import api_bp, error_response
+from backend.interfaces.api.shared import api_bp, error_response, json_object_payload
 
 
 @api_bp.route("/runtime/control", methods=["GET"])
@@ -13,7 +13,10 @@ def runtime_control_status():
 
 @api_bp.route("/runtime/engine-depth", methods=["POST"])
 def set_runtime_engine_depth():
-    payload = request.get_json(silent=True) or {}
+    try:
+        payload = json_object_payload()
+    except ValueError as exc:
+        return error_response("validation_failed", str(exc), 400)
     if "depth" not in payload:
         return error_response("invalid_depth", "depth is required.", 400)
     try:
@@ -25,7 +28,10 @@ def set_runtime_engine_depth():
 
 @api_bp.route("/runtime/ai-mode", methods=["POST"])
 def set_runtime_ai_mode():
-    payload = request.get_json(silent=True) or {}
+    try:
+        payload = json_object_payload()
+    except ValueError as exc:
+        return error_response("validation_failed", str(exc), 400)
     mode = str(payload.get("mode", payload.get("ai_mode", "")) or "")
     if not mode:
         return error_response("invalid_ai_mode", "mode is required.", 400)
@@ -35,7 +41,10 @@ def set_runtime_ai_mode():
 
 @api_bp.route("/runtime/safe-mode", methods=["POST"])
 def set_runtime_safe_mode():
-    payload = request.get_json(silent=True) or {}
+    try:
+        payload = json_object_payload()
+    except ValueError as exc:
+        return error_response("validation_failed", str(exc), 400)
     enabled = payload.get("enabled", payload.get("safe_mode", payload.get("safeMode", True)))
     snapshot = runtime_control.set_safe_mode(_coerce_bool(enabled))
     return jsonify({"ok": True, **snapshot})
@@ -43,7 +52,10 @@ def set_runtime_safe_mode():
 
 @api_bp.route("/runtime/session/start", methods=["POST"])
 def start_runtime_session():
-    payload = request.get_json(silent=True) or {}
+    try:
+        payload = json_object_payload()
+    except ValueError as exc:
+        return error_response("validation_failed", str(exc), 400)
     snapshot = runtime_control.start_session(participant_id=str(payload.get("participant_id", "") or ""))
     return jsonify({"ok": True, **snapshot})
 

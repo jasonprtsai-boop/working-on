@@ -115,6 +115,8 @@ test('core app enters console directly and resets emergency stop via API', async
   expect(document.getElementById('view-landing').classList.contains('active')).toBe(true);
   expect(document.getElementById('btn-export-excel').disabled).toBe(true);
   expect(document.getElementById('btn-estop-trigger').disabled).toBe(true);
+  expect(global.fetch.mock.calls.map(([url]) => url)).toContain('/api/player/state');
+  expect(global.fetch.mock.calls.map(([url]) => url)).not.toContain('/api/state');
 
   document.getElementById('btn-role-player').click();
   expect(document.getElementById('view-player').classList.contains('active')).toBe(true);
@@ -122,14 +124,15 @@ test('core app enters console directly and resets emergency stop via API', async
   expect(document.getElementById('game-arena').classList.contains('hidden')).toBe(true);
 
   global.fetch.mockClear();
-  window.sessionStorage.setItem('setupToken', jwtWithPayload({ role: 'setup', exp: Math.floor(Date.now() / 1000) + 3600 }));
-  window.sessionStorage.setItem('setupRole', 'setup');
   document.getElementById('btn-player-start').click();
   await flushAsync();
   const playerStartCall = global.fetch.mock.calls.find(([url]) => url === '/api/player/start');
+  const playerStateCall = global.fetch.mock.calls.find(([url]) => url === '/api/player/state');
   expect(playerStartCall?.[1]).toEqual(expect.objectContaining({ method: 'POST' }));
   expect(JSON.parse(playerStartCall?.[1]?.body || '{}')).toEqual(expect.objectContaining({ source: 'player_start_button' }));
-  expect(playerStartCall?.[1]?.headers.get('Authorization')).toMatch(/^Bearer /);
+  expect(playerStartCall?.[1]?.headers.has('Authorization')).toBe(false);
+  expect(playerStateCall?.[1]).toEqual(expect.objectContaining({ method: 'GET' }));
+  expect(playerStateCall?.[1]?.headers.has('Authorization')).toBe(false);
   expect(document.getElementById('player-start-panel').classList.contains('hidden')).toBe(true);
   expect(document.getElementById('game-arena').classList.contains('hidden')).toBe(false);
 

@@ -29,7 +29,14 @@ export const Schemas = {
         last_action: "",
         queue_size: 0,
         safety_status: "UNKNOWN",
-        position: { x: 0, y: 0, z: 0 }
+        position: { x: 0, y: 0, z: 0 },
+        orientation: { rx: 0, ry: 0, rz: 0 },
+        joint_angles: {},
+        speed: 0,
+        ip: "",
+        port: null,
+        connection: {},
+        telemetry: {}
     },
     Sync: {
         version: 0,
@@ -185,6 +192,14 @@ function validateRobotStatus(payload) {
     }
     if (payload.position !== undefined && !isPlainObject(payload.position)) {
         return { ok: false, reason: 'position_not_object' };
+    }
+    for (const key of ['orientation', 'joint_angles', 'connection', 'telemetry']) {
+        if (payload[key] !== undefined && !isPlainObject(payload[key])) {
+            return { ok: false, reason: `${key}_not_object` };
+        }
+    }
+    if (!isNumberLike(payload.speed)) {
+        return { ok: false, reason: 'speed_not_number' };
     }
     return { ok: true };
 }

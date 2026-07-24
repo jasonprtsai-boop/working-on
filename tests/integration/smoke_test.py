@@ -20,7 +20,7 @@ def get_auth_headers():
 def run_smoke_test():
     print("Running manual integration smoke test ...")
     auth_headers = get_auth_headers()
-    protected = {"/api/health", "/api/vision/status", "/api/engine/status"}
+    protected = {"/api/health", "/api/state", "/api/vision/status", "/api/engine/status"}
     for path in ("/api/ready", "/api/health", "/api/state", "/api/vision/status", "/api/engine/status"):
         response = requests.get(
             f"{BASE_URL}{path}",

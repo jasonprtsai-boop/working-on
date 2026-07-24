@@ -221,9 +221,6 @@ def register_socketio(socketio):
         from backend.events.event_types import EventType
         from backend.observability.tracing.trace_manager import TraceManager
 
-        _claims, error = _require_admin()
-        if error:
-            return error
         if not _payload_size_ok(data):
             return _payload_too_large_error()
         limited = _rate_limit_socket("player_move")
@@ -250,6 +247,7 @@ def register_socketio(socketio):
 
         move_payload = cmd.model_dump(exclude_none=True)
         move_payload.update({
+            "type": "PLAYER",
             "fen": next_fen,
             "fen_before": current_fen,
             "fen_after": next_fen,

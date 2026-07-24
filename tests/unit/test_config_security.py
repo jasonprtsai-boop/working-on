@@ -92,7 +92,7 @@ class TestConfigSecurity(unittest.TestCase):
             "ADMIN_PASSWORD": "not-default-admin-password",
             "SETUP_PASSWORD": "not-default-setup-password",
             "CORS_ALLOWED_ORIGINS": "http://127.0.0.1:5000",
-            "HOST": "0.0.0.0",
+            "SMART_CHESS_HOST": "0.0.0.0",
             "PYTHONPATH": os.getcwd(),
         })
         result = self._import_config(env)

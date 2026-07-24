@@ -14,6 +14,24 @@ def run(command: list[str], label: str, env: dict[str, str] | None = None) -> No
     subprocess.run(command, cwd=ROOT, check=True, env=env)
 
 
+def node_command() -> str:
+    if os.name == "nt":
+        wrapper = ROOT / "scripts" / "node24.cmd"
+        if wrapper.exists():
+            return str(wrapper)
+        return "node.exe"
+    return "node"
+
+
+def npm_command() -> str:
+    if os.name == "nt":
+        wrapper = ROOT / "scripts" / "npm24.cmd"
+        if wrapper.exists():
+            return str(wrapper)
+        return "npm.cmd"
+    return "npm"
+
+
 def node_check() -> None:
     js_files = [
         path for base in (
@@ -24,13 +42,13 @@ def node_check() -> None:
         for path in base.rglob("*.js")
     ]
     js_files += list((ROOT / "scripts").glob("*.mjs"))
+    node = node_command()
     for path in sorted(js_files):
-        run(["node", "--check", str(path)], f"node --check {path.relative_to(ROOT)}")
+        run([node, "--check", str(path)], f"node --check {path.relative_to(ROOT)}")
 
 
 def npm_test() -> None:
-    npm = "npm.cmd" if os.name == "nt" else "npm"
-    run([npm, "test"], "frontend unit tests")
+    run([npm_command(), "test"], "frontend unit tests")
 
 
 def main() -> int:

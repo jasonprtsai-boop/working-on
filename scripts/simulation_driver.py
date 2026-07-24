@@ -23,7 +23,8 @@ class BackendSimulationDriver:
         for index in range(rounds):
             print(f"\n--- Round {index + 1}/{rounds} ---")
             for path in ("/api/ready", "/api/health", "/api/state", "/api/vision/status", "/api/engine/status"):
-                response = self.client.get(path)
+                headers = None if path == "/api/ready" else self.auth_headers
+                response = self.client.get(path, headers=headers)
                 print(f"{path}: {response.status_code}")
             control = self.client.post(
                 "/api/control",

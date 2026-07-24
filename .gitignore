@@ -3,12 +3,15 @@ __pycache__/
 *.py[cod]
 *$py.class
 .venv/
+.venv.broken-*/
 .env
 .env.local
 .env.development
 .env.production
 dist/
+build/
 .pytest_cache/
+test_output.txt
 
 # Reports & Logs
 reports/
@@ -38,6 +41,7 @@ Thumbs.db
 
 # Node
 node_modules/
+.tools/
 
 # Engine
 *.nnue
@@ -45,3 +49,16 @@ node_modules/
 *.onnx
 *.exe
 backend/infrastructure/vision/models/
+
+# Local credentials and machine-specific package config
+.npmrc
+.pypirc
+.netrc
+*.pem
+*.key
+*.cert
+*.crt
+id_rsa
+id_dsa
+id_ecdsa
+id_ed25519

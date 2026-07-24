@@ -14,9 +14,15 @@ SKIP_DIRS = {
     ".venv",
     ".cleanup_quarantine",
     "node_modules",
+    ".tools",
     "__pycache__",
+    "analysis_artifacts",
+    "build",
     "data",
+    "dist",
     "logs",
+    "reports",
+    "snapshots",
 }
 
 SKIP_PARTS = {
@@ -25,6 +31,10 @@ SKIP_PARTS = {
     ("backend", "infrastructure", "vision", "models"),
     ("pikafish", "release-backup-20260131"),
 }
+
+SKIP_DIR_PREFIXES = (
+    ".venv.broken-",
+)
 
 TEXT_EXTENSIONS = {
     ".cjs",
@@ -84,6 +94,8 @@ def iter_project_files() -> Iterable[Path]:
             continue
         rel = path.relative_to(ROOT)
         if any(part in SKIP_DIRS for part in rel.parts):
+            continue
+        if any(part.startswith(prefix) for part in rel.parts for prefix in SKIP_DIR_PREFIXES):
             continue
         if _has_skipped_part(path):
             continue

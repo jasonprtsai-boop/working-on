@@ -7,6 +7,8 @@
     "npm": ">=11"
   },
   "scripts": {
+    "check:versions": "node scripts/check_node_version.mjs",
+    "pretest": "node scripts/check_node_version.mjs",
     "test": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --runInBand --env=jsdom",
     "check:system": "powershell.exe -ExecutionPolicy Bypass -File scripts/check_system.ps1 -SkipGitCleanCheck",
     "check:system:strict": "powershell.exe -ExecutionPolicy Bypass -File scripts/check_system.ps1",

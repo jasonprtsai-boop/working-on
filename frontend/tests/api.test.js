@@ -40,7 +40,7 @@ test('apiFetch attaches admin token and JSON content type', async () => {
   expect(options.headers.get('Content-Type')).toBe('application/json');
 });
 
-test('apiFetch uses setup token for player endpoints when admin token is absent', async () => {
+test('apiFetch does not attach setup token for public player endpoints', async () => {
   setSetupToken('setup-token');
 
   await apiFetch('/api/player/start', {
@@ -49,7 +49,7 @@ test('apiFetch uses setup token for player endpoints when admin token is absent'
   });
 
   const [_url, options] = global.fetch.mock.calls[0];
-  expect(options.headers.get('Authorization')).toBe('Bearer setup-token');
+  expect(options.headers.has('Authorization')).toBe(false);
 });
 
 test('clearAdminToken removes stored console credentials', () => {

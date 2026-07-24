@@ -15,7 +15,12 @@ const dashboardIds = [
   'dashboard-robot-busy',
   'dashboard-robot-error',
   'dashboard-robot-queue',
+  'dashboard-robot-ip',
   'dashboard-robot-position',
+  'dashboard-robot-orientation',
+  'dashboard-robot-joints',
+  'dashboard-robot-speed',
+  'dashboard-robot-telemetry-source',
   'dashboard-safety-estop',
   'dashboard-safety-safe-mode',
   'dashboard-safety-camera-ready',
@@ -81,7 +86,13 @@ test('DashboardRenderer surfaces board, engine, robot, safety, and experiment da
       connected: true,
       busy: true,
       queue_size: 3,
+      ip: '192.168.1.50',
+      port: 502,
       position: { x: 1.2, y: 3.4, z: 5.6 },
+      orientation: { rx: 10, ry: 20, rz: 30 },
+      joint_angles: { j1: 1, j2: 2, j3: 3, j4: 4, j5: 5, j6: 6 },
+      speed: 42.5,
+      telemetry: { source: 'hardware' },
     },
     ui: {
       safe_mode: true,
@@ -102,7 +113,12 @@ test('DashboardRenderer surfaces board, engine, robot, safety, and experiment da
   expect(document.getElementById('dashboard-engine-pv').textContent).toBe('b2b3 c7c6');
   expect(document.getElementById('dashboard-robot-status').textContent).toBe('Connected');
   expect(document.getElementById('dashboard-robot-busy').className).toBe('status-warning');
+  expect(document.getElementById('dashboard-robot-ip').textContent).toBe('192.168.1.50:502');
   expect(document.getElementById('dashboard-robot-position').textContent).toBe('X1.2 Y3.4 Z5.6');
+  expect(document.getElementById('dashboard-robot-orientation').textContent).toBe('RX10.0 RY20.0 RZ30.0');
+  expect(document.getElementById('dashboard-robot-joints').textContent).toBe('J1:1.0 J2:2.0 J3:3.0 J4:4.0 J5:5.0 J6:6.0');
+  expect(document.getElementById('dashboard-robot-speed').textContent).toBe('42.5 mm/s');
+  expect(document.getElementById('dashboard-robot-telemetry-source').textContent).toBe('Hardware');
   expect(document.getElementById('dashboard-safety-estop').textContent).toBe('Clear');
   expect(document.getElementById('dashboard-safety-safe-mode').textContent).toBe('Enabled');
   expect(document.getElementById('dashboard-safety-camera-ready').textContent).toBe('Ready');

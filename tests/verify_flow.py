@@ -22,6 +22,7 @@ def test_flow():
     auth_headers = get_auth_headers()
     protected_paths = {
         "/api/health",
+        "/api/state",
         "/api/estop/status",
         "/api/control",
         "/api/estop/trigger",

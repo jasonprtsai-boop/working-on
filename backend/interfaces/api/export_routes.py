@@ -15,6 +15,7 @@ from backend.interfaces.api.shared import (
     bounded_int_arg,
     error_response,
     game_state,
+    json_object_payload,
     publish_base_event,
 )
 from backend.utils import config
@@ -22,7 +23,10 @@ from backend.utils import config
 
 @api_bp.route("/snaplog", methods=["POST"])
 def snaplog():
-    payload = request.get_json(silent=True) or {}
+    try:
+        payload = json_object_payload()
+    except ValueError as exc:
+        return error_response("validation_failed", str(exc), 400)
     snapshot = game_state.to_dict()
     trace_id = publish_base_event(
         EventType.DIAGNOSTICS_UPDATED,

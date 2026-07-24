@@ -316,10 +316,14 @@ function robotLight(robot) {
     if (robot.error) {
         return { label: 'Robot', status: 'error', message: robot.error, lastEvent: 'ROBOT_ERROR' };
     }
+    const connection = robot.connection && typeof robot.connection === 'object' ? robot.connection : {};
+    const host = robot.ip || connection.ip || connection.host || '';
+    const port = robot.port ?? connection.port;
+    const endpoint = host ? `${host}${port ? `:${port}` : ''}` : 'ip: --';
     return {
         label: 'Robot',
         status: robot.busy ? 'running' : (robot.connected || robot.is_connected ? 'success' : 'offline'),
-        message: `queue: ${robot.queue_size ?? '--'} action: ${robot.last_action || '--'}`,
+        message: `${endpoint} queue: ${robot.queue_size ?? '--'} action: ${robot.last_action || '--'}`,
         lastEvent: 'ROBOT.STATUS_UPDATED',
     };
 }

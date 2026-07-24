@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from flask import jsonify, request
+from flask import jsonify
 
-from backend.interfaces.api.shared import api_bp
+from backend.interfaces.api.shared import api_bp, optional_json_object_payload
 
 
 @api_bp.route("/estop/status", methods=["GET"])
@@ -17,7 +17,7 @@ def estop_status():
 @api_bp.route("/estop/trigger", methods=["POST"])
 def estop_trigger():
     from backend.application.services.estop import estop
-    payload = request.get_json(silent=True) or {}
+    payload = optional_json_object_payload()
     estop.trigger(reason=str(payload.get("reason", "REST API Trigger")))
     return jsonify({"ok": True})
 
@@ -27,7 +27,7 @@ def player_estop_trigger():
     """Public player-side emergency stop. Stop commands should remain easy to reach."""
     from backend.application.services.estop import estop
 
-    payload = request.get_json(silent=True) or {}
+    payload = optional_json_object_payload()
     estop.trigger(reason=str(payload.get("reason", "Player emergency stop")))
     return jsonify({"ok": True})
 

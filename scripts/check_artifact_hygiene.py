@@ -13,6 +13,11 @@ if str(ROOT) not in sys.path:
 
 REQUIRED_GITIGNORE_PATTERNS = (
     ".env",
+    ".tools/",
+    ".venv.broken-*/",
+    "build/",
+    "dist/",
+    "test_output.txt",
     "reports/",
     "analysis_artifacts/",
     "logs/",
@@ -31,6 +36,11 @@ REQUIRED_GITIGNORE_PATTERNS = (
 
 REQUIRED_EXPORT_IGNORE_PATTERNS = (
     ".env export-ignore",
+    ".tools/ export-ignore",
+    ".venv.broken-*/ export-ignore",
+    "build/ export-ignore",
+    "dist/ export-ignore",
+    "test_output.txt export-ignore",
     "logs/ export-ignore",
     "data/ export-ignore",
     "reports/ export-ignore",
@@ -44,6 +54,9 @@ REQUIRED_EXPORT_IGNORE_PATTERNS = (
 )
 
 RUNTIME_PATH_PREFIXES = (
+    (".tools",),
+    ("build",),
+    ("dist",),
     ("logs",),
     ("data",),
     ("backend", "data"),
@@ -52,11 +65,16 @@ RUNTIME_PATH_PREFIXES = (
     ("snapshots",),
 )
 
+RUNTIME_DIR_PREFIXES = (
+    ".venv.broken-",
+)
+
 RUNTIME_FILE_NAMES = {
     ".env",
     ".env.development",
     ".env.local",
     ".env.production",
+    "test_output.txt",
 }
 
 RUNTIME_SUFFIXES = (
@@ -86,6 +104,8 @@ def is_runtime_artifact(path: Path) -> bool:
         return False
     if is_protected_asset(path):
         return False
+    if any(part.startswith(prefix) for part in parts for prefix in RUNTIME_DIR_PREFIXES):
+        return True
     if path.name in RUNTIME_FILE_NAMES:
         return True
     if path.name.lower().endswith(RUNTIME_SUFFIXES):

@@ -52,7 +52,43 @@
             </ol>
         </section>
 
-        <div class="setup-grid">
+        <div class="setup-workbench">
+            <aside class="setup-live-panel" aria-label="Current robot coordinates">
+                <div class="setup-section-head">
+                    <h3>目前座標</h3>
+                    <div class="setup-inline-actions">
+                        <button type="button" class="admin-btn mini" id="btn-setup-refresh-robot-status" data-setup-admin="true">Refresh</button>
+                    </div>
+                </div>
+                <div class="setup-live-connection">
+                    <span id="setup-robot-live-dot" class="setup-live-dot" data-state="offline"></span>
+                    <div>
+                        <strong id="setup-robot-live-status">Offline</strong>
+                        <small id="setup-robot-live-endpoint">--</small>
+                    </div>
+                </div>
+                <div class="setup-coordinate-grid">
+                    <div><span>X</span><strong id="setup-current-x">--</strong></div>
+                    <div><span>Y</span><strong id="setup-current-y">--</strong></div>
+                    <div><span>Z</span><strong id="setup-current-z">--</strong></div>
+                    <div><span>RX</span><strong id="setup-current-rx">--</strong></div>
+                    <div><span>RY</span><strong id="setup-current-ry">--</strong></div>
+                    <div><span>RZ</span><strong id="setup-current-rz">--</strong></div>
+                </div>
+                <div class="setup-live-detail">
+                    <div><span>Speed</span><strong id="setup-current-speed">--</strong></div>
+                    <div><span>Joints</span><strong id="setup-current-joints">--</strong></div>
+                    <div><span>Telemetry</span><strong id="setup-current-telemetry">--</strong></div>
+                    <div><span>Updated</span><strong id="setup-current-updated">--</strong></div>
+                </div>
+            </aside>
+
+            <div class="setup-parameter-panel">
+                <div class="setup-parameter-head">
+                    <h3>設定參數</h3>
+                    <span>Save 後會套用到目前系統設定</span>
+                </div>
+                <div class="setup-grid">
             <section class="setup-section">
                 <div class="setup-section-head">
                     <h3>系統模式</h3>
@@ -162,10 +198,16 @@
                 <div class="setup-field-grid two">
                     <label class="setup-field"><span>Robot IP</span><input type="text" maxlength="128" data-setup-field="robot.connection.ip"></label>
                     <label class="setup-field"><span>Robot Port</span><input type="number" min="1" max="65535" step="1" data-setup-field="robot.connection.port"></label>
+                    <label class="setup-field"><span>Register Scale</span><input type="number" min="0.01" step="0.01" data-setup-field="robot.modbus.register_scale"></label>
+                    <label class="setup-field"><span>Register Encoding</span><input type="text" maxlength="16" data-setup-field="robot.modbus.register_encoding"></label>
                     <label class="setup-field"><span>Motion Register Base</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.motion_register_base"></label>
                     <label class="setup-field"><span>Profile Register Base</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.profile_register_base"></label>
                     <label class="setup-field"><span>Status Register</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.status_register"></label>
                     <label class="setup-field"><span>Gripper Register</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.gripper_register"></label>
+                    <label class="setup-field"><span>Telemetry Enabled</span><input type="checkbox" data-setup-field="robot.modbus.telemetry_enabled"></label>
+                    <label class="setup-field"><span>Pose Feedback Base</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.telemetry_pose_register_base"></label>
+                    <label class="setup-field"><span>Joint Feedback Base</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.telemetry_joint_register_base"></label>
+                    <label class="setup-field"><span>Speed Feedback Register</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.telemetry_speed_register"></label>
                     <label class="setup-field"><span>Command Handshake</span><input type="checkbox" data-setup-field="robot.modbus.command_handshake_enabled"></label>
                     <label class="setup-field"><span>Command ID Register</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.command_id_register"></label>
                     <label class="setup-field"><span>Trigger Register</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.command_trigger_register"></label>
@@ -215,6 +257,8 @@
                     <div><span>Vision 校正</span><strong id="setup-vision-file">--</strong></div>
                 </div>
             </section>
+                </div>
+            </div>
         </div>
     </form>
 </section>

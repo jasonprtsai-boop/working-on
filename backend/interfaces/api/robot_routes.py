@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from flask import jsonify, request
+from flask import jsonify
 
-from backend.interfaces.api.shared import api_bp, error_response
+from backend.interfaces.api.shared import api_bp, error_response, json_object_payload
 from backend.utils.kinematics import kinematics
 from backend.interfaces.api.setup_routes import current_setup_settings, normalize_setup_settings
 
@@ -16,7 +16,10 @@ def get_robot_calibration():
 @api_bp.route("/robot/calibration", methods=["POST"])
 def set_robot_calibration():
     """Update robot board-coordinate calibration from explicit values or measured points."""
-    payload = request.get_json(silent=True) or {}
+    try:
+        payload = json_object_payload()
+    except ValueError as exc:
+        return error_response("validation_failed", str(exc), 400)
     persist = bool(payload.get("persist", True))
     original = kinematics.to_dict()
     try:

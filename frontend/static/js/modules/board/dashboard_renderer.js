@@ -95,7 +95,13 @@ function renderRobot(snapshot) {
     setStatus('dashboardRobotBusy', busy ? 'Busy' : 'Idle', busy ? 'status-warning' : 'status-ok');
     setStatus('dashboardRobotError', error || '--', error ? 'status-error' : 'status-ok');
     setText('dashboardRobotQueue', hasValue(robot.queue_size) ? robot.queue_size : '--');
+    setStatus('dashboardRobotIp', formatEndpoint(robot), connected ? 'status-ok' : 'status-error');
     setText('dashboardRobotPosition', formatPosition(robot.position || robot.robot_position));
+    setText('dashboardRobotOrientation', formatOrientation(robot.orientation || robot.telemetry?.orientation));
+    setText('dashboardRobotJoints', formatJoints(robot.joint_angles || robot.joints || robot.angles || robot.telemetry?.joint_angles));
+    setText('dashboardRobotSpeed', formatSpeed(robot.speed ?? robot.telemetry?.speed));
+    const telemetry = telemetrySource(robot.telemetry || {});
+    setStatus('dashboardRobotTelemetrySource', telemetry.label, telemetry.className);
 }
 
 function renderSafety(snapshot) {
@@ -248,6 +254,54 @@ function formatPosition(position) {
         return `X${formatAxis(x)} Y${formatAxis(y)} Z${formatAxis(z)}`;
     }
     return `X${formatAxis(position.x)} Y${formatAxis(position.y)} Z${formatAxis(position.z)}`;
+}
+
+function formatOrientation(orientation) {
+    if (!orientation || typeof orientation !== 'object') return '--';
+    const rx = Number(orientation.rx);
+    const ry = Number(orientation.ry);
+    const rz = Number(orientation.rz);
+    if (![rx, ry, rz].some(Number.isFinite)) return '--';
+    return `RX${formatAxis(rx)} RY${formatAxis(ry)} RZ${formatAxis(rz)}`;
+}
+
+function formatJoints(joints) {
+    if (!joints) return '--';
+    if (Array.isArray(joints)) {
+        return joints
+            .slice(0, 6)
+            .map((value, index) => `J${index + 1}:${formatAxis(value)}`)
+            .join(' ');
+    }
+    if (typeof joints !== 'object') return '--';
+    const parts = ['j1', 'j2', 'j3', 'j4', 'j5', 'j6']
+        .filter((key) => Number.isFinite(Number(joints[key])))
+        .map((key) => `${key.toUpperCase()}:${formatAxis(joints[key])}`);
+    return parts.join(' ') || '--';
+}
+
+function formatSpeed(speed) {
+    const numeric = Number(speed);
+    if (!Number.isFinite(numeric)) return '--';
+    return `${numeric.toFixed(1)} mm/s`;
+}
+
+function formatEndpoint(robot) {
+    const connection = robot.connection && typeof robot.connection === 'object' ? robot.connection : {};
+    const host = robot.ip || connection.ip || connection.host || '';
+    const port = robot.port ?? connection.port;
+    if (!host && !hasValue(port)) return '--';
+    return hasValue(port) ? `${host || '--'}:${port}` : String(host);
+}
+
+function telemetrySource(telemetry) {
+    const source = String(telemetry.source || '').trim().toLowerCase();
+    if (source === 'hardware') return { label: 'Hardware', className: 'status-ok' };
+    if (source === 'simulation') return { label: 'Simulation', className: 'status-warning' };
+    if (source === 'unavailable') return { label: 'Unavailable', className: 'status-error' };
+    if (source === 'disabled') return { label: 'Disabled', className: 'status-warning' };
+    if (source === 'software') return { label: 'Software', className: 'status-warning' };
+    return { label: '--', className: 'status-warning' };
 }
 
 function formatAxis(value) {

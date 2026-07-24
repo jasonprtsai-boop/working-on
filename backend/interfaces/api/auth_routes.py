@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from flask import current_app, jsonify, request
+from flask import current_app, jsonify
 
 from backend.interfaces.api.shared import (
     api_bp,
     client_ip,
     config,
     error_response,
+    json_object_payload,
     publish_security_event,
 )
 
@@ -14,7 +15,10 @@ from backend.interfaces.api.shared import (
 @api_bp.route("/login", methods=["POST"])
 def login():
     """Local admin login used by the browser console gate."""
-    payload = request.get_json(silent=True) or {}
+    try:
+        payload = json_object_payload()
+    except ValueError as exc:
+        return error_response("validation_failed", str(exc), 400)
     password = str(payload.get("password", ""))
     if password != str(getattr(config, "ADMIN_PASSWORD", "")):
         publish_security_event("SECURITY.LOGIN_FAILED", {
