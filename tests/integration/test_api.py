@@ -63,6 +63,7 @@ class TestApiRoutes(unittest.TestCase):
             "/api/engine/status",
             "/api/estop/status",
             "/api/vision/cameras",
+            "/api/vision/source/status",
             "/api/vision/calibration",
             "/api/runtime/status",
             "/api/robot/calibration",

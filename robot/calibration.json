@@ -1,0 +1,32 @@
+{
+  "origin_x": 0.0,
+  "origin_y": 100.0,
+  "square_size_x": 40.0,
+  "square_size_y": 40.0,
+  "dead_zone": {
+    "x": 420.0,
+    "y": 100.0
+  },
+  "dead_zone_range": {
+    "x": 420.0,
+    "y": 100.0,
+    "width": 80.0,
+    "height": 80.0,
+    "slot_spacing": 25.0,
+    "slot_count": 4
+  },
+  "affine_matrix": [
+    [
+      40.0,
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      40.0,
+      100.0
+    ]
+  ],
+  "calibration_error": null,
+  "path": "robot\\calibration.json"
+}

@@ -136,7 +136,7 @@ git diff --check
 真實 TM5-700 機械手臂網路檢查：
 
 ```powershell
-Test-NetConnection 169.254.47.64 -Port 5890
+Test-NetConnection 192.168.10.10 -Port 5890
 ```
 
 ## 安裝與執行說明 (Installation And Runbooks)
@@ -168,7 +168,7 @@ Test-NetConnection 169.254.47.64 -Port 5890
 | `FAKE_ROBOT` / `FAKE_AI` | `true` / `true` | 安全的本機預設值。Production 模式兩者皆需為 `false`。 |
 | `FAKE_VISION` | `true` | 若為真實相機/模型執行環境請使用 `false`。Production 模式需為 `false`。 |
 | `ROBOT_ADAPTER` | `tmflow_json` | 針對 TMflow 1.82 支援換行符分隔的 TCP JSON 協定所設定的主要真實手臂路徑。只有為了相容性才使用 `techmanpy` 或 `modbus`。 |
-| `ROBOT_IP` / `ROBOT_PORT` | `169.254.47.64` / `5890` | 確認適用於實驗室的 TM5-700 控制器基準。 |
+| `ROBOT_IP` / `ROBOT_PORT` | `192.168.10.10` / `5890` | 確認適用於實驗室的 TM5-700 控制器基準。 |
 | `CONTROL_AUTH_REQUIRED` | `true` | 核心控制 API 路徑需要 JWT 驗證。 |
 | `RATE_LIMITS_ENABLED` | `true` | 應用於登入、控制以及 socket 動作。 |
 | `DB_PATH` | `data/runtime/app.db` | Production 模式需要明確的絕對路徑。 |
@@ -265,9 +265,8 @@ Test-NetConnection 169.254.47.64 -Port 5890
 - `FAKE_ROBOT=true`
 - `AUTO_EXECUTE_ROBOT=false`
 - `ROBOT_ADAPTER=tmflow_json`
-- `ROBOT_IP=169.254.47.64`
+- `ROBOT_IP=192.168.10.10`
 - `ROBOT_PORT=5890`
-- `ROBOT_COMMAND_QUEUE_SIZE=200`
 - 保守的首跑速度預設值: `ROBOT_MAX_SPEED=80`, `ROBOT_TRAVEL_SPEED=30`, `ROBOT_LIFT_SPEED=30`, `ROBOT_APPROACH_SPEED=15`
 
 真實手臂模式需要 `FAKE_ROBOT=false`，`ROBOT_ADAPTER=tmflow_json`，TCP 埠 `5890` 上有一個可連線的 TMflow TCP JSON socket server，並回傳遵循 Part 2 協定的 ACK/DONE/ERROR。

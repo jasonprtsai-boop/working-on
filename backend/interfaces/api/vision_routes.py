@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hmac
+import ipaddress
 import time
 
 from flask import Response, current_app, jsonify, request
@@ -17,6 +19,16 @@ from backend.interfaces.api.shared import (
 _camera_discovery_cache = {"key": None, "expires_at": 0.0, "payload": None}
 
 
+def _opencv_camera_backends(cv2):
+    backends = []
+    for name in ("CAP_DSHOW", "CAP_MSMF"):
+        backend = getattr(cv2, name, None)
+        if backend is not None:
+            backends.append((name, backend))
+    backends.append(("default", None))
+    return backends
+
+
 @api_bp.route("/vision/cameras", methods=["GET"])
 def list_cameras():
     """List available camera indices (best-effort) for UI device selection."""
@@ -27,7 +39,11 @@ def list_cameras():
             "opencv_not_available",
             "OpenCV is not available for camera discovery.",
             503,
-            details={"candidates": [], "current": getattr(config, "CAMERA_INDEX", 0)},
+            details={
+                "candidates": [],
+                "current": getattr(config, "CAMERA_INDEX", 0),
+                "source": str(getattr(config, "VISION_SOURCE", "opencv")),
+            },
         )
 
     max_index = bounded_int_arg("max", 6, 1, 16)
@@ -53,27 +69,37 @@ def list_cameras():
 
     for i in range(max_index):
         available = False
+        backend_used = ""
         cap = None
-        try:
+        for backend_name, backend in _opencv_camera_backends(cv2):
             try:
-                cap = cv2.VideoCapture(i, cv2.CAP_DSHOW)
+                cap = cv2.VideoCapture(i, backend) if backend is not None else cv2.VideoCapture(i)
+                if cap is not None and cap.isOpened():
+                    available = True
+                    backend_used = backend_name
+                    break
             except Exception:
-                current_app.logger.debug("CAP_DSHOW camera probe failed for index %s", i, exc_info=True)
-                cap = cv2.VideoCapture(i)
-            if cap is not None and cap.isOpened():
-                available = True
-        except Exception:
-            current_app.logger.debug("Camera probe failed for index %s", i, exc_info=True)
-            available = False
-        finally:
-            try:
-                if cap is not None:
-                    cap.release()
-            except Exception:
-                current_app.logger.debug("Camera release failed for index %s", i, exc_info=True)
-        candidates.append({"index": i, "available": bool(available)})
+                current_app.logger.debug("Camera probe failed for index %s with %s", i, backend_name, exc_info=True)
+            finally:
+                try:
+                    if cap is not None:
+                        cap.release()
+                except Exception:
+                    current_app.logger.debug("Camera release failed for index %s", i, exc_info=True)
+                cap = None
+        candidates.append({"index": i, "available": bool(available), "backend": backend_used})
 
-    payload = {"current": current, "candidates": candidates, "cached": False, "cache_ttl_sec": ttl}
+    payload = {
+        "current": current,
+        "source": str(getattr(config, "VISION_SOURCE", "opencv")),
+        "sources": [
+            {"id": "opencv", "label": "USB / OpenCV"},
+            {"id": "tmflow_json", "label": "TMflow JSON"},
+        ],
+        "candidates": candidates,
+        "cached": False,
+        "cache_ttl_sec": ttl,
+    }
     if ttl > 0:
         _camera_discovery_cache.update({"key": cache_key, "expires_at": now + ttl, "payload": dict(payload)})
     return jsonify(payload)
@@ -159,6 +185,291 @@ def set_vision_calibration():
 @api_bp.route("/video_status", methods=["GET"])
 def video_status():
     return jsonify(runtime_vision_status())
+
+
+@api_bp.route("/vision/stream-token", methods=["POST"])
+def issue_vision_stream_token():
+    from backend.utils.auth import create_scoped_jwt
+
+    ttl_seconds = 300
+    return jsonify({
+        "ok": True,
+        "stream_token": create_scoped_jwt(
+            "vision_stream",
+            role="operator",
+            subject="vision_stream",
+            ttl_seconds=ttl_seconds,
+        ),
+        "expires_in": ttl_seconds,
+    })
+
+
+@api_bp.route("/vision/source/status", methods=["GET"])
+def vision_source_status():
+    """Return the active frame source status without requiring the MJPEG stream."""
+    status = runtime_vision_status()
+    camera = status.get("camera", {}) if isinstance(status, dict) else {}
+    if not isinstance(camera, dict):
+        camera = {}
+    source = str(camera.get("source") or getattr(config, "VISION_SOURCE", "opencv"))
+    diagnostics = _vision_source_diagnostics(camera, source)
+    return jsonify({
+        "ok": True,
+        "source": source,
+        "camera": camera,
+        "diagnostics": diagnostics,
+        "config": {
+            "camera_index": int(getattr(config, "CAMERA_INDEX", 0) or 0),
+            "tmflow_json": {
+                "host": str(getattr(config, "VISION_TMFLOW_IMAGE_HOST", "")),
+                "port": int(getattr(config, "VISION_TMFLOW_IMAGE_PORT", 5891)),
+                "timeout_sec": float(getattr(config, "VISION_TMFLOW_IMAGE_TIMEOUT_SEC", 2.0)),
+                "max_message_bytes": int(getattr(config, "VISION_TMFLOW_IMAGE_MAX_MESSAGE_BYTES", 1_048_576)),
+                "fps_limit": float(getattr(config, "VISION_TMFLOW_IMAGE_FPS_LIMIT", 2.0)),
+            },
+        },
+        "vision": status,
+    })
+
+
+@api_bp.route("/vision/tmflow/frame", methods=["POST"])
+def ingest_tmflow_frame():
+    """Receive a TMflow-pushed JPEG/base64 frame over HTTP JSON."""
+    if not _tmflow_frame_ingest_authorized():
+        return error_response(
+            "tmflow_frame_ingest_unauthorized",
+            "TMflow frame ingest requires a valid bearer token, configured ingest key, or trusted lab robot IP.",
+            401,
+        )
+    try:
+        payload = json_object_payload()
+    except ValueError as exc:
+        return error_response("validation_failed", str(exc), 400)
+
+    result = _ingest_frame_payload(payload)
+    if not result.get("ok"):
+        return error_response(
+            "tmflow_frame_ingest_failed",
+            result.get("reason") or "TMflow frame could not be decoded.",
+            400,
+            details=result,
+        )
+    return jsonify({
+        "ok": True,
+        "mode": "tmflow_http_push",
+        **result,
+        "source": str(getattr(config, "VISION_SOURCE", "opencv")),
+    })
+
+
+@api_bp.route("/vision/source/test-frame", methods=["POST"])
+def inject_vision_source_test_frame():
+    """Inject a diagnostic frame into the current vision pipeline."""
+    try:
+        payload = json_object_payload()
+    except ValueError as exc:
+        return error_response("validation_failed", str(exc), 400)
+
+    try:
+        from backend.infrastructure.vision.camera.frame_buffer import frame_buffer
+        from backend.infrastructure.vision.camera.tmflow_json_source import TMflowJsonFrameSource
+    except Exception:
+        current_app.logger.debug("Vision source test dependencies unavailable", exc_info=True)
+        return error_response("vision_dependencies_unavailable", "Vision dependencies are not available.", 503)
+
+    frame = None
+    mode = "synthetic"
+    if any(isinstance(payload.get(key), str) and payload.get(key) for key in ("image", "image_base64", "data")):
+        frame = TMflowJsonFrameSource.decode_payload(payload)
+        mode = "decoded_payload"
+        if frame is None:
+            return error_response("invalid_test_frame", "Image payload could not be decoded as JPEG/base64.", 400)
+    else:
+        try:
+            frame = _synthetic_vision_test_frame(payload)
+        except Exception as exc:
+            current_app.logger.debug("Synthetic vision test frame failed", exc_info=True)
+            return error_response("test_frame_generation_failed", str(exc), 500, recoverable=False)
+
+    for _ in range(3):
+        try:
+            frame_buffer.put_raw(frame.copy())
+        except Exception:
+            frame_buffer.put_raw(frame)
+
+    height, width = frame.shape[:2]
+    return jsonify({
+        "ok": True,
+        "mode": mode,
+        "frames_injected": 3,
+        "frame_size": [int(width), int(height)],
+        "source": str(getattr(config, "VISION_SOURCE", "opencv")),
+        "status": runtime_vision_status(),
+    })
+
+
+def _ingest_frame_payload(payload: dict) -> dict:
+    try:
+        from backend.infrastructure.vision.camera.frame_buffer import frame_buffer
+        from backend.infrastructure.vision.camera.tmflow_json_source import TMflowJsonFrameSource
+    except Exception as exc:
+        current_app.logger.debug("Vision frame ingest dependencies unavailable", exc_info=True)
+        return {"ok": False, "reason": f"dependencies_unavailable: {exc}"}
+
+    delegate = getattr(getattr(vision_system, "camera", None), "_delegate", None)
+    if hasattr(delegate, "ingest_payload"):
+        return dict(delegate.ingest_payload(payload, apply_fps_limit=False))
+
+    frame = TMflowJsonFrameSource.decode_payload(payload)
+    if frame is None:
+        return {"ok": False, "reason": "decode_failed"}
+    frame_buffer.put_raw(frame)
+    height, width = frame.shape[:2]
+    return {"ok": True, "frame_size": [int(width), int(height)], "frames_received": None}
+
+
+def _vision_source_diagnostics(camera: dict, source: str) -> dict:
+    robot_status = _robot_control_status()
+    control_connected = bool(robot_status.get("connected") or robot_status.get("is_connected"))
+    fake_robot = bool(getattr(config, "FAKE_ROBOT", True))
+    control_status = "simulation" if fake_robot else ("connected" if control_connected else "offline")
+    vision_connected = bool(camera.get("connected") or camera.get("opened"))
+    vision_running = bool(camera.get("running"))
+    key_configured = bool(str(getattr(config, "VISION_TMFLOW_INGEST_KEY", "") or "").strip())
+    key_status = _tmflow_vision_ingest_key_status(source=source, key_configured=key_configured)
+
+    return {
+        "control_channel": {
+            "label": "5890 control",
+            "adapter": str(getattr(config, "ROBOT_ADAPTER", "tmflow_json")),
+            "host": str(getattr(config, "ROBOT_IP", "")),
+            "port": int(getattr(config, "ROBOT_PORT", 5890)),
+            "endpoint": f"{getattr(config, 'ROBOT_IP', '')}:{getattr(config, 'ROBOT_PORT', 5890)}",
+            "connected": control_connected,
+            "status": control_status,
+            "fake_robot": fake_robot,
+            "last_error": robot_status.get("last_error") or robot_status.get("error"),
+        },
+        "vision_channel": {
+            "label": "5891 vision",
+            "source": source,
+            "host": str(getattr(config, "VISION_TMFLOW_IMAGE_HOST", "")),
+            "port": int(getattr(config, "VISION_TMFLOW_IMAGE_PORT", 5891)),
+            "endpoint": camera.get("endpoint")
+            or f"{getattr(config, 'VISION_TMFLOW_IMAGE_HOST', '')}:{getattr(config, 'VISION_TMFLOW_IMAGE_PORT', 5891)}",
+            "connected": vision_connected,
+            "running": vision_running,
+            "status": "connected" if vision_connected else ("starting" if vision_running else "offline"),
+            "frames_received": int(camera.get("frames_received") or 0),
+            "last_frame_age_sec": camera.get("last_frame_age_sec"),
+            "last_frame_at": camera.get("last_frame_at"),
+            "reconnects": int(camera.get("reconnects") or 0),
+            "decode_failures": int(camera.get("decode_failures") or 0),
+            "dropped_frames": int(camera.get("dropped_frames") or 0),
+            "fps_limit": float(camera.get("fps_limit") or getattr(config, "VISION_TMFLOW_IMAGE_FPS_LIMIT", 2.0)),
+            "last_error": camera.get("last_error"),
+        },
+        "ingest_key": key_status,
+    }
+
+
+def _robot_control_status() -> dict:
+    try:
+        from backend.application.container import container
+
+        robot = container.get("robot")
+        if robot and hasattr(robot, "get_status"):
+            status = robot.get_status() or {}
+            if isinstance(status, dict):
+                return dict(status)
+    except Exception as exc:
+        return {"connected": False, "error": str(exc)}
+    return {"connected": False}
+
+
+def _tmflow_vision_ingest_key_status(*, source: str, key_configured: bool) -> dict:
+    source = str(source or "").strip().lower()
+    bind_host = str(getattr(config, "BIND_HOST", "127.0.0.1") or "").strip()
+    fake_robot = bool(getattr(config, "FAKE_ROBOT", True))
+    exposed_network = bind_host in {"0.0.0.0", "::"}
+    required = source == "tmflow_json" and (
+        bool(getattr(config, "IS_PRODUCTION", False)) or exposed_network or not fake_robot
+    )
+    return {
+        "configured": bool(key_configured),
+        "required": bool(required),
+        "ok": bool((not required) or key_configured),
+        "exposed_network": bool(exposed_network),
+        "fake_robot": fake_robot,
+    }
+
+
+def _tmflow_frame_ingest_authorized() -> bool:
+    try:
+        from backend.utils.auth import verify_request_token
+
+        claims = verify_request_token()
+        if str((claims or {}).get("role") or "").lower() in {"operator", "setup", "admin"}:
+            return True
+    except Exception:
+        pass
+
+    expected_key = str(getattr(config, "VISION_TMFLOW_INGEST_KEY", "") or "").strip()
+    provided_key = str(
+        request.headers.get("X-TMflow-Key")
+        or request.headers.get("X-TMflow-Vision-Key")
+        or request.args.get("key")
+        or request.args.get("stream_key")
+        or ""
+    ).strip()
+    if expected_key:
+        return hmac.compare_digest(provided_key, expected_key)
+
+    if getattr(config, "IS_PRODUCTION", False):
+        return False
+
+    remote = str(request.remote_addr or "").strip()
+    trusted_hosts = {
+        "127.0.0.1",
+        "::1",
+        str(getattr(config, "ROBOT_IP", "") or "").strip(),
+        str(getattr(config, "ROBOT_PC_IP", "") or "").strip(),
+    }
+    if remote in trusted_hosts:
+        return True
+    try:
+        remote_ip = ipaddress.ip_address(remote)
+        return bool(remote_ip.is_loopback or remote_ip.is_link_local)
+    except ValueError:
+        return False
+
+
+def _synthetic_vision_test_frame(payload: dict):
+    import cv2
+    import numpy as np
+
+    width = int(payload.get("width") or 960)
+    height = int(payload.get("height") or 540)
+    width = max(320, min(width, 1920))
+    height = max(240, min(height, 1080))
+    frame = np.zeros((height, width, 3), dtype=np.uint8)
+    frame[:] = (24, 31, 42)
+
+    margin = 48
+    cv2.rectangle(frame, (margin, margin), (width - margin, height - margin), (32, 164, 243), 3)
+    for col in range(1, 9):
+        x = margin + int((width - margin * 2) * col / 9)
+        cv2.line(frame, (x, margin), (x, height - margin), (80, 100, 120), 1)
+    for row in range(1, 10):
+        y = margin + int((height - margin * 2) * row / 10)
+        cv2.line(frame, (margin, y), (width - margin, y), (80, 100, 120), 1)
+
+    label = f"VISION SOURCE TEST - {getattr(config, 'VISION_SOURCE', 'opencv')}"
+    endpoint = f"{getattr(config, 'VISION_TMFLOW_IMAGE_HOST', '')}:{getattr(config, 'VISION_TMFLOW_IMAGE_PORT', 5891)}"
+    cv2.putText(frame, label, (margin + 8, margin + 36), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (250, 250, 250), 2)
+    cv2.putText(frame, endpoint, (margin + 8, margin + 72), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (147, 197, 253), 2)
+    cv2.putText(frame, time.strftime("%Y-%m-%d %H:%M:%S"), (margin + 8, height - margin - 18), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (203, 213, 225), 2)
+    return frame
 
 
 @api_bp.route("/vision/stream")

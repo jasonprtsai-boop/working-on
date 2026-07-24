@@ -20,6 +20,13 @@ class TestMJPEGSmoke(unittest.TestCase):
         ctype = resp.headers.get("Content-Type", "")
         self.assertIn("multipart/x-mixed-replace", ctype)
 
+        ticket_resp = client.post("/api/vision/stream-token", headers={"Authorization": f"Bearer {token}"})
+        self.assertEqual(ticket_resp.status_code, 200)
+        stream_token = (ticket_resp.get_json() or {}).get("stream_token")
+        ticket_stream = client.get(f"/api/vision/stream?stream_token={stream_token}")
+        self.assertEqual(ticket_stream.status_code, 200)
+        self.assertIn("multipart/x-mixed-replace", ticket_stream.headers.get("Content-Type", ""))
+
         # Read a small chunk from the generator to ensure it yields bytes.
         it = iter(resp.response)
         first = next(it)

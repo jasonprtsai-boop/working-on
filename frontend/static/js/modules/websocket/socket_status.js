@@ -1,13 +1,13 @@
 const STATUS_LABELS = {
-    online: 'Socket connected',
-    warning: 'Socket reconnecting',
-    offline: 'Socket offline',
+    online: 'Socket 已連線',
+    warning: 'Socket 重新連線中',
+    offline: 'Socket 離線',
 };
 
 const SAFETY_LABELS = {
-    online: 'Safety channel online',
-    warning: 'Safety channel reconnecting',
-    offline: 'Safety channel offline',
+    online: '安全通道已連線',
+    warning: '安全通道重新連線中',
+    offline: '安全通道離線',
 };
 
 const STALE_AFTER_MS = 8000;
@@ -44,8 +44,8 @@ function updateConnectionStatus(status, registry) {
         const stale = normalized !== 'online' || isStateStale();
         syncWarning.style.display = stale ? 'inline-flex' : 'none';
         syncWarning.innerText = normalized === 'warning'
-            ? 'STATE STALE: reconnecting'
-            : (normalized === 'offline' ? 'STATE STALE: backend offline' : 'STATE STALE: waiting for fresh snapshot');
+            ? '狀態延遲：重新連線中'
+            : (normalized === 'offline' ? '狀態延遲：後端離線' : '狀態延遲：等待最新快照');
     }
 
     window.dispatchEvent(new CustomEvent('smart:connection-status', {

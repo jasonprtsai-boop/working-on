@@ -30,7 +30,37 @@ class TestSetupSettings(unittest.TestCase):
         normalized = normalize_setup_settings(base, base=base)
 
         self.assertEqual(normalized["vision"]["camera_index"], base["vision"]["camera_index"])
+        self.assertIn(normalized["vision"]["source"], {"opencv", "tmflow_json"})
+        self.assertIn("tmflow_json", normalized["vision"])
         self.assertIn("dead_zone_range", normalized["robot"]["calibration"])
+
+    def test_normalize_setup_settings_accepts_tmflow_json_vision_source(self):
+        base = current_setup_settings()
+        normalized = normalize_setup_settings(
+            {
+                "vision": {
+                    "source": "tmflow_json",
+                    "tmflow_json": {
+                        "host": "192.168.10.10",
+                        "port": 5891,
+                        "timeout_sec": 2.0,
+                        "max_message_bytes": 1_048_576,
+                        "fps_limit": 2.0,
+                    },
+                }
+            },
+            base=base,
+        )
+
+        self.assertEqual(normalized["vision"]["source"], "tmflow_json")
+        self.assertEqual(normalized["vision"]["tmflow_json"]["host"], "192.168.10.10")
+        self.assertEqual(normalized["vision"]["tmflow_json"]["port"], 5891)
+
+    def test_normalize_setup_settings_rejects_invalid_vision_source(self):
+        base = current_setup_settings()
+
+        with self.assertRaises(ValueError):
+            normalize_setup_settings({"vision": {"source": "unknown"}}, base=base)
 
     def test_normalize_setup_settings_accepts_techmanpy_tmflow_baseline(self):
         base = current_setup_settings()
@@ -39,9 +69,9 @@ class TestSetupSettings(unittest.TestCase):
                 "robot": {
                     "connection": {
                         "adapter": "techmanpy",
-                        "ip": "169.254.47.64",
+                        "ip": "192.168.10.10",
                         "port": 5890,
-                        "pc_ip": "169.254.47.50",
+                        "pc_ip": "192.168.10.50",
                         "subnet_mask": "255.255.0.0",
                         "tmflow_version": "1.82",
                         "controller_version": "1.82.51",
@@ -57,7 +87,7 @@ class TestSetupSettings(unittest.TestCase):
 
         self.assertEqual(normalized["robot"]["connection"]["adapter"], "techmanpy")
         self.assertEqual(normalized["robot"]["connection"]["port"], 5890)
-        self.assertEqual(normalized["robot"]["connection"]["ip"], "169.254.47.64")
+        self.assertEqual(normalized["robot"]["connection"]["ip"], "192.168.10.10")
         self.assertEqual(normalized["robot"]["techmanpy"]["motion_mode"], "ptp")
 
     def test_normalize_setup_settings_accepts_tmflow_json_baseline(self):
@@ -67,9 +97,9 @@ class TestSetupSettings(unittest.TestCase):
                 "robot": {
                     "connection": {
                         "adapter": "tmflow_json",
-                        "ip": "169.254.47.64",
+                        "ip": "192.168.10.10",
                         "port": 5890,
-                        "pc_ip": "169.254.47.50",
+                        "pc_ip": "192.168.10.50",
                         "subnet_mask": "255.255.0.0",
                     },
                     "tmflow_json": {

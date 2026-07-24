@@ -3,8 +3,9 @@
         <main class="main-stage">
             <header class="stage-header">
                 <div class="sync-metrics">
-                    <span>S.M.A.R.T. Chess Robot Console</span>
-                    <span class="badge secondary" id="state-source-indicator">SSOT_EVENT_BUS</span>
+                    <span>智慧象棋機械手臂主控台</span>
+                    <span class="badge secondary" id="state-source-indicator">事件匯流排</span>
+                    <button id="btn-toggle-setup" type="button" class="admin-btn mini">系統設定</button>
                     <button id="btn-console-exit" type="button" class="btn-nav-home">
                         <i class="icon">←</i> <span>返回主畫面</span>
                     </button>
@@ -57,24 +58,32 @@
 
             <div id="pane-video-view" class="view-pane">
                 <div class="stat-card-glass video-monitor-card">
-                    <h4 class="mb-12">即時影像監控</h4>
-                    <div class="video-panel-container glass">
-                        <div class="video-wrapper">
-                            <img id="vision-live-feed"
-                                 src="/static/img/placeholder.png"
-                                 alt="即時影像監控"
-                                 data-src="/api/video_feed">
-                            <canvas id="yolo-canvas" class="vision-overlay-layer"></canvas>
+                    <div class="video-monitor-head">
+                        <div>
+                            <h4>即時攝影機畫面</h4>
+                            <span>來源：後端視覺串流 <code>/api/video_feed</code></span>
                         </div>
-                        <div class="video-telemetry-overlay">
-                            <div class="status-pill" id="video-status-pill"><span class="dot"></span> 連線中</div>
-                            <div class="meta-info">
-                                <span id="video-fps">FPS: --</span>
-                                <span id="video-ts">更新：-</span>
-                                <span id="video-cam" class="badge">Camera: --</span>
+                        <button id="btn-video-reconnect" type="button" class="admin-btn mini">重新抓取畫面</button>
+                    </div>
+                    <div class="video-monitor-body">
+                        <div class="video-panel-container glass">
+                            <div class="video-wrapper">
+                                <img id="vision-live-feed"
+                                     src="/static/img/placeholder.png"
+                                     alt="即時影像監控"
+                                     data-src="/api/video_feed">
+                                <canvas id="yolo-canvas" class="vision-overlay-layer"></canvas>
                             </div>
+                            <div class="video-telemetry-overlay">
+                                <div class="status-pill" id="video-status-pill"><span class="dot"></span> 連線中</div>
+                                <div class="meta-info">
+                                    <span id="video-fps">FPS: --</span>
+                                    <span id="video-ts">更新：-</span>
+                                    <span id="video-cam" class="badge">相機：--</span>
+                                </div>
+                            </div>
+                            <div id="video-overlay-coords" class="video-overlay-info">辨識座標：無資料</div>
                         </div>
-                        <div id="video-overlay-coords" class="video-overlay-info">辨識座標：無資料</div>
                     </div>
                 </div>
             </div>
@@ -85,9 +94,9 @@
                 <div class="stat-card-glass detailed-status-card">
                     <h4 class="panel-title">系統狀態</h4>
                     <div class="system-status-list industrial">
-                        <div class="status-item"><span>影像 / YOLO</span><span id="stat-camera" class="status-ok">運行中</span></div>
-                        <div class="status-item"><span>Pikafish</span><span id="stat-ai" class="status-ok">自動分析</span></div>
-                        <div class="status-item"><span>Robot</span><span id="stat-robot" class="status-ok">自動同步</span></div>
+                        <div class="status-item"><span>影像 / YOLO</span><span id="stat-camera" class="status-warning">待機中</span></div>
+                        <div class="status-item"><span>Pikafish</span><span id="stat-ai" class="status-warning">待機中</span></div>
+                        <div class="status-item"><span>機械手臂</span><span id="stat-robot" class="status-ok">自動同步</span></div>
                     </div>
                 </div>
 
@@ -97,7 +106,7 @@
                         <span class="value danger" id="cons-fps">--</span>
                     </div>
                     <div class="analysis-metric">
-                        <span class="label">Latency</span>
+                        <span class="label">延遲</span>
                         <span class="value" id="cons-latency">--ms</span>
                     </div>
                     <div class="analysis-metric">
@@ -107,7 +116,7 @@
                 </div>
 
                 <div class="stat-card-glass dashboard-card mt-16">
-                    <h4 class="panel-title">Dashboard / 棋盤狀態</h4>
+                    <h4 class="panel-title">棋盤狀態</h4>
                     <div class="dashboard-monitor mt-12">
                         <div class="status-item"><span>當前回合</span><span id="dashboard-board-turn">--</span></div>
                         <div class="status-item"><span>棋局 FEN</span><span id="dashboard-board-fen">--</span></div>
@@ -117,19 +126,19 @@
                 </div>
 
                 <div class="stat-card-glass control-hub mt-16">
-                    <h4 class="panel-title">YOLO / FEN Monitor</h4>
+                    <h4 class="panel-title">影像辨識 / FEN</h4>
                     <div class="vision-fen-monitor mt-12">
-                        <div class="status-item"><span>Latest FEN</span><span id="vision-fen">--</span></div>
-                        <div class="status-item"><span>UCCI position</span><span id="vision-ucci">--</span></div>
-                        <div class="status-item"><span>Detections</span><span id="vision-detections-count">0</span></div>
-                        <div class="status-item"><span>Avg / Min Confidence</span><span id="vision-confidence">-- / --</span></div>
-                        <div class="status-item"><span>YOLO Latency</span><span id="vision-yolo-latency">--ms</span></div>
-                        <div class="status-item"><span>Latest Recognition</span><span id="vision-recognition-time">--:--:--</span></div>
-                        <div class="status-item"><span>Detection Summary</span><span id="vision-detection-summary">--</span></div>
-                        <div class="status-item"><span>Calibration</span><span id="vision-calibration-status">--</span></div>
-                        <div class="status-item"><span>Calibration Source</span><span id="vision-calibration-source">--</span></div>
-                        <div class="status-item"><span>Max Reprojection Error</span><span id="vision-calibration-error">--</span></div>
-                        <div class="status-item"><span>Corner Quality</span><span id="vision-calibration-quality">--</span></div>
+                        <div class="status-item"><span>最新 FEN</span><span id="vision-fen">--</span></div>
+                        <div class="status-item"><span>UCCI 位置</span><span id="vision-ucci">--</span></div>
+                        <div class="status-item"><span>偵測數量</span><span id="vision-detections-count">0</span></div>
+                        <div class="status-item"><span>平均 / 最低信心值</span><span id="vision-confidence">-- / --</span></div>
+                        <div class="status-item"><span>YOLO 延遲</span><span id="vision-yolo-latency">--ms</span></div>
+                        <div class="status-item"><span>最新辨識時間</span><span id="vision-recognition-time">--:--:--</span></div>
+                        <div class="status-item"><span>辨識摘要</span><span id="vision-detection-summary">--</span></div>
+                        <div class="status-item"><span>校正狀態</span><span id="vision-calibration-status">--</span></div>
+                        <div class="status-item"><span>校正來源</span><span id="vision-calibration-source">--</span></div>
+                        <div class="status-item"><span>最大重投影誤差</span><span id="vision-calibration-error">--</span></div>
+                        <div class="status-item"><span>角點品質</span><span id="vision-calibration-quality">--</span></div>
                     </div>
                 </div>
 
@@ -140,15 +149,15 @@
                         <div class="analysis-metric"><span class="label">建議棋步</span><span class="value" id="best-move">--</span></div>
                     </div>
                     <div class="dashboard-monitor mt-12">
-                        <div class="status-item"><span>Depth</span><span id="dashboard-engine-depth">--</span></div>
-                        <div class="status-item"><span>Thinking</span><span id="dashboard-engine-thinking">--</span></div>
-                        <div class="status-item"><span>PV</span><span id="dashboard-engine-pv">--</span></div>
+                        <div class="status-item"><span>搜尋深度</span><span id="dashboard-engine-depth">--</span></div>
+                        <div class="status-item"><span>思考狀態</span><span id="dashboard-engine-thinking">--</span></div>
+                        <div class="status-item"><span>主變化 PV</span><span id="dashboard-engine-pv">--</span></div>
                     </div>
                     <div id="multipv-container" class="multipv-list mt-12">
                         <div class="pv-row empty">等待 Pikafish 分析資料...</div>
                     </div>
                     <div class="dashboard-control-block mt-12">
-                        <span class="control-label">AI Mode</span>
+                        <span class="control-label">AI 模式</span>
                         <div class="ai-mode-grid" id="ai-mode-controls">
                             <button type="button" class="ai-mode-btn active" data-ai-mode="companionship">陪伴</button>
                             <button type="button" class="ai-mode-btn" data-ai-mode="training">訓練</button>
@@ -157,7 +166,7 @@
                         </div>
                     </div>
                     <div class="dashboard-control-block mt-12">
-                        <span class="control-label">AI Depth</span>
+                        <span class="control-label">AI 深度</span>
                         <div class="depth-control-grid" id="engine-depth-controls">
                             <button type="button" class="depth-btn" data-depth="5">5</button>
                             <button type="button" class="depth-btn" data-depth="10">10</button>
@@ -170,26 +179,26 @@
                 </div>
 
                 <div class="stat-card-glass dashboard-card mt-16">
-                    <h4 class="panel-title">Robot / Safety</h4>
+                    <h4 class="panel-title">機械手臂 / 安全</h4>
                     <div class="dashboard-monitor mt-12">
-                        <div class="status-item"><span>Robot Status</span><span id="dashboard-robot-status">--</span></div>
-                        <div class="status-item"><span>Busy</span><span id="dashboard-robot-busy">--</span></div>
-                        <div class="status-item"><span>Error</span><span id="dashboard-robot-error">--</span></div>
-                        <div class="status-item"><span>Queue</span><span id="dashboard-robot-queue">--</span></div>
+                        <div class="status-item"><span>手臂狀態</span><span id="dashboard-robot-status">--</span></div>
+                        <div class="status-item"><span>忙碌</span><span id="dashboard-robot-busy">--</span></div>
+                        <div class="status-item"><span>錯誤</span><span id="dashboard-robot-error">--</span></div>
+                        <div class="status-item"><span>佇列</span><span id="dashboard-robot-queue">--</span></div>
                         <div class="status-item"><span>IP</span><span id="dashboard-robot-ip">--</span></div>
-                        <div class="status-item"><span>Position</span><span id="dashboard-robot-position">--</span></div>
-                        <div class="status-item"><span>Rotation</span><span id="dashboard-robot-orientation">--</span></div>
-                        <div class="status-item"><span>Joint Angles</span><span id="dashboard-robot-joints">--</span></div>
-                        <div class="status-item"><span>Speed</span><span id="dashboard-robot-speed">--</span></div>
-                        <div class="status-item"><span>Telemetry</span><span id="dashboard-robot-telemetry-source">--</span></div>
-                        <div class="status-item"><span>E-Stop</span><span id="dashboard-safety-estop">--</span></div>
-                        <div class="status-item"><span>Safe Mode</span><span id="dashboard-safety-safe-mode">未提供</span></div>
-                        <div class="status-item"><span>Camera Ready</span><span id="dashboard-safety-camera-ready">--</span></div>
+                        <div class="status-item"><span>位置</span><span id="dashboard-robot-position">--</span></div>
+                        <div class="status-item"><span>姿態</span><span id="dashboard-robot-orientation">--</span></div>
+                        <div class="status-item"><span>關節角度</span><span id="dashboard-robot-joints">--</span></div>
+                        <div class="status-item"><span>速度</span><span id="dashboard-robot-speed">--</span></div>
+                        <div class="status-item"><span>遙測來源</span><span id="dashboard-robot-telemetry-source">--</span></div>
+                        <div class="status-item"><span>緊急停止</span><span id="dashboard-safety-estop">--</span></div>
+                        <div class="status-item"><span>安全模式</span><span id="dashboard-safety-safe-mode">未提供</span></div>
+                        <div class="status-item"><span>相機就緒</span><span id="dashboard-safety-camera-ready">--</span></div>
                     </div>
                     <div class="sidebar-control-grid mt-12">
-                        <button id="btn-estop-trigger" type="button" class="btn-remote danger">E-Stop</button>
+                        <button id="btn-estop-trigger" type="button" class="btn-remote danger">緊急停止</button>
                         <label class="sidebar-toggle-row">
-                            <span>Safe Mode</span>
+                            <span>安全模式</span>
                             <span class="switch">
                                 <input id="safe-mode-toggle" type="checkbox" checked>
                                 <span class="slider round"></span>
@@ -199,18 +208,18 @@
                 </div>
 
                 <div class="stat-card-glass dashboard-card mt-16">
-                    <h4 class="panel-title">Experiment</h4>
+                    <h4 class="panel-title">實驗紀錄</h4>
                     <div class="dashboard-monitor mt-12">
-                        <div class="status-item"><span>Participant ID</span><span id="dashboard-exp-participant">未設定</span></div>
-                        <div class="status-item"><span>Session ID</span><span id="dashboard-exp-session-id">--</span></div>
-                        <div class="status-item"><span>Session Status</span><span id="dashboard-exp-session-status">待命</span></div>
-                        <div class="status-item"><span>Session Time</span><span id="dashboard-exp-session-time">00:00</span></div>
-                        <div class="status-item"><span>AI Difficulty</span><span id="dashboard-exp-difficulty">未提供</span></div>
+                        <div class="status-item"><span>參與者 ID</span><span id="dashboard-exp-participant">未設定</span></div>
+                        <div class="status-item"><span>場次 ID</span><span id="dashboard-exp-session-id">--</span></div>
+                        <div class="status-item"><span>場次狀態</span><span id="dashboard-exp-session-status">待命</span></div>
+                        <div class="status-item"><span>場次時間</span><span id="dashboard-exp-session-time">00:00</span></div>
+                        <div class="status-item"><span>AI 難度</span><span id="dashboard-exp-difficulty">未提供</span></div>
                     </div>
-                    <input id="session-participant-id" class="session-input mt-12" type="text" maxlength="64" placeholder="Participant ID">
+                    <input id="session-participant-id" class="session-input mt-12" type="text" maxlength="64" placeholder="參與者 ID">
                     <div class="sidebar-control-row mt-8">
-                        <button id="btn-session-start" type="button" class="btn-remote success">Start</button>
-                        <button id="btn-session-end" type="button" class="btn-remote">End</button>
+                        <button id="btn-session-start" type="button" class="btn-remote success">開始</button>
+                        <button id="btn-session-end" type="button" class="btn-remote">結束</button>
                     </div>
                 </div>
             </div>

@@ -3707,6 +3707,26 @@ button[aria-disabled="true"] {
     background: #020617;
 }
 
+.setup-source-field {
+    gap: 8px;
+}
+
+.setup-segmented {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.setup-segmented .admin-btn.active {
+    border-color: #2563eb;
+    background: #dbeafe;
+    color: #1d4ed8;
+}
+
+.setup-tmflow-vision-settings {
+    margin-top: 10px;
+}
+
 .setup-field-grid {
     display: grid;
     gap: 10px;
@@ -3808,6 +3828,320 @@ button[aria-disabled="true"] {
     color: var(--text-main);
     font-family: var(--font-mono);
     overflow-wrap: anywhere;
+}
+
+/* -------------------------------------------------------------------------- */
+/*  繁中介面整理：玩家棋盤優先、主控台攝影機提示、設定格狀化                    */
+/* -------------------------------------------------------------------------- */
+.view-player.active {
+    background:
+        linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
+}
+
+.view-player .top-nav {
+    border-bottom: 1px solid rgba(203, 213, 225, 0.75);
+    background: rgba(255, 255, 255, 0.92);
+}
+
+.view-player .arena-layout-centered .board-col-center {
+    grid-template-columns: minmax(260px, 310px) minmax(420px, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+        "turn board"
+        "guide board"
+        "control board";
+    gap: 18px;
+    width: min(100%, 1180px);
+}
+
+.view-player .board-container {
+    width: min(100%, calc((100vh - 124px) * 0.86), 640px);
+    max-width: 640px;
+    padding: clamp(10px, 1.8vh, 18px);
+    border: 1px solid #d7dee8;
+    border-radius: 8px;
+    background: #ffffff;
+    box-shadow: 0 18px 48px rgba(15, 23, 42, 0.14);
+}
+
+.view-player .chess-board {
+    border-width: 2px;
+    box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.05);
+}
+
+.view-player .player-guide-panel,
+.view-player .player-turn-panel {
+    border-color: #d7dee8;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.94);
+    box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
+}
+
+.view-player .player-guide-panel {
+    align-self: stretch;
+    max-height: none;
+    padding: 14px;
+}
+
+.view-player .player-guide-main strong {
+    font-size: 1.06rem;
+}
+
+.view-player .player-guide-main p {
+    -webkit-line-clamp: 4;
+    font-size: 0.84rem;
+}
+
+.view-player .player-guide-status-grid {
+    gap: 8px;
+}
+
+.view-player .player-guide-status {
+    min-height: 58px;
+    padding: 9px 10px;
+    background: #f8fafc;
+}
+
+.view-player .player-turn-panel {
+    align-self: stretch;
+    padding: 12px;
+}
+
+.view-player .player-turn-label,
+.view-player .player-guide-status span,
+.view-player .player-guide-kicker {
+    letter-spacing: 0;
+}
+
+.view-player .player-control-strip {
+    align-self: stretch;
+}
+
+.view-player .player-control-strip .btn-remote {
+    min-height: 48px;
+    border-radius: 8px;
+}
+
+.video-monitor-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.video-monitor-head h4 {
+    margin: 0;
+    color: var(--text-main);
+    font-size: 0.98rem;
+    font-weight: 950;
+}
+
+.video-monitor-head span {
+    display: block;
+    margin-top: 3px;
+    color: var(--text-secondary);
+    font-size: 0.74rem;
+    font-weight: 800;
+}
+
+.stage-header .admin-btn,
+.sync-metrics .admin-btn {
+    width: auto;
+    min-height: 36px;
+    justify-content: center;
+    padding: 8px 14px;
+    border-color: var(--border);
+    background: #ffffff;
+    color: var(--text-main);
+    border-radius: 8px;
+    box-shadow: none;
+}
+
+.video-monitor-head code,
+.video-capture-guide code {
+    color: #0f766e;
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+}
+
+.video-monitor-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+    align-items: start;
+}
+
+.video-capture-guide {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+    margin-top: 0;
+}
+
+.video-capture-guide div {
+    display: grid;
+    grid-template-columns: 24px minmax(0, 1fr);
+    gap: 4px 8px;
+    align-items: start;
+    min-width: 0;
+    padding: 10px;
+    border: 1px solid #dbe3ee;
+    border-radius: 8px;
+    background: #ffffff;
+}
+
+.video-capture-guide div > span {
+    grid-row: 1 / span 2;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 999px;
+    background: #e0f2fe;
+    color: #0369a1;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    font-weight: 950;
+}
+
+.video-capture-guide strong {
+    color: var(--text-main);
+    font-size: 0.78rem;
+    font-weight: 950;
+}
+
+.video-capture-guide p {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 0.72rem;
+    line-height: 1.45;
+    font-weight: 760;
+}
+
+.setup-page-standalone {
+    width: min(1440px, calc(100% - 28px));
+    margin-top: 8px;
+    max-height: calc(100vh - 92px);
+}
+
+.setup-top-nav {
+    margin-top: 20px;
+    margin-bottom: 8px;
+    padding: 12px 40px;
+}
+
+.setup-toolbar,
+.setup-live-panel,
+.setup-section,
+.setup-init-status div,
+.setup-wizard-summary div,
+.setup-wizard-list li {
+    border-color: #d7dee8;
+    border-radius: 8px;
+}
+
+.setup-toolbar {
+    padding: 10px 14px;
+}
+
+.setup-toolbar h2 {
+    font-size: 1.06rem;
+}
+
+.setup-workbench {
+    grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+    gap: 16px;
+}
+
+.setup-grid {
+    grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
+    align-items: start;
+    gap: 14px;
+}
+
+.setup-init-grid {
+    grid-template-columns: repeat(4, minmax(145px, 1fr));
+    gap: 12px;
+}
+
+.setup-init-live-check {
+    min-height: 64px;
+}
+
+.setup-init-status,
+.setup-wizard-summary {
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.setup-wizard-list {
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.setup-wizard-list li {
+    min-height: 52px;
+}
+
+.setup-section {
+    padding: 16px;
+    background: #ffffff;
+}
+
+.setup-section-head {
+    align-items: flex-start;
+}
+
+.setup-section-head h3 {
+    font-size: 0.92rem;
+}
+
+.setup-field-grid,
+.setup-field-grid.two,
+.setup-field-grid.three {
+    grid-template-columns: repeat(auto-fit, minmax(142px, 1fr));
+}
+
+.setup-field {
+    margin-top: 0;
+}
+
+.setup-field span {
+    min-height: 1.2em;
+    color: #475569;
+    font-size: 0.7rem;
+    letter-spacing: 0;
+    text-transform: none;
+}
+
+.setup-field input,
+.setup-field select {
+    min-height: 40px;
+    border-radius: 8px;
+    background: #f8fafc;
+}
+
+.setup-field input[type="checkbox"] {
+    align-self: center;
+    margin-top: 8px;
+}
+
+.setup-status-line {
+    min-height: 34px;
+}
+
+.setup-camera-frame {
+    border-radius: 8px;
+}
+
+.setup-inline-actions .admin-btn,
+.setup-actions .admin-btn {
+    border-radius: 8px;
+}
+
+.setup-file-list div,
+.setup-live-detail div {
+    grid-template-columns: 86px minmax(0, 1fr);
 }
 
 .vision-fen-monitor .status-item {
@@ -4308,4 +4642,87 @@ button[aria-disabled="true"] {
     color: #34d399;
     font-weight: 800;
     font-family: var(--font-mono);
+}
+
+@media (max-width: 1100px) {
+    .view-player.active {
+        height: auto;
+        min-height: 100vh;
+        overflow-y: auto;
+    }
+
+    .view-player .arena-layout-centered {
+        height: auto;
+        min-height: calc(100vh - 104px);
+        overflow: visible;
+    }
+
+    .view-player .arena-layout-centered .board-col-center {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: auto auto auto auto;
+        grid-template-areas:
+            "board"
+            "guide"
+            "turn"
+            "control";
+        width: min(100%, 760px);
+        height: auto;
+    }
+
+    .view-player .board-container {
+        width: min(100%, 680px);
+    }
+
+    .view-player .player-guide-panel {
+        max-height: none;
+    }
+
+    .view-player .player-guide-status-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .video-monitor-body,
+    .video-capture-guide {
+        grid-template-columns: 1fr;
+    }
+
+    .setup-workbench {
+        grid-template-columns: 1fr;
+    }
+
+    .setup-live-panel {
+        position: static;
+    }
+}
+
+@media (max-width: 720px) {
+    .view-player .arena-layout-centered {
+        padding: 10px;
+    }
+
+    .view-player .player-guide-status-grid,
+    .setup-init-grid,
+    .setup-init-status,
+    .setup-wizard-summary,
+    .setup-wizard-list,
+    .setup-grid,
+    .setup-field-grid,
+    .setup-field-grid.two,
+    .setup-field-grid.three {
+        grid-template-columns: 1fr;
+    }
+
+    .video-monitor-head,
+    .setup-toolbar,
+    .setup-section-head,
+    .setup-parameter-head {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .video-monitor-head .admin-btn,
+    .setup-actions .admin-btn,
+    .setup-inline-actions .admin-btn {
+        width: 100%;
+    }
 }

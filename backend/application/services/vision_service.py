@@ -58,7 +58,7 @@ class VisionService:
                 # Feedback to UI
                 bus.publish(BaseEvent.create(
                     event_type=EventType.UI_TOAST,
-                    payload={"text": "Vision sync completed.", "level": "success"},
+                    payload={"text": "視覺同步完成。", "level": "success"},
                     source="vision_service"
                 ))
             except Exception as e:
@@ -74,7 +74,7 @@ class VisionService:
                 )
                 bus.publish(BaseEvent.create(
                     event_type=EventType.UI_TOAST,
-                    payload={"text": "Vision sync failed.", "level": "error"},
+                    payload={"text": "視覺同步失敗。", "level": "error"},
                     source="vision_service"
                 ))
 

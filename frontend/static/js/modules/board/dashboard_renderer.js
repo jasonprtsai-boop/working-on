@@ -59,7 +59,7 @@ function renderVision(snapshot) {
     setText('visionConfidence', `${confidence} / ${minConfidence}`);
     setStatus(
         'visionCalibrationStatus',
-        calibration.calibrated === undefined ? '--' : (calibration.calibrated ? 'Calibrated' : 'Not calibrated'),
+        calibration.calibrated === undefined ? '--' : (calibration.calibrated ? '已校正' : '尚未校正'),
         calibration.calibrated ? 'status-ok' : 'status-warning',
     );
     setText('visionCalibrationSource', calibration.source || '--');
@@ -91,8 +91,8 @@ function renderRobot(snapshot) {
     const busy = Boolean(robot.busy);
     const error = robot.error || '';
 
-    setStatus('dashboardRobotStatus', connected ? 'Connected' : 'Offline', connected ? 'status-ok' : 'status-error');
-    setStatus('dashboardRobotBusy', busy ? 'Busy' : 'Idle', busy ? 'status-warning' : 'status-ok');
+    setStatus('dashboardRobotStatus', connected ? '已連線' : '離線', connected ? 'status-ok' : 'status-error');
+    setStatus('dashboardRobotBusy', busy ? '忙碌' : '待命', busy ? 'status-warning' : 'status-ok');
     setStatus('dashboardRobotError', error || '--', error ? 'status-error' : 'status-ok');
     setText('dashboardRobotQueue', hasValue(robot.queue_size) ? robot.queue_size : '--');
     setStatus('dashboardRobotIp', formatEndpoint(robot), connected ? 'status-ok' : 'status-error');
@@ -121,11 +121,11 @@ function renderSafety(snapshot) {
     const safeMode = firstDefined(ui.safe_mode, ui.safeMode, robot.safe_mode, robot.safeMode, vision.safe_mode, vision.safeMode);
     const camera = classifyCamera(vision);
 
-    setStatus('dashboardSafetyEstop', isStopped ? 'Triggered' : 'Clear', isStopped ? 'status-error' : 'status-ok');
+    setStatus('dashboardSafetyEstop', isStopped ? '已觸發' : '正常', isStopped ? 'status-error' : 'status-ok');
     if (safeMode === undefined) {
         setStatus('dashboardSafetySafeMode', '未提供', 'status-warning');
     } else {
-        setStatus('dashboardSafetySafeMode', safeMode ? 'Enabled' : 'Disabled', safeMode ? 'status-ok' : 'status-warning');
+        setStatus('dashboardSafetySafeMode', safeMode ? '已啟用' : '已停用', safeMode ? 'status-ok' : 'status-warning');
     }
     setStatus('dashboardSafetyCameraReady', camera.label, camera.className);
 }
@@ -153,7 +153,7 @@ function renderExperiment(snapshot) {
         engine.aiDifficulty,
         engine.skill_level,
         engine.skillLevel,
-        hasValue(ui.engine_depth) ? `Depth ${ui.engine_depth}` : '',
+        hasValue(ui.engine_depth) ? `深度 ${ui.engine_depth}` : '',
     );
     const sessionId = firstText(experiment.session_id, experiment.sessionId, ui.session_id, ui.sessionId);
     const active = firstDefined(experiment.active, ui.session_active, ui.sessionActive);
@@ -296,11 +296,11 @@ function formatEndpoint(robot) {
 
 function telemetrySource(telemetry) {
     const source = String(telemetry.source || '').trim().toLowerCase();
-    if (source === 'hardware') return { label: 'Hardware', className: 'status-ok' };
-    if (source === 'simulation') return { label: 'Simulation', className: 'status-warning' };
-    if (source === 'unavailable') return { label: 'Unavailable', className: 'status-error' };
-    if (source === 'disabled') return { label: 'Disabled', className: 'status-warning' };
-    if (source === 'software') return { label: 'Software', className: 'status-warning' };
+    if (source === 'hardware') return { label: '硬體', className: 'status-ok' };
+    if (source === 'simulation') return { label: '模擬', className: 'status-warning' };
+    if (source === 'unavailable') return { label: '無法取得', className: 'status-error' };
+    if (source === 'disabled') return { label: '已停用', className: 'status-warning' };
+    if (source === 'software') return { label: '軟體', className: 'status-warning' };
     return { label: '--', className: 'status-warning' };
 }
 
@@ -314,13 +314,13 @@ function classifyCamera(vision) {
     const status = String(vision.status || '').trim().toUpperCase();
     const mode = String(vision.mode || '').trim().toLowerCase();
     if (status === 'ERROR' || status === 'OFFLINE') {
-        return { label: 'Not Ready', className: 'status-error' };
+        return { label: '未就緒', className: 'status-error' };
     }
     if (mode === 'simulation' || status === 'SIMULATION') {
-        return { label: 'Simulation', className: 'status-warning' };
+        return { label: '模擬', className: 'status-warning' };
     }
     if (Number(vision.fps) > 0 || ['OK', 'READY', 'LIVE', 'RUNNING'].includes(status)) {
-        return { label: 'Ready', className: 'status-ok' };
+        return { label: '已就緒', className: 'status-ok' };
     }
     return { label: '--', className: 'status-warning' };
 }

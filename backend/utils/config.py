@@ -59,10 +59,18 @@ def _env_or_cfg(env_name: str, cfg_path: str, default=None):
 
 
 def _setup_or_env_or_cfg(env_name: str, cfg_path: str, setup_path: str, default=None):
-    """Read operator-tuned hardware settings from setup JSON before env/YAML."""
+    """Read setup JSON before env/YAML, except production env overrides stale setup."""
+    env_value = os.environ.get(env_name)
+    app_env = str(
+        os.environ.get("APP_ENV") or os.environ.get("FLASK_ENV") or get_cfg("system.environment", "development")
+    ).strip().lower()
+    if app_env in {"prod", "production"} and env_value is not None:
+        return env_value
     value = _setup_get(_setup_settings, setup_path, None)
     if value is not None:
         return value
+    if env_value is not None:
+        return env_value
     return _env_or_cfg(env_name, cfg_path, default)
 
 
@@ -120,6 +128,7 @@ WS_THROTTLE_MS = get_cfg('system.ws_throttle_ms', 50)
 APP_ENV = str(os.environ.get("APP_ENV") or os.environ.get("FLASK_ENV") or get_cfg("system.environment", "development")).strip().lower()
 IS_PRODUCTION = APP_ENV in {"prod", "production"}
 LOG_QUEUE_SIZE = int(_env_or_cfg("LOG_QUEUE_SIZE", "system.log_queue_size", 10000))
+MONITORING_INTERVAL_SEC = float(_env_or_cfg("MONITORING_INTERVAL_SEC", "system.monitoring_interval_sec", 1.0))
 
 _bind_all_requested = _as_bool(_env_or_cfg("SMART_CHESS_BIND_ALL", "server.bind_all", False), default=False)
 _explicit_host = os.environ.get("SMART_CHESS_HOST") or os.environ.get("HOST") or get_cfg("server.host", None)
@@ -299,7 +308,6 @@ CPU_THROTTLE_THRESHOLD = 80
 ENGINE_PROBE_ON_BOOT = _as_bool(os.environ.get("ENGINE_PROBE_ON_BOOT", get_cfg("engine.probe_on_boot", False)), default=False)
 ENGINE_AUTO_ANALYZE = _as_bool(os.environ.get("ENGINE_AUTO_ANALYZE", get_cfg("engine.auto_analyze", False)), default=False)
 AI_MODE_DEFAULT = str(_env_or_cfg("AI_MODE_DEFAULT", "engine.ai_mode_default", "companionship")).strip().lower()
-ROBOT_COMMAND_QUEUE_SIZE = int(_env_or_cfg("ROBOT_COMMAND_QUEUE_SIZE", "robot.command_queue_size", 200))
 REPLAY_MAX_SESSION_EVENTS = int(_env_or_cfg("REPLAY_MAX_SESSION_EVENTS", "replay.max_session_events", 1000))
 REPLAY_SAVE_EVERY_N_EVENTS = int(_env_or_cfg("REPLAY_SAVE_EVERY_N_EVENTS", "replay.save_every_n_events", 10))
 REPLAY_RETENTION_FILES = int(_env_or_cfg("REPLAY_RETENTION_FILES", "replay.retention_files", 20))
@@ -367,8 +375,77 @@ if IS_PRODUCTION:
 if _security_errors:
     raise RuntimeError("Unsafe production security configuration: " + " ".join(_security_errors))
 
+# Lab robot network defaults
+DEFAULT_ROBOT_IP = "192.168.10.10"
+DEFAULT_ROBOT_PC_IP = "192.168.10.50"
+DEFAULT_ROBOT_SUBNET_MASK = "255.255.0.0"
+
 # Vision
 CAMERA_INDEX = int(_setup_or_env_or_cfg('CAMERA_INDEX', 'vision.camera_index', 'vision.camera_index', 0))
+VISION_SOURCE = str(
+    _setup_or_env_or_cfg("VISION_SOURCE", "vision.source", "vision.source", "opencv")
+).strip().lower()
+if VISION_SOURCE in {"usb", "usb_camera", "camera", "opencv_usb"}:
+    VISION_SOURCE = "opencv"
+if VISION_SOURCE not in {"opencv", "tmflow_json"}:
+    VISION_SOURCE = "opencv"
+_default_vision_tmflow_host = (
+    _setup_get(_setup_settings, "vision.tmflow_json.host", None)
+    or _setup_get(_setup_settings, "robot.connection.ip", None)
+    or get_cfg("vision.tmflow_json.host", None)
+    or get_cfg("robot.ip", DEFAULT_ROBOT_IP)
+)
+VISION_TMFLOW_IMAGE_HOST = str(
+    _setup_or_env_or_cfg(
+        "VISION_TMFLOW_IMAGE_HOST",
+        "vision.tmflow_json.host",
+        "vision.tmflow_json.host",
+        _default_vision_tmflow_host,
+    )
+).strip()
+VISION_TMFLOW_IMAGE_PORT = int(
+    _setup_or_env_or_cfg("VISION_TMFLOW_IMAGE_PORT", "vision.tmflow_json.port", "vision.tmflow_json.port", 5891)
+)
+VISION_TMFLOW_IMAGE_TIMEOUT_SEC = float(
+    _setup_or_env_or_cfg(
+        "VISION_TMFLOW_IMAGE_TIMEOUT_SEC",
+        "vision.tmflow_json.timeout_sec",
+        "vision.tmflow_json.timeout_sec",
+        2.0,
+    )
+)
+VISION_TMFLOW_IMAGE_MAX_MESSAGE_BYTES = int(
+    _setup_or_env_or_cfg(
+        "VISION_TMFLOW_IMAGE_MAX_MESSAGE_BYTES",
+        "vision.tmflow_json.max_message_bytes",
+        "vision.tmflow_json.max_message_bytes",
+        1_048_576,
+    )
+)
+VISION_TMFLOW_IMAGE_FPS_LIMIT = float(
+    _setup_or_env_or_cfg(
+        "VISION_TMFLOW_IMAGE_FPS_LIMIT",
+        "vision.tmflow_json.fps_limit",
+        "vision.tmflow_json.fps_limit",
+        2.0,
+    )
+)
+VISION_TMFLOW_INGEST_KEY = str(
+    _setup_or_env_or_cfg(
+        "VISION_TMFLOW_INGEST_KEY",
+        "vision.tmflow_json.ingest_key",
+        "vision.tmflow_json.ingest_key",
+        "",
+    )
+).strip()
+_tmflow_vision_key_required = VISION_SOURCE == "tmflow_json" and (
+    IS_PRODUCTION or BIND_HOST in {"0.0.0.0", "::"} or not FAKE_ROBOT
+)
+if _tmflow_vision_key_required and not VISION_TMFLOW_INGEST_KEY:
+    raise RuntimeError(
+        "Unsafe TMflow vision ingest configuration: VISION_TMFLOW_INGEST_KEY must be set "
+        "when TMflow vision is used with production, bind-all networking, or real robot mode."
+    )
 VISION_WORKER_PIPELINE_ENABLED = _as_bool(
     _env_or_cfg("VISION_WORKER_PIPELINE_ENABLED", "vision.worker_pipeline_enabled", False),
     default=False,
@@ -425,7 +502,7 @@ YOLO_CLASS_NAMES = tuple(_load_yolo_class_names(YOLO_DATASET_MAPPING_PATH))
 VISION_DEVICE = str(_env_or_cfg('VISION_DEVICE', 'vision.device', 'cpu'))
 
 # Robot
-ROBOT_IP = str(_setup_or_env_or_cfg('ROBOT_IP', 'robot.ip', 'robot.connection.ip', '169.254.47.64'))
+ROBOT_IP = str(_setup_or_env_or_cfg('ROBOT_IP', 'robot.ip', 'robot.connection.ip', DEFAULT_ROBOT_IP))
 ROBOT_PORT = int(_setup_or_env_or_cfg('ROBOT_PORT', 'robot.port', 'robot.connection.port', 5890))
 _ROBOT_ADAPTER_SETTING = _setup_get(_setup_settings, "robot.connection.adapter", None)
 if _ROBOT_ADAPTER_SETTING is None:
@@ -439,9 +516,9 @@ if _ROBOT_ADAPTER_SETTING is None and ROBOT_PORT != 5890:
 ROBOT_ADAPTER = str(_ROBOT_ADAPTER_SETTING or "tmflow_json").strip().lower()
 if ROBOT_ADAPTER not in {"tmflow_json", "techmanpy", "modbus"}:
     ROBOT_ADAPTER = "tmflow_json"
-ROBOT_PC_IP = str(_setup_or_env_or_cfg("ROBOT_PC_IP", "robot.pc_ip", "robot.connection.pc_ip", "169.254.47.50"))
+ROBOT_PC_IP = str(_setup_or_env_or_cfg("ROBOT_PC_IP", "robot.pc_ip", "robot.connection.pc_ip", DEFAULT_ROBOT_PC_IP))
 ROBOT_SUBNET_MASK = str(
-    _setup_or_env_or_cfg("ROBOT_SUBNET_MASK", "robot.subnet_mask", "robot.connection.subnet_mask", "255.255.0.0")
+    _setup_or_env_or_cfg("ROBOT_SUBNET_MASK", "robot.subnet_mask", "robot.connection.subnet_mask", DEFAULT_ROBOT_SUBNET_MASK)
 )
 TMFLOW_VERSION = str(
     _setup_or_env_or_cfg("TMFLOW_VERSION", "robot.tmflow_version", "robot.connection.tmflow_version", "1.82")

@@ -11,6 +11,8 @@ class CameraManager:
     """
     Manages camera lifecycle, frame buffering, and multi-threaded capture.
     """
+    source = "opencv"
+
     def __init__(self, camera_index: int = None):
         self.camera_index = camera_index if camera_index is not None else config.CAMERA_INDEX
         self.cap: Optional[cv2.VideoCapture] = None
@@ -22,23 +24,35 @@ class CameraManager:
 
     def _open_capture(self) -> Optional[cv2.VideoCapture]:
         """Open a VideoCapture for the current camera_index (best-effort)."""
-        try:
-            cap = cv2.VideoCapture(self.camera_index, cv2.CAP_DSHOW)
-        except Exception:
-            cap = cv2.VideoCapture(self.camera_index)
+        backends = []
+        for name in ("CAP_DSHOW", "CAP_MSMF"):
+            backend = getattr(cv2, name, None)
+            if backend is not None:
+                backends.append((name, backend))
+        backends.append(("default", None))
 
-        try:
-            if not cap or not cap.isOpened():
+        for backend_name, backend in backends:
+            cap = None
+            try:
+                cap = cv2.VideoCapture(self.camera_index, backend) if backend is not None else cv2.VideoCapture(self.camera_index)
+                if not cap or not cap.isOpened():
+                    try:
+                        if cap:
+                            cap.release()
+                    except Exception:
+                        pass
+                    continue
+                cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                logger.info(f"Camera {self.camera_index} opened with {backend_name} backend.")
+                return cap
+            except Exception:
+                logger.debug(f"Camera {self.camera_index} open failed with {backend_name} backend.", exc_info=True)
                 try:
                     if cap:
                         cap.release()
                 except Exception:
                     pass
-                return None
-            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-        except Exception:
-            return None
-        return cap
+        return None
 
     def start(self) -> bool:
         if self.running:
@@ -146,6 +160,7 @@ class CameraManager:
             opened = bool(cap and cap.isOpened())
             fps = float(cap.get(cv2.CAP_PROP_FPS)) if opened else 0.0
         return {
+            "source": self.source,
             "index": int(self.camera_index),
             "running": bool(self.running),
             "opened": opened,

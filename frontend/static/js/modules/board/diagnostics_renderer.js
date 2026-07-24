@@ -13,7 +13,7 @@ export function renderDiagnostics(diagnostics = {}) {
             latencyEl.innerText = `${Math.round(latency)}ms`;
             latencyEl.className = latency > 1000 ? 'value danger' : 'value success';
         }
-        if (miniLatEl) miniLatEl.innerText = `LAT: ${Math.round(latency)}ms`;
+        if (miniLatEl) miniLatEl.innerText = `延遲：${Math.round(latency)}ms`;
 
         const fpsEl = UIRegistry.get('consFps');
         const miniFpsEl = UIRegistry.get('miniFps');
@@ -110,20 +110,21 @@ function mapVisionStatus(status, mode) {
     const normalized = String(status || '').trim().toUpperCase();
     const normalizedMode = String(mode || '').trim().toLowerCase();
     if (normalized === 'STALE') {
-        return { label: 'Stale', isError: false, isWarning: true };
+        return { label: '資料延遲', isError: false, isWarning: true };
     }
     if (normalizedMode === 'simulation' || normalized === 'SIMULATION') {
-        return { label: 'Simulation', isError: false, isWarning: true };
+        return { label: '模擬模式', isError: false, isWarning: true };
     }
 
     const labels = {
         OK: 'OK',
-        READY: 'Ready',
-        LIVE: 'Live',
-        RUNNING: 'Running',
-        SIMULATION: 'Simulation',
-        ERROR: 'Error',
-        OFFLINE: 'Offline',
+        READY: '已就緒',
+        LIVE: '即時',
+        RUNNING: '運行中',
+        SIMULATION: '模擬模式',
+        ERROR: '錯誤',
+        OFFLINE: '離線',
+        UNKNOWN: '未知',
     };
     return {
         label: labels[normalized] || status || 'OK',

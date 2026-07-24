@@ -1,22 +1,44 @@
 import asyncio
 import psutil
 import time
+from typing import Optional
 from backend.runtime.lifecycle.base_worker import BaseWorker
 from backend.events.bus.event_bus import bus
 from backend.events.models.base_event import BaseEvent
 from backend.events.event_types import EventType
 from backend.runtime.contract_schema import normalize_diagnostics_payload
+from backend.utils import config
 from backend.utils.logger import logger
+
+MIN_MONITORING_INTERVAL_SEC = 0.25
+DEFAULT_MONITORING_INTERVAL_SEC = 1.0
+
+
+def _coerce_interval(value) -> float:
+    try:
+        interval = float(value)
+    except (TypeError, ValueError):
+        interval = DEFAULT_MONITORING_INTERVAL_SEC
+    return max(MIN_MONITORING_INTERVAL_SEC, interval)
+
 
 class MonitoringWorker(BaseWorker):
     """
     [Runtime Layer] System Health & Metrics Monitor.
     Periodically collects CPU, Memory, and Event Throughput metrics.
     """
-    def __init__(self, interval_sec: float = 2.0):
+    def __init__(self, interval_sec: Optional[float] = None):
         super().__init__("Monitoring")
-        self.interval = interval_sec
+        configured_interval = interval_sec
+        if configured_interval is None:
+            configured_interval = getattr(config, "MONITORING_INTERVAL_SEC", DEFAULT_MONITORING_INTERVAL_SEC)
+        self.interval = _coerce_interval(configured_interval)
         self.process = psutil.Process()
+
+    def stats(self) -> dict:
+        stats = super().stats()
+        stats["interval_sec"] = self.interval
+        return stats
 
     async def run(self):
         logger.info("[MonitoringWorker] Started.")

@@ -1,28 +1,25 @@
-# Run Real TM5-700 Robot Mode
+# 執行真實 TM5-700 機械手臂模式
 
-Real robot mode must be treated as a commissioning procedure, not a normal
-software launch.
+真實機械手臂模式必須被視為試車/驗收（commissioning）程序，而非一般的軟體啟動。
 
-## Required TMflow Safety Setup
+## 必要的 TMflow 安全設定
 
-Before setting `FAKE_ROBOT=false`, confirm these items in TMflow or the robot
-controller:
+在設定 `FAKE_ROBOT=false` 之前，請在 TMflow 或機械手臂控制器中確認以下項目：
 
-- TCP speed limit is lower than the software `ROBOT_MAX_SPEED`.
-- Force/collision detection is enabled and tested.
-- G-Sensor/collision safety is enabled.
-- Safety area or virtual wall prevents the arm from reaching people.
-- Joint and tool motion cannot pinch hands near the board edge.
-- E-Stop is physically reachable and tested.
-- Gripper open/close force is safe for chess pieces and fingers.
-- Manual reduced-speed jog test passes before automatic moves.
+- TCP 速度限制低於軟體設定的 `ROBOT_MAX_SPEED`。
+- 力道/碰撞偵測已啟用並通過測試。
+- G-Sensor/碰撞安全功能已啟用。
+- 安全區域或虛擬牆設定完成，以防止機械手臂碰到人。
+- 關節與工具的移動不會夾到靠近棋盤邊緣的手。
+- 緊急停止按鈕（E-Stop）放置在伸手可及之處並已測試。
+- 夾爪開/合的力道對於棋子與手指是安全的。
+- 在進行自動移動前，已通過手動降速點動（jog）測試。
 
-Software coordinate limits are only a second layer. They do not replace robot
-controller safety functions.
+軟體座標限制只是第二層防護，並不能取代機械手臂控制器的安全功能。
 
-## Conservative Software Defaults
+## 保守的軟體預設值
 
-The project defaults are intentionally slow for first real-hardware tests:
+專案預設值刻意為首次真實硬體測試設定了較慢的速度：
 
 ```env
 ROBOT_MAX_SPEED=80
@@ -33,12 +30,11 @@ ROBOT_DEFAULT_ACCELERATION=60
 AUTO_EXECUTE_ROBOT=false
 ```
 
-Increase these only after TMflow safety, one-move validation, and operator
-sign-off are complete.
+只有在 TMflow 安全檢查、單步移動驗證以及操作人員同意後，才能調高這些數值。
 
-## Environment
+## 環境設定
 
-Set `.env`:
+設定 `.env`：
 
 ```env
 SYSTEM_MODE=real_robot
@@ -47,9 +43,9 @@ FAKE_VISION=false
 FAKE_AI=false
 AUTO_EXECUTE_ROBOT=false
 ROBOT_ADAPTER=tmflow_json
-ROBOT_IP=169.254.47.64
+ROBOT_IP=192.168.10.10
 ROBOT_PORT=5890
-ROBOT_PC_IP=169.254.47.50
+ROBOT_PC_IP=192.168.10.50
 ROBOT_SUBNET_MASK=255.255.0.0
 ROBOT_CONNECT_TIMEOUT_SEC=3.0
 TMFLOW_VERSION=1.82
@@ -64,114 +60,105 @@ ROBOT_TMFLOW_BASE=ChessBoard_Base
 ROBOT_TMFLOW_TCP=ChessGripper_TCP
 ```
 
-## TMflow TCP JSON Contract
+## TMflow TCP JSON 合約
 
-The primary real-robot path is the Part 2 TMflow TCP JSON protocol. Python is
-the TCP client; TMflow is the socket server. Every message is one UTF-8 JSON
-object terminated by `\n`.
+主要的真實機械手臂通訊路徑為第二部分（Part 2）的 TMflow TCP JSON 協定。Python 作為 TCP client；TMflow 則為 socket server。每則訊息皆為以 `\n` 結尾的 UTF-8 JSON 物件。
 
-For the confirmed lab baseline, use:
+實驗室確認後的基準設定為：
 
 ```text
 PC TMflow:       1.82
 Controller:      1.82.51
-Robot IP:        169.254.47.64
+Robot IP:        192.168.10.10
 Robot subnet:    255.255.0.0
-Suggested PC IP: 169.254.47.50
+Suggested PC IP: 192.168.10.50
 Robot port:      5890
 ```
 
-Before any live motion, confirm the TMflow project is running a TCP socket
-server that accepts:
+在進行任何實體移動前，請確認 TMflow 專案已在執行 TCP socket server 並且可以接收：
 
 ```text
 HELLO
 PING / PONG
 GET_STATE
-MOVE_L with ACK -> STARTED -> DONE or ERROR
-GRIPPER with ACK -> DONE or ERROR
+MOVE_L 接著 ACK -> STARTED -> DONE 或 ERROR
+GRIPPER 接著 ACK -> DONE 或 ERROR
 STOP
 ```
 
-Quick protocol probe from Python:
+使用 Python 進行快速協定探測：
 
 ```powershell
-.\.venv\Scripts\python.exe -c "import json,socket`ns=socket.create_connection(('169.254.47.64',5890),3)`nmsg={'version':'1.0','type':'COMMAND','id':'CMD_MANUAL_001','timestamp':'2026-07-24T00:00:00+08:00','command':'HELLO','payload':{'client':'manual_probe'}}`ns.sendall((json.dumps(msg)+'\n').encode())`nprint(s.recv(4096).decode())`ns.close()"
+.\.venv\Scripts\python.exe -c "import json,socket`ns=socket.create_connection(('192.168.10.10',5890),3)`nmsg={'version':'1.0','type':'COMMAND','id':'CMD_MANUAL_001','timestamp':'2026-07-24T00:00:00+08:00','command':'HELLO','payload':{'client':'manual_probe'}}`ns.sendall((json.dumps(msg)+'\n').encode())`nprint(s.recv(4096).decode())`ns.close()"
 ```
 
-Expected result is a JSON line with the same `id` and status `DONE`.
+預期結果為一行具有相同 `id` 且狀態為 `DONE` 的 JSON 字串。
 
-Use `ROBOT_TMFLOW_WIRE_FORMAT=envelope` for the full Part 2 JSON envelope. If
-TMflow 1.82 parsing cannot handle nested payloads, switch to
-`ROBOT_TMFLOW_WIRE_FORMAT=flat_json` and keep RobotService / Vision / AI code
-unchanged.
+若要使用完整的 Part 2 JSON 封包，請設定 `ROBOT_TMFLOW_WIRE_FORMAT=envelope`。如果 TMflow 1.82 的解析無法處理巢狀 payload，請切換至 `ROBOT_TMFLOW_WIRE_FORMAT=flat_json`，並保持 RobotService / Vision / AI 的程式碼不變。
 
-`techmanpy` remains available with `ROBOT_ADAPTER=techmanpy`. The older Modbus
-register bridge remains available only with `ROBOT_ADAPTER=modbus`; do not
-treat port `502` as the default real-robot path for this lab setup.
+舊有的 `techmanpy` 仍可透過設定 `ROBOT_ADAPTER=techmanpy` 使用。而較舊的 Modbus 暫存器橋接則只能透過設定 `ROBOT_ADAPTER=modbus` 使用；請不要將 `502` 埠視為此實驗室設定的預設真實機械手臂連線路徑。
 
-## Commissioning Order
+## 試車順序 (Commissioning Order)
 
-1. Start the server.
-2. Open the setup page and log in with the configured `SETUP_PASSWORD`.
-3. Verify camera and board calibration.
-4. Verify origin height, safe Z, grab Z, and place offset.
-5. Verify software X/Y/Z limits and dead-zone range.
-6. Run setup preflight.
-7. Run robot connect/status test.
-8. Confirm TMflow TCP JSON reports HELLO/PING/GET_STATE on port `5890`.
-9. Run gripper open/close tests with the arm away from the board.
-10. Run safe Z and origin tests.
-11. Run dead-zone test.
-12. Run one-move test with a clear board and one operator at E-Stop.
-13. Set `AUTO_EXECUTE_ROBOT=true` only after the above tests pass.
+1. 啟動伺服器。
+2. 開啟設定頁面，並使用設定好的 `SETUP_PASSWORD` 登入。
+3. 驗證相機與棋盤校正。
+4. 驗證原點高度、安全高度、抓取高度與放置偏移。
+5. 驗證軟體 X/Y/Z 軸限制及死區範圍。
+6. 執行設定前檢查（setup preflight）。
+7. 執行機械手臂連線/狀態測試。
+8. 確認 TMflow TCP JSON 在 `5890` 埠回報 HELLO/PING/GET_STATE。
+9. 在手臂遠離棋盤的情況下執行夾爪開/合測試。
+10. 執行安全高度與原點測試。
+11. 執行死區測試。
+12. 淨空棋盤並安排一位操作人員在 E-Stop 旁，執行單步移動測試。
+13. 只有在上述測試皆通過後，才可設定 `AUTO_EXECUTE_ROBOT=true`。
 
-## Formal Robot Calibration Points
+## 正式機械手臂校正點
 
-Measure and save at least these robot-space points before the first real game:
+在進行第一場真實對局前，請測量並儲存至少以下機械手臂空間座標點：
 
 ```text
 a0
 i0
 a9
 i9
-e4 or e5
-dead zone slot 1
+e4 或 e5
+dead zone slot 1 (死區插槽 1)
 ```
 
-Acceptance criteria:
+驗收標準（Acceptance criteria）：
 
-- All 90 board intersections are inside X/Y/Z soft limits.
-- The full dead-zone range is inside X/Y soft limits.
-- `Z_SAFE` clears the tallest chess piece and gripper body.
-- `Z_GRAB` reaches the piece without pressing into the board.
-- The saved robot calibration file and setup settings are reloaded after restart.
+- 棋盤上的 90 個交叉點都在 X/Y/Z 軟體限制範圍內。
+- 整個死區範圍都在 X/Y 軟體限制範圍內。
+- `Z_SAFE` 高度能越過最高的棋子與夾爪本體。
+- `Z_GRAB` 高度能觸及棋子，且不會壓迫到棋盤。
+- 重啟後能重新載入已儲存的機械手臂校正檔案與設定數值。
 
-## Real-Hardware Dry Run Sequence
+## 真實硬體空跑測試流程 (Dry Run Sequence)
 
-Run this before any automatic game. Keep `AUTO_EXECUTE_ROBOT=false` until the
-last step passes.
+在進行任何自動化對局之前，請執行此流程。直到最後一步通過前，請保持 `AUTO_EXECUTE_ROBOT=false`。
 
-1. Ping the TM5-700 controller IP from Windows.
-2. Run `Test-NetConnection 169.254.47.64 -Port 5890`.
-3. Use setup hardware test `connect` and `status` to verify the TMflow TCP JSON endpoint and state.
-4. Use setup hardware test `write_pose` in dry-run only; live no-trigger pose writes are a Modbus-only legacy test.
-5. Move to a0 above the board at `Z_SAFE`.
-6. Move to `corner_a0`, `corner_i0`, `corner_a9`, and `corner_i9` at `Z_SAFE`.
-7. Move to `center_e4` at `Z_SAFE`.
-8. Test `grab_z` at e4.
-9. Test `gripper_open` and `gripper_close`.
-10. Test one move `a0a1`.
-11. Test a capture move and confirm the piece is placed into dead zone slot 1.
-12. Run setup preflight with auto-execute required.
-13. Enable `AUTO_EXECUTE_ROBOT=true`.
+1. 從 Windows 端 Ping TM5-700 控制器的 IP。
+2. 執行 `Test-NetConnection 192.168.10.10 -Port 5890`。
+3. 使用硬體設定測試 `connect` 與 `status` 來驗證 TMflow TCP JSON 節點與狀態。
+4. 只能在空跑測試時使用硬體設定測試 `write_pose`；實際未觸發點位的姿勢寫入（no-trigger pose writes）是專為 Modbus 保留的舊版測試。
+5. 在 `Z_SAFE` 高度移動至棋盤上方的 a0。
+6. 在 `Z_SAFE` 高度移動至 `corner_a0`、`corner_i0`、`corner_a9` 以及 `corner_i9`。
+7. 在 `Z_SAFE` 高度移動至 `center_e4`。
+8. 測試 e4 位置的 `grab_z`。
+9. 測試 `gripper_open`（夾爪打開）與 `gripper_close`（夾爪關閉）。
+10. 測試單步移動 `a0a1`。
+11. 測試吃子動作，並確認棋子成功放置於死區插槽 1（dead zone slot 1）。
+12. 在需要自動執行的情況下執行設定 preflight。
+13. 啟用 `AUTO_EXECUTE_ROBOT=true`。
 
-## Stop Conditions
+## 停止條件
 
-Stop immediately if:
+若出現以下情況，請立即停止：
 
-- Camera stream freezes or detection age is stale.
-- Python cannot reach port `5890`, or TMflow does not return ACK/DONE/ERROR JSON responses.
-- The arm approaches outside calibrated board/dead-zone limits.
-- Any move requires manual intervention.
-- The operator cannot predict the next arm motion.
+- 相機畫面凍結或偵測時間過舊。
+- Python 無法連上 `5890` 埠，或是 TMflow 沒有回傳 ACK/DONE/ERROR JSON 格式回應。
+- 手臂移動至超出校正過之棋盤/死區限制外的區域。
+- 任何動作需要人工介入處理。
+- 操作人員無法預測手臂的下一步動作。

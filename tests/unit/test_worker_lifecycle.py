@@ -4,7 +4,9 @@ import unittest
 
 from backend.runtime.async_runtime import AsyncRuntime
 from backend.runtime.lifecycle.base_worker import BaseWorker
+from backend.runtime.workers.monitoring_worker import MonitoringWorker
 from backend.runtime.workers.worker_manager import WorkerManager
+from backend.utils import config
 
 
 class TestWorkerLifecycle(unittest.TestCase):
@@ -75,6 +77,20 @@ class TestWorkerLifecycle(unittest.TestCase):
         self.assertEqual(snapshot["status"], "FAILED")
         self.assertEqual(snapshot["last_error"], "task boom")
         self.assertTrue(snapshot["task_done"])
+
+    def test_monitoring_worker_uses_configurable_fast_interval_with_floor(self):
+        original = getattr(config, "MONITORING_INTERVAL_SEC", None)
+        try:
+            config.MONITORING_INTERVAL_SEC = 0.75
+            self.assertEqual(MonitoringWorker().interval, 0.75)
+            self.assertEqual(MonitoringWorker(interval_sec=0.05).interval, 0.25)
+            self.assertEqual(MonitoringWorker(interval_sec="bad").interval, 1.0)
+            self.assertEqual(MonitoringWorker(interval_sec=0.75).stats()["interval_sec"], 0.75)
+        finally:
+            if original is None:
+                delattr(config, "MONITORING_INTERVAL_SEC")
+            else:
+                config.MONITORING_INTERVAL_SEC = original
 
     def test_async_runtime_observer_records_failed_future(self):
         runtime = AsyncRuntime()

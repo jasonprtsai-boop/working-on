@@ -238,11 +238,11 @@ async function runBrowserChecks(token) {
     addResult('AI 控制', 'AI Depth 後台狀態更新', depthBackend.payload.engine_depth === 20, depthBackend.payload.engine_depth);
 
     await setSafeMode(page, false);
-    await page.waitForFunction(() => document.querySelector('#dashboard-safety-safe-mode')?.textContent?.trim() === 'Disabled', { timeout: 8000 });
+    await page.waitForFunction(() => document.querySelector('#dashboard-safety-safe-mode')?.textContent?.trim() === '已停用', { timeout: 8000 });
     const safeOff = await apiJson('/api/runtime/control', token);
     addResult('Safety 控制', 'Safe Mode toggle OFF 前後端更新', safeOff.payload.safe_mode === false, await text(page, '#dashboard-safety-safe-mode'));
     await setSafeMode(page, true);
-    await page.waitForFunction(() => document.querySelector('#dashboard-safety-safe-mode')?.textContent?.trim() === 'Enabled', { timeout: 8000 });
+    await page.waitForFunction(() => document.querySelector('#dashboard-safety-safe-mode')?.textContent?.trim() === '已啟用', { timeout: 8000 });
     const safeOn = await apiJson('/api/runtime/control', token);
     addResult('Safety 控制', 'Safe Mode toggle ON 前後端更新', safeOn.payload.safe_mode === true, await text(page, '#dashboard-safety-safe-mode'));
 
@@ -347,8 +347,8 @@ async function runBrowserChecks(token) {
     addComparison('ready', backend.ready.ready, 'Console loaded', backend.ready.ready === true);
     addComparison('socket/state freshness', 'online / false', `${frontend.connectionStatus} / ${frontend.stateStale}`, frontend.connectionStatus === 'online' && frontend.stateStale === 'false');
     addComparison('engine_depth', backend.runtime.engine_depth, frontend.engineDepth, Number(frontend.engineDepth) === Number(backend.runtime.engine_depth));
-    addComparison('safe_mode', backend.runtime.safe_mode ? 'Enabled' : 'Disabled', frontend.safeMode, frontend.safeMode === (backend.runtime.safe_mode ? 'Enabled' : 'Disabled'));
-    addComparison('estop', backend.estop.triggered ? 'Triggered' : 'Clear', frontend.estop, frontend.estop === (backend.estop.triggered ? 'Triggered' : 'Clear'));
+    addComparison('safe_mode', backend.runtime.safe_mode ? '已啟用' : '已停用', frontend.safeMode, frontend.safeMode === (backend.runtime.safe_mode ? '已啟用' : '已停用'));
+    addComparison('estop', backend.estop.triggered ? '已觸發' : '正常', frontend.estop, frontend.estop === (backend.estop.triggered ? '已觸發' : '正常'));
     addComparison('session_active', backend.runtime.session?.active ? '進行中' : '已結束', frontend.sessionStatus, frontend.sessionStatus === (backend.runtime.session?.active ? '進行中' : '已結束'));
     addComparison('participant_id', backend.runtime.session?.participant_id || '', frontend.participant, frontend.participant === (backend.runtime.session?.participant_id || ''));
     const backendFen = backend.state.board?.fen || backend.state.fen || '';

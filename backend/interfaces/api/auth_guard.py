@@ -5,7 +5,7 @@ from flask import jsonify, request
 from backend.interfaces.api.client_identity import client_ip
 from backend.utils import config
 from backend.utils.error_response import build_error
-from backend.utils.auth import verify_request_token
+from backend.utils.auth import decode_jwt_token, verify_request_token
 from backend.utils.rate_limit import RateLimitExceeded, rate_limiter
 
 
@@ -30,6 +30,9 @@ PROTECTED_ENDPOINTS = (
     ("/api/assets", None, "operator"),
     ("/api/video_feed", None, "operator"),
     ("/api/vision/cameras", None, "operator"),
+    ("/api/vision/stream-token", None, "operator"),
+    ("/api/vision/source/status", None, "operator"),
+    ("/api/vision/source/test-frame", None, "setup"),
     ("/api/vision/stream", None, "operator"),
     ("/api/vision/snapshot", None, "operator"),
     ("/api/vision/calibration", "GET", "operator"),
@@ -51,11 +54,26 @@ PROTECTED_ENDPOINTS = (
     ("/api/export_kpi", None, "admin"),
 )
 
+STREAM_TOKEN_ENDPOINTS = (
+    "/api/video_feed",
+    "/api/vision/stream",
+    "/api/snapshot",
+    "/api/vision/snapshot",
+)
+
 PUBLIC_CONTROL_ENDPOINTS = (
     ("/api/player/state", "GET"),
     ("/api/player/start", None),
     ("/api/player/move", None),
     ("/api/player/estop", None),
+    ("/api/vision/tmflow/frame", None),
+)
+
+PUBLIC_ENDPOINTS = (
+    ("/api/login", "POST", "auth"),
+    ("/api/logout", "POST", "auth"),
+    ("/api/setup/login", "POST", "setup_auth"),
+    ("/api/ready", "GET", "readiness"),
 )
 
 ROLE_LEVELS = {"viewer": 1, "operator": 2, "setup": 2, "admin": 3}
@@ -78,6 +96,10 @@ def _required_role_for_request() -> str | None:
 
 def _is_public_control_request() -> bool:
     return any(_matches_request(prefix, method) for prefix, method in PUBLIC_CONTROL_ENDPOINTS)
+
+
+def _is_stream_token_request() -> bool:
+    return any(_matches_request(prefix, None) for prefix in STREAM_TOKEN_ENDPOINTS)
 
 
 def _client_identity() -> str:
@@ -136,6 +158,11 @@ def enforce_control_auth():
         return None
 
     payload = verify_request_token()
+    if payload is None and _is_stream_token_request():
+        stream_token = request.args.get("stream_token") or request.args.get("ticket")
+        stream_claims = decode_jwt_token(stream_token) if stream_token else None
+        if stream_claims and stream_claims.get("scope") == "vision_stream":
+            payload = stream_claims
     if payload is None:
         return _error_response("unauthorized", "Valid session or bearer token required.", 401)
     if not _has_required_role(payload.get("role"), required_role):

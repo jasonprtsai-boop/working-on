@@ -62,7 +62,7 @@ class ModbusAdapter:
         return self.send_motion(coordinates)
 
     def ping(self) -> bool:
-        """Best-effort connectivity check used by compatibility controllers."""
+        """Best-effort connectivity check used by diagnostics and setup tests."""
         if not self.connected:
             return False
         if not MODBUS_AVAILABLE:

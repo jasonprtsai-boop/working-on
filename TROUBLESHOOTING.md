@@ -1,24 +1,23 @@
-# Troubleshooting
+# 疑難排解
 
-## PowerShell Blocks .ps1 Scripts
+## PowerShell 阻擋了 .ps1 腳本的執行
 
-Some Windows lab PCs disable direct `.ps1` execution. Use the project wrappers
-instead of running scripts directly:
+部分 Windows 實驗室電腦會停用直接執行 `.ps1` 檔案的功能。請使用專案提供的包裝指令代替直接執行腳本：
 
 ```powershell
 .\check_system.cmd
 .\check_system_strict.cmd
 ```
 
-For setup:
+進行設定時：
 
 ```powershell
 powershell.exe -ExecutionPolicy Bypass -File setup_env.ps1
 ```
 
-## Python Version Error
+## Python 版本錯誤
 
-Use Python 3.11.9 when possible. Python 3.13 is not supported yet.
+請盡量使用 Python 3.11.9。目前尚未支援 Python 3.13。
 
 ```powershell
 Remove-Item -Recurse -Force .venv
@@ -27,18 +26,18 @@ py -3.11 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.runtime.txt -r requirements.vision.txt
 ```
 
-## Missing Flask Or Other Python Packages
+## 遺失 Flask 或其他 Python 套件
 
-The active terminal is probably not using `.venv`.
+目前終端機可能沒有啟動 `.venv` 虛擬環境。
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip check
 .\.venv\Scripts\python.exe main.py
 ```
 
-## Jest Cannot Be Found
+## 找不到 Jest
 
-Recreate `node_modules` from the lockfile:
+從 lockfile 重新建立 `node_modules`：
 
 ```powershell
 Remove-Item -Recurse -Force node_modules
@@ -46,77 +45,74 @@ Remove-Item -Recurse -Force node_modules
 .\scripts\npm24.cmd test
 ```
 
-If this still fails, check:
+如果仍然失敗，請檢查：
 
 ```powershell
 .\scripts\node24.cmd --version
 .\scripts\npm24.cmd --version
 ```
 
-Expected major versions:
+預期主要版本為：
 
 - Node.js 24
-- npm 11 or newer
+- npm 11 或更新版本
 
-## Camera Stream Flickers Or Freezes
+## 相機畫面閃爍或凍結
 
-Check in this order:
+請依下列順序檢查：
 
-1. Use a powered USB port or powered hub.
-2. Disable USB selective suspend in Windows power settings.
-3. Lower `VISION_MJPEG_FPS`.
-4. Lower `VISION_MJPEG_QUALITY`.
-5. Try a different `CAMERA_INDEX`.
-6. Restart the application after changing camera hardware.
+1. 使用供電穩定的 USB 埠或有獨立供電的 USB Hub。
+2. 在 Windows 電源設定中停用 USB 選擇性暫停功能（selective suspend）。
+3. 調低 `VISION_MJPEG_FPS`。
+4. 調低 `VISION_MJPEG_QUALITY`。
+5. 嘗試不同的 `CAMERA_INDEX`。
+6. 更換相機硬體後請重啟應用程式。
 
-## Robot Does Not Connect
+## 機械手臂無法連線
 
-Check:
+請檢查：
 
 ```powershell
-Test-NetConnection 169.254.47.64 -Port 5890
+Test-NetConnection 192.168.10.10 -Port 5890
 ```
 
-Then confirm:
+接著確認以下設定：
 
 - `FAKE_ROBOT=false`
 - `ROBOT_ADAPTER=tmflow_json`
-- `ROBOT_IP=169.254.47.64`
+- `ROBOT_IP=192.168.10.10`
 - `ROBOT_PORT=5890`
-- PC Ethernet is on the same link-local subnet, for example `169.254.47.50` / `255.255.0.0`
-- TMflow TCP JSON socket server is running
-- TMflow returns newline-delimited UTF-8 JSON responses with the same command `id`
-- `ROBOT_TMFLOW_WIRE_FORMAT=envelope` unless the TMflow project requires `flat_json`
+- 電腦的 Ethernet 網路處於相同區域網路，例如 `192.168.10.50` / `255.255.0.0`，且不可與手臂 IP 重複
+- TMflow TCP JSON socket server 正在執行中
+- TMflow 回傳以換行符號分隔的 UTF-8 JSON 回應，且指令的 `id` 相符
+- 除非 TMflow 專案要求 `flat_json`，否則應設定 `ROBOT_TMFLOW_WIRE_FORMAT=envelope`
 
-Probe HELLO directly:
+直接探測 HELLO：
 
 ```powershell
-.\.venv\Scripts\python.exe -c "import json,socket`ns=socket.create_connection(('169.254.47.64',5890),3)`nmsg={'version':'1.0','type':'COMMAND','id':'CMD_MANUAL_001','timestamp':'2026-07-24T00:00:00+08:00','command':'HELLO','payload':{'client':'manual_probe'}}`ns.sendall((json.dumps(msg)+'\n').encode())`nprint(s.recv(4096).decode())`ns.close()"
+.\.venv\Scripts\python.exe -c "import json,socket`ns=socket.create_connection(('192.168.10.10',5890),3)`nmsg={'version':'1.0','type':'COMMAND','id':'CMD_MANUAL_001','timestamp':'2026-07-24T00:00:00+08:00','command':'HELLO','payload':{'client':'manual_probe'}}`ns.sendall((json.dumps(msg)+'\n').encode())`nprint(s.recv(4096).decode())`ns.close()"
 ```
 
-Expected result is a JSON line with `status` equal to `DONE`.
+預期結果為一行具有 `status` 為 `DONE` 的 JSON 字串。
 
-If the connection opens but moves fail, inspect the TMflow TCP JSON flow:
+如果連線成功開啟但手臂無法移動，請檢查 TMflow TCP JSON 流程：
 
-- Confirm `MOVE_L` returns `ACK`, then `STARTED`, then `DONE` or `ERROR`.
-- Confirm response `id` matches the request `id`.
-- Confirm the requested point is within TMflow safety limits and software soft limits.
-- Confirm `GRIPPER` returns `ACK`, then `DONE` before live pick/place testing.
+- 確認 `MOVE_L` 回傳 `ACK`，接著 `STARTED`，最後是 `DONE` 或 `ERROR`。
+- 確認回應的 `id` 與請求的 `id` 一致。
+- 確認請求的座標點位於 TMflow 安全限制與軟體限制的範圍內。
+- 在進行實機夾取/放置測試前，請先確認 `GRIPPER` 回傳 `ACK` 接著 `DONE`。
 
-Compatibility paths still exist: use `ROBOT_ADAPTER=techmanpy` for the
-TechmanPy External Script client, or `ROBOT_ADAPTER=modbus` for the old register
-bridge. For Modbus, port `502`, register base values, command ACK, status, and
-gripper feedback must match the TMflow project.
+為了相容性，保留的舊路徑包含：使用 `ROBOT_ADAPTER=techmanpy` 作為 TechmanPy External Script 用戶端，或使用 `ROBOT_ADAPTER=modbus` 以舊的暫存器橋接。使用 Modbus 時，其 `502` 埠、暫存器基底值（register base values）、指令 ACK、狀態及夾爪回饋必須與 TMflow 專案完全一致。
 
-## Quality Gate Reports trailing_whitespace
+## 程式碼品質檢查回報 trailing_whitespace（行尾多餘空白）
 
-Run:
+執行：
 
 ```powershell
 rg -n "[ \t]+$" .
 ```
 
-Remove trailing spaces, then rerun:
+移除行尾多餘空白後，重新執行：
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\quality_gate.py
@@ -124,9 +120,9 @@ git diff --check
 .\check_system.cmd
 ```
 
-## Real Robot Moves Too Fast
+## 真實機械手臂移動過快
 
-Keep the software defaults low:
+保持軟體預設在較低數值：
 
 ```env
 ROBOT_MAX_SPEED=80
@@ -136,5 +132,4 @@ ROBOT_APPROACH_SPEED=15
 ROBOT_DEFAULT_ACCELERATION=60
 ```
 
-Also lower the TMflow/controller TCP speed limit, force limit, and safety
-space settings. Software limits alone are not enough for human-facing use.
+並同時調低 TMflow/控制器端的 TCP 速度限制、力道限制以及安全空間設定。僅靠軟體的限制不足以確保在有操作人員環境中的安全性。

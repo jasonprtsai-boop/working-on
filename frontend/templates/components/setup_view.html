@@ -1,7 +1,7 @@
 <section id="view-setup" class="view-setup hidden" aria-hidden="true">
     <nav class="top-nav setup-top-nav">
-        <div class="logo">SETUP <span>OS</span></div>
-        <button id="btn-setup-exit" type="button" class="btn-exit" aria-label="Exit setup">返回主畫面</button>
+        <div class="logo">系統 <span>設定</span></div>
+        <button id="btn-setup-exit" type="button" class="btn-exit" aria-label="返回主畫面">返回主畫面</button>
     </nav>
 
     <form id="setup-settings-form" class="setup-page setup-page-standalone" autocomplete="off">
@@ -18,37 +18,37 @@
 
         <section class="setup-section setup-commissioning">
             <div class="setup-section-head">
-                <h3>Commissioning Wizard</h3>
+                <h3>建置檢查流程</h3>
                 <div class="setup-inline-actions">
-                    <button type="button" class="admin-btn mini" id="btn-setup-wizard-refresh" data-setup-admin="true">Refresh</button>
+                    <button type="button" class="admin-btn mini" id="btn-setup-wizard-refresh" data-setup-admin="true">更新</button>
                 </div>
             </div>
             <div class="setup-wizard-summary">
                 <div>
-                    <span>Ready</span>
+                    <span>整體狀態</span>
                     <strong id="setup-wizard-ready">--</strong>
                 </div>
                 <div>
-                    <span>Next Step</span>
+                    <span>下一步</span>
                     <strong id="setup-wizard-next">--</strong>
                 </div>
                 <div>
-                    <span>Last Preflight</span>
+                    <span>最近預檢</span>
                     <strong id="setup-wizard-preflight-at">--</strong>
                 </div>
                 <div>
-                    <span>Last Hardware Test</span>
+                    <span>最近硬體測試</span>
                     <strong id="setup-wizard-hardware-at">--</strong>
                 </div>
             </div>
             <ol class="setup-wizard-list" id="setup-wizard-list" aria-live="polite">
-                <li data-setup-step="settings_saved"><span class="setup-wizard-index">1</span><span>Save setup settings</span><strong>--</strong></li>
-                <li data-setup-step="vision_ready"><span class="setup-wizard-index">2</span><span>Calibrate camera and board</span><strong>--</strong></li>
-                <li data-setup-step="motion_profile_safe"><span class="setup-wizard-index">3</span><span>Confirm origin height and Z profile</span><strong>--</strong></li>
-                <li data-setup-step="board_and_dead_zone_safe"><span class="setup-wizard-index">4</span><span>Confirm board and dead-zone range</span><strong>--</strong></li>
-                <li data-setup-step="robot_communication_probe"><span class="setup-wizard-index">5</span><span>Verify robot communication</span><strong>--</strong></li>
-                <li data-setup-step="hardware_tests"><span class="setup-wizard-index">6</span><span>Run hardware validation tests</span><strong>--</strong></li>
-                <li data-setup-step="preflight_ready"><span class="setup-wizard-index">7</span><span>Pass full preflight</span><strong>--</strong></li>
+                <li data-setup-step="settings_saved"><span class="setup-wizard-index">1</span><span>儲存設定檔</span><strong>--</strong></li>
+                <li data-setup-step="vision_ready"><span class="setup-wizard-index">2</span><span>校正相機與棋盤</span><strong>--</strong></li>
+                <li data-setup-step="motion_profile_safe"><span class="setup-wizard-index">3</span><span>確認原點高度與 Z 軸設定</span><strong>--</strong></li>
+                <li data-setup-step="board_and_dead_zone_safe"><span class="setup-wizard-index">4</span><span>確認棋盤與死棋區範圍</span><strong>--</strong></li>
+                <li data-setup-step="robot_communication_probe"><span class="setup-wizard-index">5</span><span>驗證機械手臂通訊</span><strong>--</strong></li>
+                <li data-setup-step="hardware_tests"><span class="setup-wizard-index">6</span><span>執行硬體驗證</span><strong>--</strong></li>
+                <li data-setup-step="preflight_ready"><span class="setup-wizard-index">7</span><span>通過完整預檢</span><strong>--</strong></li>
             </ol>
         </section>
 
@@ -61,19 +61,19 @@
                 </div>
             </div>
             <div class="setup-init-grid">
-                <label class="setup-field"><span>Robot Adapter</span><select data-setup-field="robot.connection.adapter"><option value="tmflow_json">tmflow_json</option><option value="techmanpy">techmanpy</option><option value="modbus">modbus</option></select></label>
-                <label class="setup-field"><span>Robot IP</span><input type="text" maxlength="128" data-setup-field="robot.connection.ip"></label>
-                <label class="setup-field"><span>Robot Port</span><input type="number" min="1" max="65535" step="1" data-setup-field="robot.connection.port"></label>
-                <label class="setup-field"><span>PC Ethernet IP</span><input type="text" maxlength="128" data-setup-field="robot.connection.pc_ip"></label>
-                <label class="setup-field"><span>Subnet Mask</span><input type="text" maxlength="128" data-setup-field="robot.connection.subnet_mask"></label>
-                <label class="setup-field"><span>JSON Wire Format</span><select data-setup-field="robot.tmflow_json.wire_format"><option value="envelope">envelope</option><option value="flat_json">flat_json</option></select></label>
+                <label class="setup-field"><span>手臂介面</span><select data-setup-field="robot.connection.adapter"><option value="tmflow_json">tmflow_json</option><option value="techmanpy">techmanpy</option><option value="modbus">modbus</option></select></label>
+                <label class="setup-field"><span>機械手臂 IP</span><input type="text" maxlength="128" data-setup-field="robot.connection.ip"></label>
+                <label class="setup-field"><span>手臂連接埠</span><input type="number" min="1" max="65535" step="1" data-setup-field="robot.connection.port"></label>
+                <label class="setup-field"><span>電腦網卡 IP</span><input type="text" maxlength="128" data-setup-field="robot.connection.pc_ip"></label>
+                <label class="setup-field"><span>子網路遮罩</span><input type="text" maxlength="128" data-setup-field="robot.connection.subnet_mask"></label>
+                <label class="setup-field"><span>JSON 通訊格式</span><select data-setup-field="robot.tmflow_json.wire_format"><option value="envelope">envelope</option><option value="flat_json">flat_json</option></select></label>
                 <label class="setup-field compact setup-init-live-check"><span>實機執行</span><input id="setup-live-hardware-test" type="checkbox" data-setup-admin="true"></label>
             </div>
             <div class="setup-init-status" aria-live="polite">
-                <div><span>Endpoint</span><strong id="setup-init-endpoint">--</strong></div>
-                <div><span>PC Net</span><strong id="setup-init-pc-network">--</strong></div>
-                <div><span>Protocol</span><strong id="setup-init-protocol">--</strong></div>
-                <div><span>Connection</span><strong id="setup-init-result">--</strong></div>
+                <div><span>連線端點</span><strong id="setup-init-endpoint">--</strong></div>
+                <div><span>電腦網段</span><strong id="setup-init-pc-network">--</strong></div>
+                <div><span>通訊協定</span><strong id="setup-init-protocol">--</strong></div>
+                <div><span>連線結果</span><strong id="setup-init-result">--</strong></div>
             </div>
         </section>
 
@@ -82,13 +82,13 @@
                 <div class="setup-section-head">
                     <h3>目前座標</h3>
                     <div class="setup-inline-actions">
-                        <button type="button" class="admin-btn mini" id="btn-setup-refresh-robot-status" data-setup-admin="true">Refresh</button>
+                        <button type="button" class="admin-btn mini" id="btn-setup-refresh-robot-status" data-setup-admin="true">更新</button>
                     </div>
                 </div>
                 <div class="setup-live-connection">
                     <span id="setup-robot-live-dot" class="setup-live-dot" data-state="offline"></span>
                     <div>
-                        <strong id="setup-robot-live-status">Offline</strong>
+                        <strong id="setup-robot-live-status">離線</strong>
                         <small id="setup-robot-live-endpoint">--</small>
                     </div>
                 </div>
@@ -101,34 +101,34 @@
                     <div><span>RZ</span><strong id="setup-current-rz">--</strong></div>
                 </div>
                 <div class="setup-live-detail">
-                    <div><span>Speed</span><strong id="setup-current-speed">--</strong></div>
-                    <div><span>Joints</span><strong id="setup-current-joints">--</strong></div>
-                    <div><span>Telemetry</span><strong id="setup-current-telemetry">--</strong></div>
-                    <div><span>Updated</span><strong id="setup-current-updated">--</strong></div>
+                    <div><span>速度</span><strong id="setup-current-speed">--</strong></div>
+                    <div><span>關節</span><strong id="setup-current-joints">--</strong></div>
+                    <div><span>遙測</span><strong id="setup-current-telemetry">--</strong></div>
+                    <div><span>更新時間</span><strong id="setup-current-updated">--</strong></div>
                 </div>
             </aside>
 
             <div class="setup-parameter-panel">
                 <div class="setup-parameter-head">
-                    <h3>設定參數</h3>
-                    <span>Save 後會套用到目前系統設定</span>
+                    <h3>系統設計參數</h3>
+                    <span>以格狀排列關鍵參數，儲存後套用到目前系統設定</span>
                 </div>
                 <div class="setup-grid">
             <section class="setup-section">
                 <div class="setup-section-head">
                     <h3>系統模式</h3>
                     <div class="setup-inline-actions">
-                        <button type="button" class="admin-btn mini" id="btn-setup-preflight" data-setup-admin="true">執行 Preflight</button>
+                        <button type="button" class="admin-btn mini" id="btn-setup-preflight" data-setup-admin="true">執行預檢</button>
                     </div>
                 </div>
                 <div class="setup-field-grid two">
                     <label class="setup-field"><span>模擬機械手臂</span><input type="checkbox" data-setup-field="robot.runtime.fake_robot"></label>
                     <label class="setup-field"><span>自動執行手臂</span><input type="checkbox" data-setup-field="robot.runtime.auto_execute_robot"></label>
-                    <label class="setup-field"><span>連線時驗證 Status Register</span><input type="checkbox" data-setup-field="robot.modbus.verify_status_on_connect"></label>
-                    <label class="setup-field"><span>Vision Max Age Sec</span><input type="number" step="0.1" min="0.1" data-setup-field="vision.result_max_age_sec"></label>
+                    <label class="setup-field"><span>連線時驗證狀態暫存器</span><input type="checkbox" data-setup-field="robot.modbus.verify_status_on_connect"></label>
+                    <label class="setup-field"><span>影像最大有效秒數</span><input type="number" step="0.1" min="0.1" data-setup-field="vision.result_max_age_sec"></label>
                 </div>
                 <div class="setup-status-line">
-                    <span>Preflight</span>
+                    <span>預檢狀態</span>
                     <strong id="setup-preflight-status">--</strong>
                 </div>
             </section>
@@ -139,32 +139,62 @@
                     <div class="setup-inline-actions">
                         <button type="button" class="admin-btn mini" id="btn-setup-refresh-cameras" data-setup-admin="true">掃描</button>
                         <button type="button" class="admin-btn mini" id="btn-setup-preview-camera" data-setup-admin="true">預覽</button>
+                        <button type="button" class="admin-btn mini" id="btn-setup-test-vision-source" data-setup-admin="true">測試來源</button>
                         <button type="button" class="admin-btn mini" id="btn-setup-vision-auto" data-setup-admin="true">自動校正</button>
                     </div>
                 </div>
                 <div class="setup-camera-frame">
                     <img id="setup-camera-preview" src="/static/img/placeholder.png" alt="相機預覽" data-src="/api/video_feed">
                 </div>
+                <div class="setup-field setup-source-field">
+                    <span>影像來源</span>
+                    <input id="setup-vision-source" type="hidden" data-setup-field="vision.source" value="opencv">
+                    <div class="setup-segmented setup-vision-source-switch" role="group" aria-label="切換影像來源">
+                        <button type="button" class="admin-btn mini" data-setup-admin="true" data-setup-vision-source="opencv">USB / OpenCV</button>
+                        <button type="button" class="admin-btn mini" data-setup-admin="true" data-setup-vision-source="tmflow_json">TMflow JSON</button>
+                    </div>
+                </div>
                 <label class="setup-field">
-                    <span>Camera Index</span>
+                    <span>相機索引</span>
                     <select id="setup-camera-index" data-setup-field="vision.camera_index"></select>
                 </label>
+                <div class="setup-field-grid two setup-tmflow-vision-settings hidden" id="setup-tmflow-vision-settings">
+                    <label class="setup-field"><span>TMflow 影像 IP</span><input type="text" maxlength="128" data-setup-field="vision.tmflow_json.host"></label>
+                    <label class="setup-field"><span>TMflow 影像 Port</span><input type="number" min="1" max="65535" step="1" data-setup-field="vision.tmflow_json.port"></label>
+                    <label class="setup-field"><span>影像逾時秒數</span><input type="number" min="0.1" step="0.1" data-setup-field="vision.tmflow_json.timeout_sec"></label>
+                    <label class="setup-field"><span>最大影像訊息 Bytes</span><input type="number" min="65536" max="10485760" step="1024" data-setup-field="vision.tmflow_json.max_message_bytes"></label>
+                    <label class="setup-field"><span>TMflow 接收 FPS 上限</span><input type="number" min="0.1" max="30" step="0.1" data-setup-field="vision.tmflow_json.fps_limit"></label>
+                </div>
+                <div class="setup-init-status setup-channel-diagnostics" aria-live="polite">
+                    <div><span>5890 控制通道</span><strong id="setup-control-channel-status">--</strong></div>
+                    <div><span>5891 影像通道</span><strong id="setup-vision-channel-status">--</strong></div>
+                    <div><span>最後 frame age</span><strong id="setup-vision-frame-age">--</strong></div>
+                    <div><span>重連次數</span><strong id="setup-vision-reconnects">--</strong></div>
+                </div>
                 <div class="setup-status-line">
-                    <span>Vision Calibration</span>
+                    <span>視覺校正</span>
                     <strong id="setup-vision-status">--</strong>
+                </div>
+                <div class="setup-status-line">
+                    <span>目前影像來源</span>
+                    <strong id="setup-vision-source-status">OpenCV</strong>
+                </div>
+                <div class="setup-status-line">
+                    <span>影像來源測試</span>
+                    <strong id="setup-vision-source-test-status">--</strong>
                 </div>
             </section>
 
             <section class="setup-section">
                 <div class="setup-section-head"><h3>棋盤座標</h3></div>
                 <div class="setup-field-grid two">
-                    <label class="setup-field"><span>Origin X</span><input type="number" step="0.01" data-setup-field="robot.calibration.origin_x"></label>
-                    <label class="setup-field"><span>Origin Y</span><input type="number" step="0.01" data-setup-field="robot.calibration.origin_y"></label>
-                    <label class="setup-field"><span>Square X</span><input type="number" step="0.01" min="0.01" data-setup-field="robot.calibration.square_size_x"></label>
-                    <label class="setup-field"><span>Square Y</span><input type="number" step="0.01" min="0.01" data-setup-field="robot.calibration.square_size_y"></label>
+                    <label class="setup-field"><span>原點 X</span><input type="number" step="0.01" data-setup-field="robot.calibration.origin_x"></label>
+                    <label class="setup-field"><span>原點 Y</span><input type="number" step="0.01" data-setup-field="robot.calibration.origin_y"></label>
+                    <label class="setup-field"><span>格距 X</span><input type="number" step="0.01" min="0.01" data-setup-field="robot.calibration.square_size_x"></label>
+                    <label class="setup-field"><span>格距 Y</span><input type="number" step="0.01" min="0.01" data-setup-field="robot.calibration.square_size_y"></label>
                 </div>
                 <div class="setup-status-line">
-                    <span>Robot Calibration</span>
+                    <span>手臂校正</span>
                     <strong id="setup-robot-calibration-status">--</strong>
                 </div>
             </section>
@@ -172,25 +202,25 @@
             <section class="setup-section">
                 <div class="setup-section-head"><h3>Z 軸高度</h3></div>
                 <div class="setup-field-grid three">
-                    <label class="setup-field"><span>Safe Z</span><input type="number" step="0.01" data-setup-field="robot.motion.z_safe"></label>
-                    <label class="setup-field"><span>Grab Z</span><input type="number" step="0.01" data-setup-field="robot.motion.z_grab"></label>
-                    <label class="setup-field"><span>Place Offset</span><input type="number" step="0.01" min="0" data-setup-field="robot.motion.place_z_offset"></label>
-                    <label class="setup-field"><span>Tool RX</span><input type="number" step="0.01" data-setup-field="robot.motion.tool_rx"></label>
-                    <label class="setup-field"><span>Tool RY</span><input type="number" step="0.01" data-setup-field="robot.motion.tool_ry"></label>
-                    <label class="setup-field"><span>Tool RZ</span><input type="number" step="0.01" data-setup-field="robot.motion.tool_rz"></label>
+                    <label class="setup-field"><span>安全 Z</span><input type="number" step="0.01" data-setup-field="robot.motion.z_safe"></label>
+                    <label class="setup-field"><span>夾取 Z</span><input type="number" step="0.01" data-setup-field="robot.motion.z_grab"></label>
+                    <label class="setup-field"><span>放置補償</span><input type="number" step="0.01" min="0" data-setup-field="robot.motion.place_z_offset"></label>
+                    <label class="setup-field"><span>工具 RX</span><input type="number" step="0.01" data-setup-field="robot.motion.tool_rx"></label>
+                    <label class="setup-field"><span>工具 RY</span><input type="number" step="0.01" data-setup-field="robot.motion.tool_ry"></label>
+                    <label class="setup-field"><span>工具 RZ</span><input type="number" step="0.01" data-setup-field="robot.motion.tool_rz"></label>
                 </div>
             </section>
 
             <section class="setup-section">
                 <div class="setup-section-head"><h3>速度</h3></div>
                 <div class="setup-field-grid two">
-                    <label class="setup-field"><span>Min Speed</span><input type="number" step="0.01" min="0.01" data-setup-field="robot.motion.min_speed"></label>
-                    <label class="setup-field"><span>Max Speed</span><input type="number" step="0.01" min="0.01" data-setup-field="robot.motion.max_speed"></label>
-                    <label class="setup-field"><span>Travel</span><input type="number" step="0.01" data-setup-field="robot.motion.travel_speed"></label>
-                    <label class="setup-field"><span>Lift</span><input type="number" step="0.01" data-setup-field="robot.motion.lift_speed"></label>
-                    <label class="setup-field"><span>Approach</span><input type="number" step="0.01" data-setup-field="robot.motion.approach_speed"></label>
-                    <label class="setup-field"><span>Acceleration</span><input type="number" step="0.01" min="0.01" data-setup-field="robot.motion.default_acceleration"></label>
-                    <label class="setup-field"><span>Timeout Sec</span><input type="number" step="0.01" min="0.01" data-setup-field="robot.motion.timeout_sec"></label>
+                    <label class="setup-field"><span>最低速度</span><input type="number" step="0.01" min="0.01" data-setup-field="robot.motion.min_speed"></label>
+                    <label class="setup-field"><span>最高速度</span><input type="number" step="0.01" min="0.01" data-setup-field="robot.motion.max_speed"></label>
+                    <label class="setup-field"><span>平移速度</span><input type="number" step="0.01" data-setup-field="robot.motion.travel_speed"></label>
+                    <label class="setup-field"><span>抬升速度</span><input type="number" step="0.01" data-setup-field="robot.motion.lift_speed"></label>
+                    <label class="setup-field"><span>接近速度</span><input type="number" step="0.01" data-setup-field="robot.motion.approach_speed"></label>
+                    <label class="setup-field"><span>加速度</span><input type="number" step="0.01" min="0.01" data-setup-field="robot.motion.default_acceleration"></label>
+                    <label class="setup-field"><span>逾時秒數</span><input type="number" step="0.01" min="0.01" data-setup-field="robot.motion.timeout_sec"></label>
                 </div>
             </section>
 
@@ -199,102 +229,102 @@
                 <div class="setup-field-grid three">
                     <label class="setup-field"><span>X</span><input type="number" step="0.01" data-setup-field="robot.calibration.dead_zone_range.x"></label>
                     <label class="setup-field"><span>Y</span><input type="number" step="0.01" data-setup-field="robot.calibration.dead_zone_range.y"></label>
-                    <label class="setup-field"><span>Width</span><input type="number" step="0.01" min="0.01" data-setup-field="robot.calibration.dead_zone_range.width"></label>
-                    <label class="setup-field"><span>Height</span><input type="number" step="0.01" min="0.01" data-setup-field="robot.calibration.dead_zone_range.height"></label>
-                    <label class="setup-field"><span>Slot Spacing</span><input type="number" step="0.01" min="0.01" data-setup-field="robot.calibration.dead_zone_range.slot_spacing"></label>
-                    <label class="setup-field"><span>Slot Count</span><input type="number" step="1" min="1" max="64" data-setup-field="robot.calibration.dead_zone_range.slot_count"></label>
+                    <label class="setup-field"><span>寬度</span><input type="number" step="0.01" min="0.01" data-setup-field="robot.calibration.dead_zone_range.width"></label>
+                    <label class="setup-field"><span>高度</span><input type="number" step="0.01" min="0.01" data-setup-field="robot.calibration.dead_zone_range.height"></label>
+                    <label class="setup-field"><span>棋位間距</span><input type="number" step="0.01" min="0.01" data-setup-field="robot.calibration.dead_zone_range.slot_spacing"></label>
+                    <label class="setup-field"><span>棋位數量</span><input type="number" step="1" min="1" max="64" data-setup-field="robot.calibration.dead_zone_range.slot_count"></label>
                 </div>
             </section>
 
             <section class="setup-section">
                 <div class="setup-section-head"><h3>三軸邊界</h3></div>
                 <div class="setup-field-grid two">
-                    <label class="setup-field"><span>Min X</span><input type="number" step="0.01" data-setup-field="robot.limits.min_x"></label>
-                    <label class="setup-field"><span>Max X</span><input type="number" step="0.01" data-setup-field="robot.limits.max_x"></label>
-                    <label class="setup-field"><span>Min Y</span><input type="number" step="0.01" data-setup-field="robot.limits.min_y"></label>
-                    <label class="setup-field"><span>Max Y</span><input type="number" step="0.01" data-setup-field="robot.limits.max_y"></label>
-                    <label class="setup-field"><span>Min Z</span><input type="number" step="0.01" data-setup-field="robot.limits.min_z"></label>
-                    <label class="setup-field"><span>Max Z</span><input type="number" step="0.01" data-setup-field="robot.limits.max_z"></label>
+                    <label class="setup-field"><span>最小 X</span><input type="number" step="0.01" data-setup-field="robot.limits.min_x"></label>
+                    <label class="setup-field"><span>最大 X</span><input type="number" step="0.01" data-setup-field="robot.limits.max_x"></label>
+                    <label class="setup-field"><span>最小 Y</span><input type="number" step="0.01" data-setup-field="robot.limits.min_y"></label>
+                    <label class="setup-field"><span>最大 Y</span><input type="number" step="0.01" data-setup-field="robot.limits.max_y"></label>
+                    <label class="setup-field"><span>最小 Z</span><input type="number" step="0.01" data-setup-field="robot.limits.min_z"></label>
+                    <label class="setup-field"><span>最大 Z</span><input type="number" step="0.01" data-setup-field="robot.limits.max_z"></label>
                 </div>
             </section>
 
             <section class="setup-section">
-                <div class="setup-section-head"><h3>連線</h3></div>
+                <div class="setup-section-head"><h3>進階通訊參數</h3></div>
                 <div class="setup-field-grid two">
-                    <label class="setup-field"><span>Connection Timeout Sec</span><input type="number" min="0.1" step="0.1" data-setup-field="robot.connection.timeout_sec"></label>
-                    <label class="setup-field"><span>TMflow Version</span><input type="text" maxlength="32" data-setup-field="robot.connection.tmflow_version"></label>
-                    <label class="setup-field"><span>Controller Version</span><input type="text" maxlength="32" data-setup-field="robot.connection.controller_version"></label>
-                    <label class="setup-field"><span>Require Listen Node</span><input type="checkbox" data-setup-field="robot.techmanpy.require_listen_node"></label>
-                    <label class="setup-field"><span>TechmanPy Motion Mode</span><select data-setup-field="robot.techmanpy.motion_mode"><option value="ptp">ptp</option><option value="line">line</option></select></label>
-                    <label class="setup-field"><span>Suppress TechmanPy Warnings</span><input type="checkbox" data-setup-field="robot.techmanpy.suppress_warnings"></label>
-                    <label class="setup-field"><span>Gripper Close Script</span><input type="text" maxlength="512" data-setup-field="robot.techmanpy.gripper_close_script"></label>
-                    <label class="setup-field"><span>Gripper Open Script</span><input type="text" maxlength="512" data-setup-field="robot.techmanpy.gripper_open_script"></label>
-                    <label class="setup-field"><span>Require HELLO</span><input type="checkbox" data-setup-field="robot.tmflow_json.require_hello"></label>
-                    <label class="setup-field"><span>ACK Timeout Sec</span><input type="number" min="0.1" step="0.1" data-setup-field="robot.tmflow_json.ack_timeout_sec"></label>
-                    <label class="setup-field"><span>DONE Timeout Sec</span><input type="number" min="0.1" step="0.1" data-setup-field="robot.tmflow_json.done_timeout_sec"></label>
-                    <label class="setup-field"><span>Long Task Timeout Sec</span><input type="number" min="0.1" step="0.1" data-setup-field="robot.tmflow_json.long_task_timeout_sec"></label>
-                    <label class="setup-field"><span>Max Retry</span><input type="number" min="0" max="10" step="1" data-setup-field="robot.tmflow_json.max_retry"></label>
-                    <label class="setup-field"><span>Max Message Bytes</span><input type="number" min="256" max="65536" step="1" data-setup-field="robot.tmflow_json.max_message_bytes"></label>
+                    <label class="setup-field"><span>連線逾時秒數</span><input type="number" min="0.1" step="0.1" data-setup-field="robot.connection.timeout_sec"></label>
+                    <label class="setup-field"><span>TMflow 版本</span><input type="text" maxlength="32" data-setup-field="robot.connection.tmflow_version"></label>
+                    <label class="setup-field"><span>控制器版本</span><input type="text" maxlength="32" data-setup-field="robot.connection.controller_version"></label>
+                    <label class="setup-field"><span>需要 Listen Node</span><input type="checkbox" data-setup-field="robot.techmanpy.require_listen_node"></label>
+                    <label class="setup-field"><span>TechmanPy 動作模式</span><select data-setup-field="robot.techmanpy.motion_mode"><option value="ptp">ptp</option><option value="line">line</option></select></label>
+                    <label class="setup-field"><span>隱藏 TechmanPy 警告</span><input type="checkbox" data-setup-field="robot.techmanpy.suppress_warnings"></label>
+                    <label class="setup-field"><span>夾爪關閉腳本</span><input type="text" maxlength="512" data-setup-field="robot.techmanpy.gripper_close_script"></label>
+                    <label class="setup-field"><span>夾爪打開腳本</span><input type="text" maxlength="512" data-setup-field="robot.techmanpy.gripper_open_script"></label>
+                    <label class="setup-field"><span>需要 HELLO</span><input type="checkbox" data-setup-field="robot.tmflow_json.require_hello"></label>
+                    <label class="setup-field"><span>ACK 逾時秒數</span><input type="number" min="0.1" step="0.1" data-setup-field="robot.tmflow_json.ack_timeout_sec"></label>
+                    <label class="setup-field"><span>DONE 逾時秒數</span><input type="number" min="0.1" step="0.1" data-setup-field="robot.tmflow_json.done_timeout_sec"></label>
+                    <label class="setup-field"><span>長任務逾時秒數</span><input type="number" min="0.1" step="0.1" data-setup-field="robot.tmflow_json.long_task_timeout_sec"></label>
+                    <label class="setup-field"><span>最大重試次數</span><input type="number" min="0" max="10" step="1" data-setup-field="robot.tmflow_json.max_retry"></label>
+                    <label class="setup-field"><span>最大訊息位元組</span><input type="number" min="256" max="65536" step="1" data-setup-field="robot.tmflow_json.max_message_bytes"></label>
                     <label class="setup-field"><span>TMflow Base</span><input type="text" maxlength="128" data-setup-field="robot.tmflow_json.base"></label>
                     <label class="setup-field"><span>TMflow TCP</span><input type="text" maxlength="128" data-setup-field="robot.tmflow_json.tcp"></label>
-                    <label class="setup-field"><span>Gripper Wait ms</span><input type="number" min="0" max="60000" step="1" data-setup-field="robot.tmflow_json.gripper_wait_ms"></label>
-                    <label class="setup-field"><span>Stop Mode</span><select data-setup-field="robot.tmflow_json.stop_mode"><option value="CONTROLLED_STOP">CONTROLLED_STOP</option><option value="EMERGENCY_STOP">EMERGENCY_STOP</option></select></label>
-                    <label class="setup-field"><span>Register Scale</span><input type="number" min="0.01" step="0.01" data-setup-field="robot.modbus.register_scale"></label>
-                    <label class="setup-field"><span>Register Encoding</span><input type="text" maxlength="16" data-setup-field="robot.modbus.register_encoding"></label>
-                    <label class="setup-field"><span>Motion Register Base</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.motion_register_base"></label>
-                    <label class="setup-field"><span>Profile Register Base</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.profile_register_base"></label>
-                    <label class="setup-field"><span>Status Register</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.status_register"></label>
-                    <label class="setup-field"><span>Gripper Register</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.gripper_register"></label>
-                    <label class="setup-field"><span>Telemetry Enabled</span><input type="checkbox" data-setup-field="robot.modbus.telemetry_enabled"></label>
-                    <label class="setup-field"><span>Pose Feedback Base</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.telemetry_pose_register_base"></label>
-                    <label class="setup-field"><span>Joint Feedback Base</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.telemetry_joint_register_base"></label>
-                    <label class="setup-field"><span>Speed Feedback Register</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.telemetry_speed_register"></label>
-                    <label class="setup-field"><span>Command Handshake</span><input type="checkbox" data-setup-field="robot.modbus.command_handshake_enabled"></label>
-                    <label class="setup-field"><span>Command ID Register</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.command_id_register"></label>
-                    <label class="setup-field"><span>Trigger Register</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.command_trigger_register"></label>
-                    <label class="setup-field"><span>ACK Register</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.command_ack_register"></label>
-                    <label class="setup-field"><span>Error Code Register</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.error_code_register"></label>
-                    <label class="setup-field"><span>Trigger Value</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.command_trigger_value"></label>
-                    <label class="setup-field"><span>Clear Value</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.command_clear_value"></label>
-                    <label class="setup-field"><span>ACK Timeout</span><input type="number" min="0.01" step="0.01" data-setup-field="robot.modbus.command_ack_timeout_sec"></label>
-                    <label class="setup-field"><span>Status Idle</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.status_idle_value"></label>
-                    <label class="setup-field"><span>Status Moving</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.status_moving_value"></label>
-                    <label class="setup-field"><span>Status Complete</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.status_complete_value"></label>
-                    <label class="setup-field"><span>Status Error</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.status_error_value"></label>
-                    <label class="setup-field"><span>Gripper Feedback</span><input type="checkbox" data-setup-field="robot.modbus.gripper_feedback_enabled"></label>
-                    <label class="setup-field"><span>Gripper Status Register</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.gripper_status_register"></label>
-                    <label class="setup-field"><span>Gripper Close Value</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.gripper_close_value"></label>
-                    <label class="setup-field"><span>Gripper Open Value</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.gripper_open_value"></label>
-                    <label class="setup-field"><span>Gripper Opened Value</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.gripper_opened_value"></label>
-                    <label class="setup-field"><span>Gripper Closed Value</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.gripper_closed_value"></label>
-                    <label class="setup-field"><span>Gripper Error Value</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.gripper_error_value"></label>
-                    <label class="setup-field"><span>Gripper Timeout</span><input type="number" min="0.01" step="0.01" data-setup-field="robot.modbus.gripper_feedback_timeout_sec"></label>
+                    <label class="setup-field"><span>夾爪等待 ms</span><input type="number" min="0" max="60000" step="1" data-setup-field="robot.tmflow_json.gripper_wait_ms"></label>
+                    <label class="setup-field"><span>停止模式</span><select data-setup-field="robot.tmflow_json.stop_mode"><option value="CONTROLLED_STOP">CONTROLLED_STOP</option><option value="EMERGENCY_STOP">EMERGENCY_STOP</option></select></label>
+                    <label class="setup-field"><span>暫存器比例</span><input type="number" min="0.01" step="0.01" data-setup-field="robot.modbus.register_scale"></label>
+                    <label class="setup-field"><span>暫存器編碼</span><input type="text" maxlength="16" data-setup-field="robot.modbus.register_encoding"></label>
+                    <label class="setup-field"><span>動作暫存器起點</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.motion_register_base"></label>
+                    <label class="setup-field"><span>速度暫存器起點</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.profile_register_base"></label>
+                    <label class="setup-field"><span>狀態暫存器</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.status_register"></label>
+                    <label class="setup-field"><span>夾爪暫存器</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.gripper_register"></label>
+                    <label class="setup-field"><span>啟用遙測</span><input type="checkbox" data-setup-field="robot.modbus.telemetry_enabled"></label>
+                    <label class="setup-field"><span>姿態回饋起點</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.telemetry_pose_register_base"></label>
+                    <label class="setup-field"><span>關節回饋起點</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.telemetry_joint_register_base"></label>
+                    <label class="setup-field"><span>速度回饋暫存器</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.telemetry_speed_register"></label>
+                    <label class="setup-field"><span>命令握手</span><input type="checkbox" data-setup-field="robot.modbus.command_handshake_enabled"></label>
+                    <label class="setup-field"><span>命令 ID 暫存器</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.command_id_register"></label>
+                    <label class="setup-field"><span>觸發暫存器</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.command_trigger_register"></label>
+                    <label class="setup-field"><span>ACK 暫存器</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.command_ack_register"></label>
+                    <label class="setup-field"><span>錯誤碼暫存器</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.error_code_register"></label>
+                    <label class="setup-field"><span>觸發值</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.command_trigger_value"></label>
+                    <label class="setup-field"><span>清除值</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.command_clear_value"></label>
+                    <label class="setup-field"><span>ACK 逾時</span><input type="number" min="0.01" step="0.01" data-setup-field="robot.modbus.command_ack_timeout_sec"></label>
+                    <label class="setup-field"><span>待命狀態值</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.status_idle_value"></label>
+                    <label class="setup-field"><span>移動狀態值</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.status_moving_value"></label>
+                    <label class="setup-field"><span>完成狀態值</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.status_complete_value"></label>
+                    <label class="setup-field"><span>錯誤狀態值</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.status_error_value"></label>
+                    <label class="setup-field"><span>夾爪回饋</span><input type="checkbox" data-setup-field="robot.modbus.gripper_feedback_enabled"></label>
+                    <label class="setup-field"><span>夾爪狀態暫存器</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.gripper_status_register"></label>
+                    <label class="setup-field"><span>夾爪關閉值</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.gripper_close_value"></label>
+                    <label class="setup-field"><span>夾爪打開值</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.gripper_open_value"></label>
+                    <label class="setup-field"><span>夾爪已打開值</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.gripper_opened_value"></label>
+                    <label class="setup-field"><span>夾爪已關閉值</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.gripper_closed_value"></label>
+                    <label class="setup-field"><span>夾爪錯誤值</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.gripper_error_value"></label>
+                    <label class="setup-field"><span>夾爪回饋逾時</span><input type="number" min="0.01" step="0.01" data-setup-field="robot.modbus.gripper_feedback_timeout_sec"></label>
                 </div>
                 <div class="setup-inline-actions mt-12">
                     <button type="button" class="admin-btn mini" data-setup-test="connect">測試連線</button>
                     <button type="button" class="admin-btn mini" data-setup-test="status">讀取狀態</button>
                     <button type="button" class="admin-btn mini" data-setup-test="write_pose">寫入座標</button>
-                    <button type="button" class="admin-btn mini" data-setup-test="corner_a0">a0 Safe Z</button>
-                    <button type="button" class="admin-btn mini" data-setup-test="corner_i0">i0 Safe Z</button>
-                    <button type="button" class="admin-btn mini" data-setup-test="corner_a9">a9 Safe Z</button>
-                    <button type="button" class="admin-btn mini" data-setup-test="corner_i9">i9 Safe Z</button>
-                    <button type="button" class="admin-btn mini" data-setup-test="center_e4">e4 Safe Z</button>
-                    <button type="button" class="admin-btn mini" data-setup-test="grab_z">e4 Grab Z</button>
+                    <button type="button" class="admin-btn mini" data-setup-test="corner_a0">a0 安全 Z</button>
+                    <button type="button" class="admin-btn mini" data-setup-test="corner_i0">i0 安全 Z</button>
+                    <button type="button" class="admin-btn mini" data-setup-test="corner_a9">a9 安全 Z</button>
+                    <button type="button" class="admin-btn mini" data-setup-test="corner_i9">i9 安全 Z</button>
+                    <button type="button" class="admin-btn mini" data-setup-test="center_e4">e4 安全 Z</button>
+                    <button type="button" class="admin-btn mini" data-setup-test="grab_z">e4 夾取 Z</button>
                     <button type="button" class="admin-btn mini" data-setup-test="gripper_open">測試放開</button>
                     <button type="button" class="admin-btn mini" data-setup-test="gripper_close">測試夾取</button>
-                    <button type="button" class="admin-btn mini" data-setup-test="safe_z">驗證 Safe Z</button>
+                    <button type="button" class="admin-btn mini" data-setup-test="safe_z">驗證安全 Z</button>
                     <button type="button" class="admin-btn mini" data-setup-test="origin">驗證原點</button>
                     <button type="button" class="admin-btn mini" data-setup-test="dead_zone">驗證死棋區</button>
                     <button type="button" class="admin-btn mini" data-setup-test="one_move">驗證 a0a1</button>
                 </div>
                 <div class="setup-status-line">
-                    <span>Hardware Test</span>
+                    <span>硬體測試</span>
                     <strong id="setup-hardware-test-status">--</strong>
                 </div>
                 <div class="setup-file-list">
                     <div><span>設定檔</span><strong id="setup-settings-file">--</strong></div>
-                    <div><span>Robot 校正</span><strong id="setup-robot-file">--</strong></div>
-                    <div><span>Vision 校正</span><strong id="setup-vision-file">--</strong></div>
+                    <div><span>手臂校正</span><strong id="setup-robot-file">--</strong></div>
+                    <div><span>視覺校正</span><strong id="setup-vision-file">--</strong></div>
                 </div>
             </section>
                 </div>

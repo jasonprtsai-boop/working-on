@@ -309,7 +309,7 @@ class TestRobotMotionFailClosed(unittest.TestCase):
             "FAKE_ROBOT",
             False,
         ):
-            adapter = TechmanPyAdapter(host="169.254.47.64", port=5890)
+            adapter = TechmanPyAdapter(host="192.168.10.10", port=5890)
 
             self.assertFalse(adapter.connect())
             self.assertFalse(adapter.connected)
@@ -322,7 +322,7 @@ class TestRobotMotionFailClosed(unittest.TestCase):
             "FAKE_ROBOT",
             True,
         ):
-            adapter = TechmanPyAdapter(host="169.254.47.64", port=5890)
+            adapter = TechmanPyAdapter(host="192.168.10.10", port=5890)
 
             self.assertTrue(adapter.connect())
             self.assertTrue(adapter.connected)
@@ -330,7 +330,7 @@ class TestRobotMotionFailClosed(unittest.TestCase):
 
     def test_techmanpy_rejects_non_external_script_port(self):
         with patch.object(techmanpy_adapter.config, "FAKE_ROBOT", False):
-            adapter = TechmanPyAdapter(host="169.254.47.64", port=502)
+            adapter = TechmanPyAdapter(host="192.168.10.10", port=502)
 
             self.assertFalse(adapter.connect())
             self.assertFalse(adapter.connected)

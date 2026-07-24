@@ -15,17 +15,24 @@ class Camera:
 
     def open(self) -> bool:
         """開啟攝影機連線。"""
-        try:
-            self.cap = cv2.VideoCapture(self.index, cv2.CAP_DSHOW)
-            if not self.cap.isOpened():
-                self.cap = cv2.VideoCapture(self.index)
+        backends = []
+        for name in ("CAP_DSHOW", "CAP_MSMF"):
+            backend = getattr(cv2, name, None)
+            if backend is not None:
+                backends.append((name, backend))
+        backends.append(("default", None))
 
-            if self.cap.isOpened():
-                self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-                logger.info(f"[Camera] Connected to index {self.index}")
-                return True
-        except Exception as e:
-            logger.error(f"[Camera] Connection failed: {e}")
+        for backend_name, backend in backends:
+            try:
+                self.cap = cv2.VideoCapture(self.index, backend) if backend is not None else cv2.VideoCapture(self.index)
+                if self.cap.isOpened():
+                    self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                    logger.info(f"[Camera] Connected to index {self.index} with {backend_name}")
+                    return True
+                self.release()
+            except Exception as e:
+                logger.debug(f"[Camera] Connection failed with {backend_name}: {e}", exc_info=True)
+                self.release()
         return False
 
     def get_frame(self) -> Optional[np.ndarray]:

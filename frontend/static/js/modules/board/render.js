@@ -59,7 +59,7 @@ export function initRenderer() {
         const fpsEl = UIRegistry.get('videoFps');
         const tsEl = UIRegistry.get('videoTs');
         if (fpsEl && typeof visionState?.fps === 'number') fpsEl.innerText = `FPS: ${Math.round(visionState.fps)}`;
-        if (tsEl) tsEl.innerText = `Updated: ${new Date().toLocaleTimeString()}`;
+        if (tsEl) tsEl.innerText = `更新：${new Date().toLocaleTimeString()}`;
     }));
 
     unsubscribeHandlers.push(subscribe('engine', (engineState) => {
@@ -97,7 +97,7 @@ export function updateDisplay(_data) {}
 function updateUIStatus(uiState) {
     const boardState = state.snapshot.board;
     const statusEl = UIRegistry.get('statusText');
-    if (statusEl) statusEl.innerText = `System: ${translatePhaseLabel(uiState?.phase)}`;
+    if (statusEl) statusEl.innerText = `系統：${translatePhaseLabel(uiState?.phase)}`;
 
     updateTurnIndicators(boardState);
 
@@ -164,16 +164,16 @@ function turnFromFen(fen) {
 function translatePhaseLabel(phase) {
     const normalized = String(phase || '').trim().toUpperCase();
     const labels = {
-        IDLE: 'idle',
-        READY: 'ready',
-        RUNNING: 'running',
-        ACTIVE: 'active',
-        PAUSED: 'paused',
-        PAUSE: 'paused',
-        STOPPED: 'stopped',
-        RESETTING: 'resetting',
-        ERROR: 'error',
-        EMERGENCY: 'emergency',
+        IDLE: '待命',
+        READY: '就緒',
+        RUNNING: '運行中',
+        ACTIVE: '運行中',
+        PAUSED: '已暫停',
+        PAUSE: '已暫停',
+        STOPPED: '已停止',
+        RESETTING: '重置中',
+        ERROR: '錯誤',
+        EMERGENCY: '緊急停止',
     };
-    return labels[normalized] || phase || 'idle';
+    return labels[normalized] || phase || '待命';
 }

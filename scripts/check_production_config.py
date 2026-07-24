@@ -38,6 +38,8 @@ def _safe_production_env(tmpdir: str) -> dict[str, str]:
             "FAKE_VISION": "0",
             "FAKE_ROBOT": "0",
             "FAKE_AI": "0",
+            "VISION_SOURCE": "opencv",
+            "VISION_TMFLOW_INGEST_KEY": "",
             "DB_PATH": str(Path(tmpdir, "prod.db").resolve()),
             "SMART_CHESS_HOST": "127.0.0.1",
             "SMART_CHESS_BIND_ALL": "0",
@@ -172,6 +174,18 @@ def _run_self_test() -> int:
             fake_modes,
             ("SYSTEM_MODE", "FAKE_VISION", "FAKE_ROBOT", "FAKE_AI"),
         )
+
+        tmflow_vision_without_key = dict(safe)
+        tmflow_vision_without_key.update({"VISION_SOURCE": "tmflow_json", "VISION_TMFLOW_INGEST_KEY": ""})
+        passed &= _expect_fail(
+            "reject tmflow vision without ingest key",
+            tmflow_vision_without_key,
+            ("VISION_TMFLOW_INGEST_KEY",),
+        )
+
+        tmflow_vision_with_key = dict(tmflow_vision_without_key)
+        tmflow_vision_with_key["VISION_TMFLOW_INGEST_KEY"] = "configured-secret"
+        passed &= _expect_pass("accept tmflow vision with ingest key", tmflow_vision_with_key)
 
         bad_db = dict(safe)
         bad_db["DB_PATH"] = "data/runtime/prod.db"

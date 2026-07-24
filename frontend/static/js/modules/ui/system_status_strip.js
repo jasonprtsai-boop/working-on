@@ -1,23 +1,23 @@
 import { RenderScheduler } from '../core/render_scheduler.js';
 
 const DEFAULT_LIGHTS = [
-    { id: 'frontend', label: 'Frontend', group: 'logic', status: 'running', message: 'UI loaded' },
+    { id: 'frontend', label: '前端介面', group: 'logic', status: 'running', message: '介面已載入' },
     { id: 'socket', label: 'Socket.IO', group: 'logic' },
     { id: 'eventbus', label: 'EventBus', group: 'logic' },
-    { id: 'state', label: 'State Store', group: 'logic' },
-    { id: 'vision', label: 'Vision', group: 'logic' },
+    { id: 'state', label: '狀態儲存', group: 'logic' },
+    { id: 'vision', label: '視覺', group: 'logic' },
     { id: 'yolo', label: 'YOLO', group: 'logic' },
-    { id: 'board', label: 'Board', group: 'logic' },
+    { id: 'board', label: '棋盤', group: 'logic' },
     { id: 'engine', label: 'Pikafish', group: 'logic' },
-    { id: 'queue', label: 'Queue', group: 'logic' },
-    { id: 'robot', label: 'Robot', group: 'hardware' },
-    { id: 'serial', label: 'Serial', group: 'hardware' },
+    { id: 'queue', label: '佇列', group: 'logic' },
+    { id: 'robot', label: '機械手臂', group: 'hardware' },
+    { id: 'serial', label: '序列埠', group: 'hardware' },
     { id: 'usb', label: 'USB', group: 'hardware' },
-    { id: 'storage', label: 'Storage', group: 'hardware' },
+    { id: 'storage', label: '儲存', group: 'hardware' },
     { id: 'cpu', label: 'CPU', group: 'hardware' },
     { id: 'ram', label: 'RAM', group: 'hardware' },
     { id: 'gpu', label: 'GPU', group: 'hardware' },
-    { id: 'temperature', label: 'Temp', group: 'hardware' },
+    { id: 'temperature', label: '溫度', group: 'hardware' },
 ];
 
 const STATUS_PRIORITY = {
@@ -33,15 +33,15 @@ const STATUS_PRIORITY = {
 };
 
 const STATUS_LABELS = {
-    idle: 'Idle',
-    active: 'Active',
-    running: 'Running',
-    processing: 'Processing',
-    success: 'Success',
-    warning: 'Warning',
-    blocked: 'Blocked',
-    offline: 'Offline',
-    error: 'Error',
+    idle: '待命',
+    active: '啟用',
+    running: '運行中',
+    processing: '處理中',
+    success: '正常',
+    warning: '警告',
+    blocked: '阻塞',
+    offline: '離線',
+    error: '錯誤',
 };
 
 export const SystemStatusStrip = {
@@ -122,7 +122,7 @@ export const SystemStatusStrip = {
         this.mergeLight('temperature', temperatureLight(health.temperature));
 
         if (this.updated) {
-            this.updated.textContent = `updated ${formatTime(topology.updated_at || health.timestamp || Date.now() / 1000)}`;
+            this.updated.textContent = `更新 ${formatTime(topology.updated_at || health.timestamp || Date.now() / 1000)}`;
         }
     },
 
@@ -195,7 +195,7 @@ export const SystemStatusStrip = {
 
         const link = document.createElement('a');
         link.href = '/dashboard';
-        link.textContent = 'Open diagnostics';
+        link.textContent = '開啟診斷';
         link.className = 'system-status-detail__link';
 
         this.detail.append(title, body, link);
@@ -261,9 +261,9 @@ function queueLight(queue, edges) {
     const full = queues.some((item) => item.full);
     const edgeBlocked = (edges || []).some((edge) => edge?.status === 'blocked');
     return {
-        label: 'Queue',
+        label: '佇列',
         status: blocked || edgeBlocked ? 'blocked' : (full ? 'warning' : (size > 0 ? 'processing' : 'success')),
-        message: `${size} queued`,
+        message: `佇列 ${size} 筆`,
         lastEvent: blocked ? 'QUEUE_BLOCKED' : 'QUEUE_MONITOR',
     };
 }
@@ -271,9 +271,9 @@ function queueLight(queue, edges) {
 function visionLight(vision) {
     const status = vision.status || (vision.camera_ready ? 'success' : 'idle');
     return {
-        label: 'Vision',
+        label: '視覺',
         status: vision.simulation ? 'warning' : sanitizeStatus(status),
-        message: `fps: ${formatNumber(vision.fps)} camera: ${vision.camera ?? '--'}`,
+        message: `FPS：${formatNumber(vision.fps)} 相機：${vision.camera ?? '--'}`,
         lastEvent: 'VISION.STATUS',
         latencyMs: vision.latency_ms ?? vision.latency,
         updatedAt: vision.timestamp,
@@ -287,7 +287,7 @@ function yoloLight(vision, workers) {
     return {
         label: 'YOLO',
         status,
-        message: `detections: ${detections ?? '--'} confidence: ${formatPercent(vision.avg_confidence ?? vision.confidence)}`,
+        message: `偵測：${detections ?? '--'} 信心值：${formatPercent(vision.avg_confidence ?? vision.confidence)}`,
         lastEvent: 'VISION_DETECTOR',
         latencyMs: vision.latency_ms ?? vision.latency,
     };
@@ -296,9 +296,9 @@ function yoloLight(vision, workers) {
 function boardLight(vision) {
     const hasBoard = Boolean(vision.fen || vision.fen_after || Object.keys(vision.board_state || {}).length);
     return {
-        label: 'Board',
+        label: '棋盤',
         status: hasBoard ? 'success' : 'idle',
-        message: vision.fen_after || vision.fen || 'waiting for board reconstruction',
+        message: vision.fen_after || vision.fen || '等待棋盤重建',
         lastEvent: hasBoard ? 'BOARD_RECOGNIZED' : 'BOARD_WAITING',
     };
 }
@@ -307,35 +307,35 @@ function engineLight(engine) {
     return {
         label: 'Pikafish',
         status: engine.is_thinking ? 'processing' : (engine.best_move || engine.bestMove ? 'success' : 'idle'),
-        message: `depth: ${engine.depth ?? '--'} best: ${engine.best_move || engine.bestMove || '--'}`,
+        message: `深度：${engine.depth ?? '--'} 最佳步：${engine.best_move || engine.bestMove || '--'}`,
         lastEvent: 'ENGINE.INFO_UPDATED',
     };
 }
 
 function robotLight(robot) {
     if (robot.error) {
-        return { label: 'Robot', status: 'error', message: robot.error, lastEvent: 'ROBOT_ERROR' };
+        return { label: '機械手臂', status: 'error', message: robot.error, lastEvent: 'ROBOT_ERROR' };
     }
     const connection = robot.connection && typeof robot.connection === 'object' ? robot.connection : {};
     const host = robot.ip || connection.ip || connection.host || '';
     const port = robot.port ?? connection.port;
-    const endpoint = host ? `${host}${port ? `:${port}` : ''}` : 'ip: --';
+    const endpoint = host ? `${host}${port ? `:${port}` : ''}` : 'IP：--';
     return {
-        label: 'Robot',
+        label: '機械手臂',
         status: robot.busy ? 'running' : (robot.connected || robot.is_connected ? 'success' : 'offline'),
-        message: `${endpoint} queue: ${robot.queue_size ?? '--'} action: ${robot.last_action || '--'}`,
+        message: `${endpoint} 佇列：${robot.queue_size ?? '--'} 動作：${robot.last_action || '--'}`,
         lastEvent: 'ROBOT.STATUS_UPDATED',
     };
 }
 
 function linkLight(label, link) {
     if (!link || typeof link !== 'object') {
-        return { label, status: 'idle', message: 'no status yet', lastEvent: `${label.toUpperCase()}_WAITING` };
+        return { label, status: 'idle', message: '尚無狀態', lastEvent: `${label.toUpperCase()}_WAITING` };
     }
     return {
         label,
         status: link.available ? 'success' : 'offline',
-        message: link.status || (link.available ? 'available' : 'unavailable'),
+        message: link.status || (link.available ? '可用' : '無法取得'),
         lastEvent: `${label.toUpperCase()}_STATUS`,
     };
 }
@@ -345,7 +345,7 @@ function cpuLight(health) {
     return {
         label: 'CPU',
         status: Number.isFinite(value) ? (value >= 90 ? 'warning' : 'success') : 'idle',
-        message: Number.isFinite(value) ? `${value.toFixed(1)}%` : 'unavailable',
+        message: Number.isFinite(value) ? `${value.toFixed(1)}%` : '無法取得',
         lastEvent: 'HEALTH.CPU',
     };
 }
@@ -355,14 +355,14 @@ function ramLight(health) {
     return {
         label: 'RAM',
         status: Number.isFinite(value) ? 'success' : 'idle',
-        message: Number.isFinite(value) ? `${value.toFixed(0)} MB` : 'unavailable',
+        message: Number.isFinite(value) ? `${value.toFixed(0)} MB` : '無法取得',
         lastEvent: 'HEALTH.RAM',
     };
 }
 
 function gpuLight(gpu) {
     if (!gpu || gpu.available === false) {
-        return { label: 'GPU', status: 'offline', message: gpu?.reason || 'unavailable', lastEvent: 'GPU_UNAVAILABLE' };
+        return { label: 'GPU', status: 'offline', message: gpu?.reason || '無法取得', lastEvent: 'GPU_UNAVAILABLE' };
     }
     return {
         label: 'GPU',
@@ -374,13 +374,13 @@ function gpuLight(gpu) {
 
 function temperatureLight(temp) {
     if (!temp || temp.available === false) {
-        return { label: 'Temp', status: 'offline', message: temp?.reason || 'unavailable', lastEvent: 'TEMP_UNAVAILABLE' };
+        return { label: '溫度', status: 'offline', message: temp?.reason || '無法取得', lastEvent: 'TEMP_UNAVAILABLE' };
     }
     const value = Number(temp.max_c);
     return {
-        label: 'Temp',
+        label: '溫度',
         status: Number.isFinite(value) && value >= 80 ? 'warning' : 'success',
-        message: Number.isFinite(value) ? `${value.toFixed(1)} C ${temp.label || ''}` : 'available',
+        message: Number.isFinite(value) ? `${value.toFixed(1)} C ${temp.label || ''}` : '可用',
         lastEvent: 'TEMPERATURE_STATUS',
     };
 }
@@ -388,11 +388,11 @@ function temperatureLight(temp) {
 function detailText(light) {
     if (!light) return '';
     const parts = [
-        `status: ${STATUS_LABELS[light.status] || light.status}`,
-        light.lastEvent ? `event: ${light.lastEvent}` : '',
-        Number.isFinite(Number(light.latencyMs)) ? `latency: ${Number(light.latencyMs).toFixed(0)}ms` : '',
-        light.message ? `message: ${light.message}` : '',
-        light.updatedAt ? `updated: ${formatTime(light.updatedAt)}` : '',
+        `狀態：${STATUS_LABELS[light.status] || light.status}`,
+        light.lastEvent ? `事件：${light.lastEvent}` : '',
+        Number.isFinite(Number(light.latencyMs)) ? `延遲：${Number(light.latencyMs).toFixed(0)}ms` : '',
+        light.message ? `訊息：${light.message}` : '',
+        light.updatedAt ? `更新：${formatTime(light.updatedAt)}` : '',
     ];
     return parts.filter(Boolean).join(' | ');
 }

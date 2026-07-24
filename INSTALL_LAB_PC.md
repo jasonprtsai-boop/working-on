@@ -1,19 +1,18 @@
-# Lab PC Installation
+# 實驗室電腦安裝指南
 
-Use this checklist for the computer that will connect to the camera and
-TM5-700.
+請使用這份清單來設定將連接相機與 TM5-700 機械手臂的電腦。
 
-## Before Installing
+## 安裝前準備
 
-- Confirm Windows 10/11 64-bit.
-- Install Python 3.11.9 64-bit.
-- Install Node.js 24 LTS.
-- Disable aggressive USB power saving for the camera port.
-- Connect the lab PC and robot controller to the same isolated network.
-- Configure the PC Ethernet adapter for the robot link, for example `169.254.47.50` with subnet mask `255.255.0.0`.
-- Confirm TMflow `1.82`, controller `1.82.51`, robot IP `169.254.47.64`, and the TMflow TCP JSON socket server on TCP `5890`.
+- 確認為 Windows 10/11 64位元系統。
+- 安裝 Python 3.11.9 64位元版本。
+- 安裝 Node.js 24 LTS。
+- 停用相機所連接的 USB 埠的主動節能（省電）功能。
+- 將實驗室電腦與機械手臂控制器連接至同一個獨立網域。
+- 將電腦網路卡設定為符合機械手臂網域的 IP，例如 `192.168.10.50`，子網路遮罩 `255.255.0.0`。若現場網卡已有固定 IP，可使用同一個 `192.168.x.x` 網段且不要與手臂 IP 重複。
+- 確認 TMflow 版本為 `1.82`，控制器版本為 `1.82.51`，機械手臂 IP 為 `192.168.10.10`，並且在 TCP 埠 `5890` 上開啟 TMflow TCP JSON Socket 伺服器。
 
-## Install
+## 安裝步驟
 
 ```powershell
 py -3.11 -m venv .venv
@@ -23,7 +22,7 @@ py -3.11 -m venv .venv
 Copy-Item .env.example .env
 ```
 
-Edit `.env` for the lab computer:
+為實驗室電腦編輯 `.env` 檔案：
 
 ```env
 SMART_CHESS_HOST=127.0.0.1
@@ -33,9 +32,9 @@ FAKE_AI=true
 AUTO_EXECUTE_ROBOT=false
 CAMERA_INDEX=0
 ROBOT_ADAPTER=tmflow_json
-ROBOT_IP=169.254.47.64
+ROBOT_IP=192.168.10.10
 ROBOT_PORT=5890
-ROBOT_PC_IP=169.254.47.50
+ROBOT_PC_IP=192.168.10.50
 ROBOT_SUBNET_MASK=255.255.0.0
 TMFLOW_VERSION=1.82
 TM_CONTROLLER_VERSION=1.82.51
@@ -44,31 +43,30 @@ ROBOT_TMFLOW_WIRE_FORMAT=envelope
 ROBOT_TMFLOW_REQUIRE_HELLO=true
 ```
 
-Start in simulation-safe mode first:
+首先以模擬安全模式啟動：
 
 ```powershell
 .\.venv\Scripts\python.exe main.py
 ```
 
-Before connecting the real robot, run the full software check:
+在連接真實機械手臂之前，請先執行完整的軟體檢查：
 
 ```powershell
 .\check_system.cmd
 ```
 
-## First Setup Flow
+## 首次設定流程
 
-1. Log in to the setup page with password `login`.
-2. Select and verify the camera.
-3. Calibrate the board view.
-4. Set origin height, safe Z, grab Z, and place offset.
-5. Set software X/Y/Z limits and dead-zone range.
-6. Run preflight.
-7. Run hardware tests only after TMflow safety limits and the TCP JSON socket server are enabled.
-8. Enable `FAKE_ROBOT=false` only for real robot validation.
-9. Enable `AUTO_EXECUTE_ROBOT=true` only after one-move testing succeeds.
+1. 使用密碼 `login` 登入設定頁面。
+2. 選擇並驗證相機。
+3. 進行棋盤視角校正。
+4. 設定原點高度（origin height）、安全高度（safe Z）、抓取高度（grab Z）以及放置偏移（place offset）。
+5. 設定軟體 X/Y/Z 軸限制及死區（dead-zone）範圍。
+6. 執行 preflight（飛行前/操作前）檢查。
+7. 只有在啟用 TMflow 安全限制與 TCP JSON Socket 伺服器後，才可執行硬體測試。
+8. 只有在準備進行實機驗證時，才將 `FAKE_ROBOT=false` 啟用。
+9. 只有在單步移動測試（one-move testing）成功後，才可將 `AUTO_EXECUTE_ROBOT=true` 啟用。
 
-## Lab Rule
+## 實驗室規範
 
-Do not use real robot mode on a shared or public network. Keep the robot,
-camera, and control PC on a controlled lab network.
+請勿在共用或公開網域使用真實機械手臂模式。請將機械手臂、相機與控制電腦維持在受控的實驗室網域內。

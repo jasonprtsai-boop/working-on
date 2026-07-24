@@ -149,6 +149,7 @@ test('core app enters console directly and resets emergency stop via API', async
   window.sessionStorage.setItem('adminToken', jwtWithPayload({ role: 'admin', exp: Math.floor(Date.now() / 1000) + 3600 }));
   window.sessionStorage.setItem('adminRole', 'admin');
   document.getElementById('btn-role-console').click();
+  await flushAsync();
   expect(document.getElementById('view-console').classList.contains('active')).toBe(true);
   expect(document.getElementById('vision-live-feed').src).toContain('/api/video_feed?t=');
   expect(document.getElementById('btn-export-excel').disabled).toBe(false);

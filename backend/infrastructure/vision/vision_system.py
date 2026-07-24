@@ -114,7 +114,7 @@ def _build_real_vision_system():
     # Local imports so the module can still be imported without numpy/opencv installed.
     import numpy as np  # noqa: F401
 
-    from .camera.camera_manager import CameraManager
+    from .camera.vision_source_manager import VisionSourceManager
     from .camera.frame_buffer import frame_buffer
     from .preprocess.image_preprocessor import ImagePreprocessor, PerspectiveCorrector
     from .detection.yolo_detector import YOLODetector
@@ -269,7 +269,7 @@ def _build_real_vision_system():
         """
 
         def __init__(self):
-            self.camera = CameraManager()
+            self.camera = VisionSourceManager()
             self.preprocessor = ImagePreprocessor()
             self.corrector = PerspectiveCorrector()
             self.detector = self._select_detector()
@@ -431,6 +431,15 @@ def _build_real_vision_system():
             if ok:
                 try:
                     config.CAMERA_INDEX = int(camera_index)
+                except Exception:
+                    pass
+            return bool(ok)
+
+        def set_frame_source(self, source: str, *, camera_index: int | None = None) -> bool:
+            ok = self.camera.set_source(source, camera_index=camera_index)
+            if ok:
+                try:
+                    config.VISION_SOURCE = str(getattr(self.camera, "source", source or "opencv")).strip().lower()
                 except Exception:
                     pass
             return bool(ok)

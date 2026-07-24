@@ -203,11 +203,28 @@ class TestConfigSecurity(unittest.TestCase):
             "FAKE_VISION": "0",
             "FAKE_ROBOT": "0",
             "FAKE_AI": "0",
+            "VISION_SOURCE": "opencv",
             "PYTHONPATH": os.getcwd(),
         })
         if tmpdir:
             env["DB_PATH"] = os.path.join(tmpdir, "prod.db")
         return env
+
+    def test_production_tmflow_vision_requires_ingest_key(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            env = self._production_env(tmpdir)
+            env.update({
+                "VISION_SOURCE": "tmflow_json",
+                "VISION_TMFLOW_INGEST_KEY": "",
+            })
+            missing = self._import_config(env)
+
+            env["VISION_TMFLOW_INGEST_KEY"] = "configured-secret"
+            configured = self._import_config(env)
+
+        self.assertNotEqual(missing.returncode, 0)
+        self.assertIn("VISION_TMFLOW_INGEST_KEY", missing.stderr + missing.stdout)
+        self.assertEqual(configured.returncode, 0, configured.stderr + configured.stdout)
 
     def _import_config(self, env: dict):
         return subprocess.run(

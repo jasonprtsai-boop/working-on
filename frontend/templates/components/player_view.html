@@ -1,14 +1,14 @@
 <section id="view-player" class="view-player hidden">
     <nav class="top-nav">
-        <div class="logo">CHESS <span>OS</span></div>
+        <div class="logo">玩家 <span>對局</span></div>
         <button id="btn-exit" type="button" class="btn-exit" aria-label="返回主畫面">返回主畫面</button>
     </nav>
 
     <div id="player-start-panel" class="player-start-panel">
         <div class="player-start-card">
-            <span class="player-start-kicker">玩家模式</span>
+            <span class="player-start-kicker">玩家介面</span>
             <h1>準備開始對局</h1>
-            <p class="player-start-copy">按下開始後，系統才會啟動辨識與 AI 流程。</p>
+            <p class="player-start-copy">棋盤會是主要畫面，左側保留回合、辨識與安全狀態。</p>
             <button id="btn-player-start" type="button" class="btn-player-start">開始對局</button>
         </div>
     </div>
@@ -42,7 +42,7 @@
                 <div class="player-guide-main">
                     <span class="player-guide-kicker" id="player-guide-step">等待開始</span>
                     <strong id="player-guide-action">請按下開始對局</strong>
-                    <p id="player-guide-detail">開始後，畫面會提示輪到哪一方、辨識是否成功，以及機械手臂是否準備動作。</p>
+                    <p id="player-guide-detail">依畫面提示移動棋子；機械手臂動作時請保持雙手離開棋盤。</p>
                 </div>
                 <div class="player-guide-status-grid">
                     <div class="player-guide-status" data-state="standby">
@@ -69,7 +69,7 @@
                 <span id="player-turn-indicator" class="turn-indicator-pill red">紅方移動</span>
             </div>
             <div class="player-control-strip">
-                <button id="btn-player-estop" type="button" class="btn-remote danger">E-Stop</button>
+                <button id="btn-player-estop" type="button" class="btn-remote danger">緊急停止</button>
             </div>
         </div>
     </div>

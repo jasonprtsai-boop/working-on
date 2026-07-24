@@ -1,94 +1,139 @@
 # S.M.A.R.T. Chess Robot - Development Plan
 
-本文件整理目前專案的近期與中長期開發方向。詳細 release/changeset 分類請看 `docs/CHANGESET_TRIAGE.md`，階段性路線圖請看 `docs/ROADMAP.md`。
+This file is the short working plan for the current system. Use
+`docs/ROADMAP.md` for the full phased roadmap and `docs/CHANGESET_TRIAGE.md`
+when preparing a release or reviewing a large changeset.
 
-## Current Status
+## Current Baseline
 
 | Area | Current state |
 | --- | --- |
-| Dashboard contract | 前端狀態 schema、runtime contract 與 diagnostics payload 已集中管理。 |
-| Socket access | `.env.example` 已提供 `SOCKET_PUBLIC_SNAPSHOT_ENABLED` 與 socket action allowlist。 |
-| Queue policy | `QueuePolicy` enum、managed queue stats 與 persistence drop diagnostics 已存在。 |
-| Production preflight | `scripts/check_production_config.py` 已提供 production profile 檢查。 |
-| Protected assets | engine、NNUE、YOLO model、dataset mapping 與 training args 已列入 protected asset manifest。 |
-| Vision pipeline | 目前以 YOLO full-frame inference、homography 校正、board mapping 與 FEN generation 為主。 |
+| Runtime | Flask + Socket.IO app with centralized bootstrap, async runtime, workers, state management, and SQLite persistence. |
+| Frontend | Flask-rendered console/player/setup UI with modular board, state, websocket, and dashboard renderers. |
+| Engine | Pikafish UCI integration with protected engine and NNUE asset validation. |
+| Vision | OpenCV/YOLO model path, calibration, board mapping, FEN generation, MJPEG streaming, and regression fixtures. |
+| Robot | Fake robot plus TMflow JSON, TechmanPy, and Modbus compatibility paths behind E-Stop and fail-closed checks. |
+| Verification | `quality_gate.py`, `check_system.cmd`, Jest, Playwright smoke, protected asset checks, production preflight, and release/share dry-runs. |
+
+## Immediate Connection Optimization Plan
+
+Lab network baseline:
+
+- Robot controller IP: `192.168.10.10`
+- Suggested control PC Ethernet IP: `192.168.10.50`
+- Subnet mask: `255.255.0.0`
+- Robot command port: `5890`
+- TMflow vision frame port: `5891`
+
+Execution order:
+
+1. Align source defaults, setup UI defaults, tests, `.env.example`, and runbooks to the lab network baseline.
+2. Add a preflight network-shape check before socket communication: robot IP, PC IP, subnet mask, same subnet, and no duplicate IP.
+3. Surface control-channel and vision-channel status separately in setup diagnostics.
+4. Keep TMflow command traffic on `5890` and image/frame traffic on `5891`.
+5. Add socket-level regression tests for TMflow vision frame reconnect, oversized payload, decode failure, and FPS limiting.
+6. Require a configured TMflow vision ingest key before production or shared-network operation.
+
+Current execution:
+
+- Completed the lab IP baseline update.
+- Added the preflight subnet consistency check.
+- Removed inactive legacy robot compatibility controller modules and archived report/demo scripts.
+- Reduced backend diagnostics monitoring refresh to a configurable `MONITORING_INTERVAL_SEC=1.0` default.
+- Next implementation target is a compact setup diagnostics panel for command port, vision port, frame age, and reconnect count.
 
 ## Phase 1 - Baseline Stabilization
 
-目標：把目前可運作的研究平台整理成可以 review、測試、交付與回復的穩定 baseline。
+Goal: keep the current runnable system easy to review and safe to package.
 
 Priority work:
 
-- 完成 `docs/CHANGESET_TRIAGE.md` 中 modified、deleted、untracked 檔案分類。
-- 保留必要 source、tests、scripts、protected assets，排除 runtime artifacts。
-- 讓 README、install guide、runbook、queue policy 與 roadmap 對齊目前實作。
-- 維持一組可重複執行的檢查指令：`.\check_system.cmd`、`.\check_system_strict.cmd`、`scripts\quality_gate.py`。
-- 確認舊版 detector 與舊 docs 的刪除是有意的。
+- Keep `.env.example` safe: no real local password defaults and insecure switches off by default.
+- Add tests that detect unclassified API routes before they become authorization gaps.
+- Keep docs readable and aligned with the actual runtime.
+- Track any quality-check side effects immediately; system checks should not modify tracked source files.
+- Run `.\check_system.cmd` before handoff and `.\check_system_strict.cmd` before release.
 
 Exit criteria:
 
-- Git working tree 中每一類變更都有明確保留或移除理由。
-- 所有文件中的 setup、test、vision、robot 指令都與目前 script 名稱一致。
-- `.\check_system.cmd` 可作為非 clean-tree 開發檢查。
-- `.\check_system_strict.cmd` 可作為 release/handoff 前檢查。
+- Working tree changes are intentional and grouped by feature area.
+- Runtime artifacts remain ignored and excluded from release/share packages.
+- Quality and system checks pass without mutating tracked files.
 
-## Phase 2 - Core Runtime Refinement
+## Phase 2 - Runtime And Contract Refinement
 
-目標：降低 legacy path 與事件/worker 邊界的模糊度，讓 runtime 行為更容易驗證。
+Goal: reduce ambiguity in event, worker, and diagnostics ownership.
 
 Priority work:
 
-- 收斂 `EventBus.publish` 的 legacy dict 使用方式，讓舊資料透過 adapter 進入事件系統。
-- 明確化 `WorkerProtocol` 與 worker lifecycle，包含 start、stop、status、failure/backoff。
-- 持續擴充 `DIAGNOSTICS.UPDATED` nested schema，讓 dashboard 與 tests 能檢查 health、queue、workers、pipeline、topology。
-- 決定長期 owner：即時 `VisionSystem` 與 queue-based `VisionPipeline` 的責任分界。
-- 補強 vision coordinate metadata，保留 `camera_frame`、`rectified_board`、raw inverse-mapped bbox/anchor。
+- Keep `EventBus.publish` accepting only `BaseEvent` internally; retire legacy dict paths behind explicit adapters.
+- Keep worker lifecycle snapshots consistent across async and thread-based workers.
+- Expand `DIAGNOSTICS.UPDATED` coverage for workers, queues, persistence, topology, and pipeline health.
+- Decide whether legacy `VisionSystem` or queue-based `VisionPipeline` owns the long-term vision runtime.
 
 Exit criteria:
 
-- Legacy event path 有測試保護，且 production profile 能關閉不安全相容模式。
-- Worker status snapshot 能清楚指出 running、stopped、failed、blocked。
-- Vision regression tests 涵蓋 calibration、mapping、FEN、DTO payload 與 overlay metadata。
+- Production config disables legacy event ingress.
+- Worker status exposes running, stopped, failed, blocked, and last-error states.
+- Frontend contract tests cover every emitted stable event shape.
 
-## Phase 3 - Robot Safety And Hardware Readiness
+## Phase 3 - Vision Pipeline Hardening
 
-目標：讓 TM5-700 實機驗證保持 fail-closed，並讓每一步操作可追蹤。
+Goal: make camera calibration, detection, mapping, and FEN generation observable and reproducible.
 
 Priority work:
 
-- 持續維護 TMflow TCP JSON ACK/STARTED/DONE/ERROR contract。
-- 將 soft limits、dead zone、gripper feedback、timeouts 與 one-move validation 納入 runbook。
-- 保持 `AUTO_EXECUTE_ROBOT=false` 作為安全預設。
-- 在 dashboard 中清楚呈現 robot queue blocked、E-Stop、socket state 與 last command。
-- 讓 robot command、vision FEN、engine move、state update 與 persistence event 使用同一 trace/session context。
+- Keep coordinate spaces explicit: `camera_frame`, `rectified_board`, and inverse-mapped raw coordinates.
+- Persist calibration quality, reprojection error, detection confidence, and mapping distance.
+- Expand synthetic fixtures for calibration, board mapping, and FEN generation.
+- Keep model updates behind manifest validation and warmup checks.
 
 Exit criteria:
 
-- Fake robot 與 real robot mode 都能在錯誤時停止自動流程。
-- 實機前必須通過 setup preflight、connect/status、safe Z、gripper 與 one-move test。
-- Replay/export 能回溯每次機械手臂動作的來源與結果。
+- Vision regressions cover calibration, mapping, FEN, DTO payloads, and overlay metadata.
+- Model warmup fails loudly when assets or runtime dependencies are invalid.
 
-## Phase 4 - Observability And Reproducibility
+## Phase 4 - Robot Safety And Hardware Readiness
 
-目標：讓實驗資料可重播、可比較、可匯出，支援專題報告與後續研究。
+Goal: move from simulation to real TM5-700 validation without weakening safety gates.
 
 Priority work:
 
-- 建立 Vision -> Engine -> Robot -> State -> Persistence 的 trace waterfall。
-- 匯出 calibration quality、detection confidence、mapping distance、YOLO latency、engine time、robot execution status。
-- 建立 session replay 與 historical comparison 的穩定資料格式。
-- 將 runtime logs、database、reports、temporary screenshots 與 release source 明確分離。
+- Document and test TMflow JSON HELLO/ACK/STARTED/DONE/ERROR behavior.
+- Validate soft limits, capture dead zone, gripper feedback, motion timeouts, and halt behavior.
+- Keep `AUTO_EXECUTE_ROBOT=false` as the safe default.
+- Make every robot command traceable to vision, engine, state, persistence, replay, and export records.
 
 Exit criteria:
 
-- 單次實驗可由 persisted events 重建主要流程。
-- Excel/CSV export 足以比較 vision、engine、robot 的 latency 與錯誤率。
-- 報告用資料與 runtime artifact 有明確保存位置與排除規則。
+- Fake and real robot paths fail closed on invalid moves, no-op moves, stale vision, busy robot, timeout, and E-Stop.
+- Real hardware preflight rejects unsafe config before any motion is allowed.
 
-## Suggested Next Actions
+## Phase 5 - Observability And Reproducibility
 
-1. 完成 changeset triage，確認刪除舊 detector 與舊文件。
-2. 執行 `.\check_system.cmd`，保存最新可通過的檢查結果。
-3. 擴充 vision regression fixtures，加入更多校正與棋子映射案例。
-4. 檢查 real robot runbook 與實驗室 TMflow 專案是否完全一致。
-5. 在 release 前執行 `.\check_system_strict.cmd` 與 sanitized share zip 檢查。
+Goal: produce trustworthy experiment data for reports and future validation.
+
+Priority work:
+
+- Use stable session and trace IDs across vision, engine, robot, state, persistence, replay, and export.
+- Add a clear timeline waterfall for Vision -> Engine -> Robot -> State -> Persistence.
+- Export enough latency, confidence, calibration, engine, and robot fields to reconstruct a trial.
+- Keep logs, database files, screenshots, and generated reports out of source/release unless explicitly included.
+
+Exit criteria:
+
+- A completed experiment can be replayed from persisted events.
+- Excel/CSV exports include the data needed to explain each move and system decision.
+
+## Immediate Next Actions
+
+Completed:
+
+- Add API authorization coverage tests.
+- Verify quality checks do not mutate tracked files.
+
+Next:
+
+1. Split the frontend orchestrator into focused controllers.
+2. Choose the long-term vision runtime owner.
+3. Prepare the real robot validation checklist after the software baseline is stable.

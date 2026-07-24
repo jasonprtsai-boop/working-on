@@ -31,3 +31,27 @@ test('setup initialization panel exposes editable robot endpoint once', () => {
   expect(countText('id="setup-live-hardware-test"')).toBe(1);
   expect(setupTemplate).toContain('id="setup-live-hardware-test" type="checkbox" data-setup-admin="true"');
 });
+
+test('setup camera panel exposes vision source switch controls once', () => {
+  [
+    'vision.source',
+    'vision.camera_index',
+    'vision.tmflow_json.host',
+    'vision.tmflow_json.port',
+    'vision.tmflow_json.timeout_sec',
+    'vision.tmflow_json.max_message_bytes',
+    'vision.tmflow_json.fps_limit',
+  ].forEach((path) => {
+    expect(countText(`data-setup-field="${path}"`)).toBe(1);
+  });
+
+  expect(countText('data-setup-vision-source="opencv"')).toBe(1);
+  expect(countText('data-setup-vision-source="tmflow_json"')).toBe(1);
+  expect(countText('id="btn-setup-test-vision-source"')).toBe(1);
+  expect(setupTemplate).toContain('id="setup-vision-source-status"');
+  expect(setupTemplate).toContain('id="setup-vision-source-test-status"');
+  expect(setupTemplate).toContain('id="setup-control-channel-status"');
+  expect(setupTemplate).toContain('id="setup-vision-channel-status"');
+  expect(setupTemplate).toContain('id="setup-vision-frame-age"');
+  expect(setupTemplate).toContain('id="setup-vision-reconnects"');
+});

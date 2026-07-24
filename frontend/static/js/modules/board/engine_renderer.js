@@ -36,7 +36,7 @@ function renderPrincipalVariations(engineState) {
     if (!lines.length) {
         const empty = document.createElement('div');
         empty.className = 'pv-row empty';
-        empty.textContent = 'No engine line yet.';
+        empty.textContent = '尚無分析主變化。';
         pvContainer.appendChild(empty);
         return;
     }

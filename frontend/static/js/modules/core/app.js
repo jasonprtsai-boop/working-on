@@ -46,9 +46,9 @@ const VIDEO_RECONNECT_MAX_MS = 6000;
 const VISION_STALE_THRESHOLD_MS = 3000;
 const LAB_ROBOT_DEFAULTS = {
     'robot.connection.adapter': 'tmflow_json',
-    'robot.connection.ip': '169.254.47.64',
+    'robot.connection.ip': '192.168.10.10',
     'robot.connection.port': 5890,
-    'robot.connection.pc_ip': '169.254.47.50',
+    'robot.connection.pc_ip': '192.168.10.50',
     'robot.connection.subnet_mask': '255.255.0.0',
     'robot.tmflow_json.wire_format': 'envelope',
 };
@@ -70,10 +70,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (data?.locked === false) {
             hideSystemOverlay();
             commit('DIAGNOSTICS.UPDATED', { ui: { estop_triggered: false, phase: 'READY' } });
-            window.showAlert?.(data?.reason || 'Emergency stop cleared.', 'success');
+            window.showAlert?.(data?.reason || '緊急停止已解除。', 'success');
             return;
         }
-        showSystemOverlay(data?.reason || 'Emergency stop triggered.');
+        showSystemOverlay(data?.reason || '已觸發緊急停止。');
         commit('DIAGNOSTICS.UPDATED', { ui: { estop_triggered: true, phase: 'EMERGENCY' } });
     });
     socketClient.on('AUTH_ERROR', (payload) => {
@@ -133,7 +133,8 @@ function setupUI() {
     bindClick('btn-console-exit', () => switchView('view-landing'));
     bindClick('btn-toggle-board', () => switchPane('pane-board-view', 'btn-toggle-board'));
     bindClick('btn-toggle-video', () => switchPane('pane-video-view', 'btn-toggle-video'));
-    bindClick('btn-toggle-setup', openSetupPane);
+    bindClick('btn-video-reconnect', () => reconnectVideo({ force: true }));
+    bindClick('btn-toggle-setup', requestSetupAccess);
     bindClick('btn-toggle-status', () => switchPane('pane-status-view', 'btn-toggle-status'));
     bindClick('btn-estop-trigger', triggerEmergencyStop);
     bindClick('btn-player-estop', triggerPlayerEmergencyStop);
@@ -161,7 +162,7 @@ function setupUI() {
         if (hasAdminAccess()) reconnectVideo();
     }
 
-    commit('UI_TOAST', { text: 'System console ready.', level: 'info' });
+    commit('UI_TOAST', { text: '主控台已就緒。', level: 'info' });
     loadRuntimeControlStatus({ quiet: true });
     refreshVisionCalibration({ quiet: true });
 }
@@ -251,6 +252,7 @@ function requestConsoleAccess() {
     loadRuntimeControlStatus({ quiet: true });
     refreshVisionCalibration({ quiet: true });
     refreshAuthorizationUI();
+    void prepareConsoleStandby({ quiet: true });
 }
 
 function requestSetupAccess() {
@@ -283,7 +285,7 @@ function setupSidebarTabs() {
 
 async function clearEmergencyStop() {
     if (!canUseLiveAdminControls()) {
-        window.showAlert?.('Control channel is not ready.', 'warning');
+        window.showAlert?.('控制通道尚未就緒。', 'warning');
         refreshAuthorizationUI();
         return;
     }
@@ -292,33 +294,33 @@ async function clearEmergencyStop() {
         hideSystemOverlay();
         commit('DIAGNOSTICS.UPDATED', { ui: { estop_triggered: false, phase: 'READY' } });
     } catch (error) {
-        window.showAlert?.(error?.message || 'Failed to clear emergency stop.', 'error');
+        window.showAlert?.(error?.message || '解除緊急停止失敗。', 'error');
     }
 }
 
 async function triggerEmergencyStop() {
     if (!canUseLiveAdminControls()) {
-        window.showAlert?.('Control channel is not ready.', 'warning');
+        window.showAlert?.('控制通道尚未就緒。', 'warning');
         refreshAuthorizationUI();
         return;
     }
-    showSystemOverlay('Emergency stop triggered from console.');
+    showSystemOverlay('主控台已觸發緊急停止。');
     commit('DIAGNOSTICS.UPDATED', { ui: { estop_triggered: true, phase: 'EMERGENCY' } });
     try {
         await apiJson('/api/estop/trigger', { method: 'POST', body: JSON.stringify({ reason: 'frontend_console' }) });
     } catch (error) {
-        window.showAlert?.(error?.message || 'Failed to trigger emergency stop.', 'error');
+        window.showAlert?.(error?.message || '觸發緊急停止失敗。', 'error');
     }
 }
 
 async function triggerPlayerEmergencyStop() {
-    showSystemOverlay('Emergency stop triggered from player view.');
+    showSystemOverlay('玩家介面已觸發緊急停止。');
     commit('DIAGNOSTICS.UPDATED', { ui: { estop_triggered: true, phase: 'EMERGENCY' } });
     try {
         await apiJson('/api/player/estop', { method: 'POST', body: JSON.stringify({ reason: 'player_view' }) });
-        window.showAlert?.('Emergency stop triggered.', 'warning');
+        window.showAlert?.('已觸發緊急停止。', 'warning');
     } catch (error) {
-        window.showAlert?.(error?.message || 'Failed to trigger emergency stop.', 'error');
+        window.showAlert?.(error?.message || '觸發緊急停止失敗。', 'error');
     }
 }
 
@@ -326,7 +328,7 @@ function showSystemOverlay(reason) {
     const overlay = document.getElementById('pause-overlay');
     const title = document.getElementById('overlay-title');
     const message = document.getElementById('pause-msg');
-    if (title) title.innerText = 'SYSTEM HALTED';
+    if (title) title.innerText = '系統已停止';
     if (message) message.innerText = reason;
     if (overlay) {
         overlay.classList.remove('hidden');
@@ -365,6 +367,7 @@ function setupSettingsControls() {
     bindClick('btn-setup-load', () => loadSetupSettings());
     bindClick('btn-setup-refresh-cameras', () => refreshSetupCameras());
     bindClick('btn-setup-preview-camera', reconnectSetupCamera);
+    bindClick('btn-setup-test-vision-source', testSetupVisionSource);
     bindClick('btn-setup-vision-auto', autoCalibrateSetupVision);
     bindClick('btn-setup-preflight', () => refreshSetupPreflight());
     bindClick('btn-setup-wizard-refresh', () => refreshSetupPreflight());
@@ -375,6 +378,9 @@ function setupSettingsControls() {
     subscribe('robot', (robot) => renderSetupRobotStatus(robot));
     document.querySelectorAll('[data-setup-test]').forEach((button) => {
         button.addEventListener('click', () => runSetupHardwareTest(button.dataset.setupTest));
+    });
+    document.querySelectorAll('[data-setup-vision-source]').forEach((button) => {
+        button.addEventListener('click', () => selectSetupVisionSource(button.dataset.setupVisionSource));
     });
 
     document.querySelectorAll('[data-setup-field]').forEach((field) => {
@@ -392,17 +398,17 @@ async function loadSetupSettings({ quiet = false } = {}) {
         if (payload.commissioning) renderSetupCommissioning(payload.commissioning);
         renderSetupWizard();
         refreshSetupPreflight({ quiet: true });
-        if (!quiet) window.showAlert?.('Settings loaded.', 'success');
+        if (!quiet) window.showAlert?.('設定已載入。', 'success');
     } catch (error) {
         setSetupSaveState('載入失敗');
-        if (!quiet) window.showAlert?.(error?.message || 'Settings unavailable.', 'error');
+        if (!quiet) window.showAlert?.(error?.message || '設定無法取得。', 'error');
     }
 }
 
 async function saveSetupSettings(event) {
     event?.preventDefault?.();
     if (!canUseSetupControls()) {
-        window.showAlert?.('Setup is locked.', 'warning');
+        window.showAlert?.('系統設定尚未解鎖。', 'warning');
         refreshAuthorizationUI();
         return false;
     }
@@ -418,17 +424,17 @@ async function saveSetupSettings(event) {
         if (payload.commissioning) renderSetupCommissioning(payload.commissioning);
         renderSetupWizard();
         refreshSetupPreflight({ quiet: true });
-        renderSetupInitializationSummary(payload.settings || {}, 'Saved, test required');
+        renderSetupInitializationSummary(payload.settings || {}, '已儲存，請執行測試');
         const warnings = Array.isArray(payload.warnings) ? payload.warnings.filter(Boolean) : [];
         if (warnings.length) {
             window.showAlert?.(warnings[0], 'warning', 5200);
         } else {
-            window.showAlert?.('Settings saved.', 'success');
+            window.showAlert?.('設定已儲存。', 'success');
         }
         return true;
     } catch (error) {
         setSetupSaveState('儲存失敗');
-        window.showAlert?.(error?.message || 'Settings save failed.', 'error');
+        window.showAlert?.(error?.message || '設定儲存失敗。', 'error');
         return false;
     }
 }
@@ -438,16 +444,16 @@ async function refreshSetupCameras({ quiet = false } = {}) {
     try {
         const payload = await apiJson('/api/vision/cameras?refresh=1', { method: 'GET' }, 9000);
         renderCameraOptions(payload.candidates || [], payload.current);
-        if (!quiet) window.showAlert?.('Camera list refreshed.', 'success');
+        if (!quiet) window.showAlert?.('相機清單已更新。', 'success');
     } catch (error) {
         ensureCameraOption(document.getElementById('setup-camera-index')?.value || '0');
-        if (!quiet) window.showAlert?.(error?.message || 'Camera scan failed.', 'warning');
+        if (!quiet) window.showAlert?.(error?.message || '相機掃描失敗。', 'warning');
     }
 }
 
 async function autoCalibrateSetupVision() {
     if (!canUseSetupControls()) {
-        window.showAlert?.('Setup is locked.', 'warning');
+        window.showAlert?.('系統設定尚未解鎖。', 'warning');
         refreshAuthorizationUI();
         return;
     }
@@ -458,9 +464,9 @@ async function autoCalibrateSetupVision() {
         }, 12000);
         applyVisionCalibrationStatus(payload);
         await loadSetupSettings({ quiet: true });
-        window.showAlert?.('Vision calibration updated.', 'success');
+        window.showAlert?.('視覺校正已更新。', 'success');
     } catch (error) {
-        window.showAlert?.(error?.message || 'Vision calibration failed.', 'error');
+        window.showAlert?.(error?.message || '視覺校正失敗。', 'error');
     }
 }
 
@@ -472,38 +478,38 @@ async function refreshSetupPreflight({ quiet = false } = {}) {
         renderSetupPreflight(payload);
         if (!quiet) {
             window.showAlert?.(
-                payload.ready ? 'Preflight passed.' : 'Preflight needs attention.',
+                payload.ready ? '預檢已通過。' : '預檢需要處理。',
                 payload.ready ? 'success' : 'warning'
             );
         }
     } catch (error) {
         setTextById('setup-preflight-status', '檢查失敗');
-        if (!quiet) window.showAlert?.(error?.message || 'Preflight unavailable.', 'error');
+        if (!quiet) window.showAlert?.(error?.message || '預檢無法取得。', 'error');
     }
 }
 
 async function runSetupInitializationTest() {
     if (!canUseSetupControls()) {
-        window.showAlert?.('Setup is locked.', 'warning');
+        window.showAlert?.('系統設定尚未解鎖。', 'warning');
         refreshAuthorizationUI();
         return false;
     }
-    setTextById('setup-init-result', 'Saving settings');
+    setTextById('setup-init-result', '正在儲存設定');
     const saved = await saveSetupSettings();
     if (!saved) return false;
-    setTextById('setup-init-result', 'Testing');
+    setTextById('setup-init-result', '正在測試');
     return runSetupHardwareTest('connect');
 }
 
 async function runSetupHardwareTest(action) {
     if (!canUseSetupControls()) {
-        window.showAlert?.('Setup is locked.', 'warning');
+        window.showAlert?.('系統設定尚未解鎖。', 'warning');
         refreshAuthorizationUI();
         return false;
     }
     if (!action) return false;
-    setTextById('setup-hardware-test-status', 'Testing');
-    if (action === 'connect') setTextById('setup-init-result', 'Testing');
+    setTextById('setup-hardware-test-status', '測試中');
+    if (action === 'connect') setTextById('setup-init-result', '測試中');
     try {
         const liveHardwareTest = document.getElementById('setup-live-hardware-test')?.checked === true;
         const payload = await apiJson('/api/setup/hardware-test', {
@@ -515,16 +521,16 @@ async function runSetupHardwareTest(action) {
             commit('ROBOT.STATUS_UPDATED', payload.status);
         }
         if (payload.commissioning) renderSetupCommissioning(payload.commissioning);
-        const label = payload.dry_run ? 'Dry-run passed' : 'Passed';
+        const label = payload.dry_run ? '模擬測試通過' : '測試通過';
         setTextById('setup-hardware-test-status', `${action}: ${label}`);
         if (action === 'connect') renderSetupInitializationSummary({}, `${action}: ${label}`);
         window.showAlert?.(`${action} ${label}`, 'success');
         refreshSetupPreflight({ quiet: true });
         return true;
     } catch (error) {
-        setTextById('setup-hardware-test-status', `${action}: Failed`);
-        if (action === 'connect') renderSetupInitializationSummary({}, `${action}: Failed`);
-        window.showAlert?.(error?.message || `${action} failed.`, 'error');
+        setTextById('setup-hardware-test-status', `${action}: 失敗`);
+        if (action === 'connect') renderSetupInitializationSummary({}, `${action}: 失敗`);
+        window.showAlert?.(error?.message || `${action} 失敗。`, 'error');
         return false;
     }
 }
@@ -532,10 +538,14 @@ async function runSetupHardwareTest(action) {
 function startSetupRobotStatusRefresh() {
     renderSetupRobotStatus(state.snapshot.robot || {});
     refreshSetupRobotStatus({ quiet: true });
+    refreshSetupVisionSourceStatus({ quiet: true });
     if (setupStatusTimerId || typeof setInterval !== 'function') return;
     setupStatusTimerId = setInterval(() => {
         const active = document.getElementById('view-setup')?.classList.contains('active');
-        if (active) refreshSetupRobotStatus({ quiet: true });
+        if (active) {
+            refreshSetupRobotStatus({ quiet: true });
+            refreshSetupVisionSourceStatus({ quiet: true });
+        }
     }, 1000);
 }
 
@@ -557,7 +567,7 @@ async function refreshSetupRobotStatus({ quiet = false } = {}) {
         if (payload.status) commit('ROBOT.STATUS_UPDATED', payload.status);
     } catch (error) {
         renderSetupRobotStatus({ connected: false, error: error?.message || 'status_unavailable' });
-        if (!quiet) window.showAlert?.(error?.message || 'Robot status unavailable.', 'warning');
+        if (!quiet) window.showAlert?.(error?.message || '機械手臂狀態無法取得。', 'warning');
     }
 }
 
@@ -574,8 +584,8 @@ function renderSetupRobotStatus(robot = {}) {
     if (dot) dot.dataset.state = busy ? 'busy' : (connected ? 'online' : 'offline');
 
     const status = robot.error
-        ? `Error: ${robot.error}`
-        : (busy ? 'Moving' : (connected ? 'Connected' : 'Offline'));
+        ? `錯誤：${robot.error}`
+        : (busy ? '移動中' : (connected ? '已連線' : '離線'));
     setTextById('setup-robot-live-status', status);
     setTextById('setup-robot-live-endpoint', setupFormatEndpoint(robot, connection));
     setTextById('setup-current-x', setupFormatNumber(position.x));
@@ -601,14 +611,14 @@ function setupFormatEndpoint(robot = {}, connection = {}) {
 
 function applySetupLabDefaults() {
     if (!canUseSetupControls()) {
-        window.showAlert?.('Setup is locked.', 'warning');
+        window.showAlert?.('系統設定尚未解鎖。', 'warning');
         refreshAuthorizationUI();
         return;
     }
     Object.entries(LAB_ROBOT_DEFAULTS).forEach(([path, value]) => setSetupFieldValue(path, value));
     markSetupDirty();
-    renderSetupInitializationSummary({}, 'Unsaved changes');
-    window.showAlert?.('Lab robot defaults applied.', 'success');
+    renderSetupInitializationSummary({}, '尚未儲存');
+    window.showAlert?.('已套用實驗室手臂預設值。', 'success');
 }
 
 function setSetupFieldValue(path, value) {
@@ -656,7 +666,7 @@ function renderSetupInitializationSummary(settings = {}, resultText) {
     if (resultText !== undefined) {
         setTextById('setup-init-result', resultText);
     } else if (!resultElement?.textContent || resultElement.textContent === '--') {
-        setTextById('setup-init-result', 'Not tested');
+        setTextById('setup-init-result', '尚未測試');
     }
 }
 
@@ -697,7 +707,7 @@ function setupFormatJoints(joints) {
 function setupTelemetryLabel(telemetry = {}, fakeRobot = false) {
     const source = String(telemetry.source || '').trim();
     if (source) return source;
-    return fakeRobot ? 'simulation' : '--';
+    return fakeRobot ? '模擬' : '--';
 }
 
 async function loadSetupCommissioning({ quiet = false } = {}) {
@@ -710,12 +720,56 @@ async function loadSetupCommissioning({ quiet = false } = {}) {
     }
 }
 
-function reconnectSetupCamera() {
+async function reconnectSetupCamera() {
     if (!hasSetupAccess()) return;
     const preview = document.getElementById('setup-camera-preview');
     if (!preview) return;
     const src = preview.dataset?.src || '/api/video_feed';
-    preview.src = `${src}${src.includes('?') ? '&' : '?'}setup=${Date.now()}`;
+    const streamSrc = await buildVisionStreamSrc(src);
+    preview.src = appendQueryParam(streamSrc, 'setup', Date.now());
+}
+
+async function refreshSetupVisionSourceStatus({ quiet = false } = {}) {
+    if (!hasSetupAccess()) return null;
+    try {
+        const payload = await apiJson('/api/vision/source/status', { method: 'GET' }, 5000);
+        renderSetupVisionSourceStatus(payload);
+        return payload;
+    } catch (error) {
+        setTextById('setup-vision-source-test-status', '狀態取得失敗');
+        if (!quiet) window.showAlert?.(error?.message || '影像來源狀態取得失敗。', 'warning');
+        return null;
+    }
+}
+
+async function testSetupVisionSource() {
+    if (!canUseSetupControls()) {
+        window.showAlert?.('設定權限尚未通過。', 'warning');
+        refreshAuthorizationUI();
+        return false;
+    }
+    setTextById('setup-vision-source-test-status', '儲存設定中');
+    const saved = await saveSetupSettings();
+    if (!saved) return false;
+    setTextById('setup-vision-source-test-status', '送出測試影像');
+    try {
+        const payload = await apiJson('/api/vision/source/test-frame', {
+            method: 'POST',
+            body: JSON.stringify({ mode: 'synthetic' }),
+        }, 9000);
+        renderSetupVisionSourceStatus({
+            source: payload.source,
+            camera: payload.status?.camera,
+            test: payload,
+        });
+        reconnectSetupCamera();
+        window.showAlert?.('影像來源測試影像已送出。', 'success');
+        return true;
+    } catch (error) {
+        setTextById('setup-vision-source-test-status', '測試失敗');
+        window.showAlert?.(error?.message || '影像來源測試失敗。', 'error');
+        return false;
+    }
 }
 
 function applySetupSettings(settings = {}, files = {}) {
@@ -737,6 +791,7 @@ function applySetupSettings(settings = {}, files = {}) {
         field.value = String(value);
     });
 
+    renderVisionSourceControls(getNestedValue(settings, 'vision.source') || 'opencv');
     const robotCalibration = settings.robot?.calibration || {};
     const visionCalibration = settings.vision?.calibration || {};
     setTextById('setup-robot-calibration-status', formatRobotCalibration(robotCalibration));
@@ -746,12 +801,13 @@ function applySetupSettings(settings = {}, files = {}) {
     setTextById('setup-vision-file', files.vision_calibration || '--');
     renderSetupInitializationSummary(settings);
     setSetupSaveState('已載入');
+    refreshSetupVisionSourceStatus({ quiet: true });
 }
 
 function markSetupDirty() {
     setupWizardState.settingsSaved = false;
     setSetupSaveState('已修改');
-    renderSetupInitializationSummary({}, 'Unsaved changes');
+    renderSetupInitializationSummary({}, '尚未儲存');
     renderSetupWizard();
 }
 
@@ -792,21 +848,21 @@ function renderSetupWizard(payload = setupWizardState.preflight) {
         {
             key: 'settings_saved',
             ok: settingsSaved,
-            message: settingsSaved ? 'Saved' : 'Save required',
+            message: settingsSaved ? '已儲存' : '請先儲存',
         },
-        setupWizardStepFromCheck(checks, 'vision_ready', 'Vision ready'),
-        setupWizardStepFromCheck(checks, 'motion_profile_safe', 'Motion safe'),
-        setupWizardStepFromCheck(checks, 'board_and_dead_zone_safe', 'Area safe'),
-        setupWizardStepFromCheck(checks, 'robot_communication_probe', 'Communication ready'),
+        setupWizardStepFromCheck(checks, 'vision_ready', '視覺已就緒'),
+        setupWizardStepFromCheck(checks, 'motion_profile_safe', '動作範圍安全'),
+        setupWizardStepFromCheck(checks, 'board_and_dead_zone_safe', '棋盤範圍安全'),
+        setupWizardStepFromCheck(checks, 'robot_communication_probe', '通訊已就緒'),
         {
             key: 'hardware_tests',
             ok: hardwareOk,
-            message: hardwareOk ? 'Hardware tested' : 'Run hardware test',
+            message: hardwareOk ? '硬體已測試' : '請執行硬體測試',
         },
         {
             key: 'preflight_ready',
             ok: Boolean(payload?.ready),
-            message: payload ? (payload.ready ? 'Passed' : 'Blocked') : 'Run preflight',
+            message: payload ? (payload.ready ? '已通過' : '未通過') : '請執行預檢',
         },
     ];
 
@@ -816,13 +872,13 @@ function renderSetupWizard(payload = setupWizardState.preflight) {
         if (!item) return;
         item.dataset.status = step.ok ? 'ok' : (step.warning ? 'warning' : 'blocked');
         const status = item.querySelector('strong');
-        if (status) status.textContent = step.message || (step.ok ? 'OK' : 'Check');
+        if (status) status.textContent = step.message || (step.ok ? '通過' : '待檢查');
         if (!step.ok && !firstBlocked) firstBlocked = step;
     });
 
     const ready = steps.every((step) => step.ok);
-    setTextById('setup-wizard-ready', ready ? 'Ready' : 'Not ready');
-    setTextById('setup-wizard-next', firstBlocked ? firstBlocked.message : 'Start player mode');
+    setTextById('setup-wizard-ready', ready ? '已就緒' : '尚未就緒');
+    setTextById('setup-wizard-next', firstBlocked ? firstBlocked.message : '可開始玩家模式');
     setTextById('setup-wizard-preflight-at', formatCommissioningTime(commissioningSteps.preflight?.last_at));
     setTextById('setup-wizard-hardware-at', formatCommissioningTime(commissioningSteps.hardware?.last_at));
 }
@@ -844,17 +900,109 @@ function formatCommissioningTime(value) {
 
 function setupWizardStepFromCheck(checks, key, okMessage) {
     const check = checks.get(key);
-    if (!check) return { key, ok: false, message: 'Run preflight' };
+    if (!check) return { key, ok: false, message: '請執行預檢' };
     return {
         key,
         ok: check.ok === true,
         warning: check.severity !== 'error',
-        message: check.ok === true ? okMessage : (check.message || 'Check required'),
+        message: check.ok === true ? okMessage : (check.message || '需要檢查'),
     };
 }
 
 function numericSetupField(field, path) {
     return field.type === 'number' || path === 'vision.camera_index';
+}
+
+function selectSetupVisionSource(source) {
+    if (!canUseSetupControls()) {
+        window.showAlert?.('設定權限尚未通過。', 'warning');
+        refreshAuthorizationUI();
+        return;
+    }
+    const normalized = normalizeSetupVisionSource(source);
+    setSetupFieldValue('vision.source', normalized);
+    renderVisionSourceControls(normalized);
+    markSetupDirty();
+}
+
+function normalizeSetupVisionSource(source) {
+    const value = String(source || 'opencv').trim().toLowerCase();
+    if (['usb', 'usb_camera', 'camera', 'opencv_usb'].includes(value)) return 'opencv';
+    if (['tmflow', 'tmflow_camera', 'tmflow_json_camera'].includes(value)) return 'tmflow_json';
+    return value === 'tmflow_json' ? 'tmflow_json' : 'opencv';
+}
+
+function renderVisionSourceControls(source) {
+    const normalized = normalizeSetupVisionSource(source);
+    const field = document.getElementById('setup-vision-source');
+    if (field) field.value = normalized;
+    document.querySelectorAll('[data-setup-vision-source]').forEach((button) => {
+        const active = normalizeSetupVisionSource(button.dataset.setupVisionSource) === normalized;
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+    const tmflowSettings = document.getElementById('setup-tmflow-vision-settings');
+    if (tmflowSettings) tmflowSettings.classList.toggle('hidden', normalized !== 'tmflow_json');
+    setTextById('setup-vision-source-status', normalized === 'tmflow_json' ? 'TMflow JSON' : 'USB / OpenCV');
+}
+
+function renderSetupVisionSourceStatus(payload = {}) {
+    const camera = payload.camera && typeof payload.camera === 'object' ? payload.camera : {};
+    const source = normalizeSetupVisionSource(payload.source || camera.source || 'opencv');
+    const diagnostics = payload.diagnostics && typeof payload.diagnostics === 'object' ? payload.diagnostics : {};
+    const controlChannel = diagnostics.control_channel && typeof diagnostics.control_channel === 'object'
+        ? diagnostics.control_channel
+        : {};
+    const visionChannel = diagnostics.vision_channel && typeof diagnostics.vision_channel === 'object'
+        ? diagnostics.vision_channel
+        : camera;
+    renderVisionSourceControls(source);
+    const connected = camera.opened === true || camera.connected === true;
+    const running = camera.running === true;
+    const frames = Number(camera.frames_received);
+    const lastError = String(camera.last_error || '').trim();
+    let text = source === 'tmflow_json' ? 'TMflow JSON' : 'USB / OpenCV';
+    if (running || connected) text += connected ? ' 已連線' : ' 啟動中';
+    if (Number.isFinite(frames) && frames > 0) text += ` / ${frames} frames`;
+    if (payload.test?.frames_injected) text += ` / test ${payload.test.frames_injected}`;
+    if (lastError) text += ` / ${lastError}`;
+    setTextById('setup-vision-source-test-status', text);
+    setTextById('setup-control-channel-status', formatSetupChannel(controlChannel, {
+        host: getSetupFieldValue('robot.connection.ip'),
+        port: getSetupFieldValue('robot.connection.port') || 5890,
+    }));
+    setTextById('setup-vision-channel-status', formatSetupChannel(visionChannel, {
+        host: getSetupFieldValue('vision.tmflow_json.host'),
+        port: getSetupFieldValue('vision.tmflow_json.port') || 5891,
+    }));
+    setTextById('setup-vision-frame-age', formatSetupFrameAge(visionChannel.last_frame_age_sec ?? camera.last_frame_age_sec));
+    setTextById('setup-vision-reconnects', formatSetupCount(visionChannel.reconnects ?? camera.reconnects));
+}
+
+function formatSetupChannel(channel = {}, fallback = {}) {
+    const status = String(channel.status || '').trim().toLowerCase();
+    const connected = channel.connected === true;
+    const running = channel.running === true;
+    const label = status === 'simulation'
+        ? '模擬'
+        : (connected ? '已連線' : (running || status === 'starting' ? '啟動中' : '離線'));
+    const endpoint = String(channel.endpoint || '').trim() ||
+        [channel.host ?? fallback.host, channel.port ?? fallback.port]
+            .filter((part) => part !== undefined && part !== null && String(part).trim() !== '')
+            .join(':');
+    return endpoint ? `${label} / ${endpoint}` : label;
+}
+
+function formatSetupFrameAge(value) {
+    const age = Number(value);
+    if (!Number.isFinite(age) || age < 0) return '--';
+    if (age < 1) return `${Math.round(age * 1000)} ms`;
+    return `${age.toFixed(1)} s`;
+}
+
+function formatSetupCount(value) {
+    const count = Number(value);
+    return Number.isFinite(count) && count >= 0 ? String(Math.trunc(count)) : '--';
 }
 
 function ensureSelectOption(select, value) {
@@ -878,7 +1026,7 @@ function renderCameraOptions(candidates, current) {
         seen.add(index);
         const option = document.createElement('option');
         option.value = String(index);
-        option.textContent = `Camera ${index}${candidate.available ? ' online' : ' offline'}`;
+        option.textContent = `相機 ${index}${candidate.available ? ' 線上' : ' 離線'}`;
         select.appendChild(option);
     });
     ensureCameraOption(selected);
@@ -892,7 +1040,7 @@ function ensureCameraOption(value) {
     if ([...select.options].some((option) => option.value === normalized)) return;
     const option = document.createElement('option');
     option.value = normalized;
-    option.textContent = `Camera ${normalized}`;
+    option.textContent = `相機 ${normalized}`;
     select.appendChild(option);
 }
 
@@ -901,6 +1049,14 @@ function getNestedValue(data, path) {
         if (current === undefined || current === null) return undefined;
         return current[part];
     }, data);
+}
+
+function getSetupFieldValue(path) {
+    const field = Array.from(document.querySelectorAll('[data-setup-field]'))
+        .find((item) => item.dataset.setupField === path);
+    if (!field) return undefined;
+    if (field.type === 'checkbox') return Boolean(field.checked);
+    return field.value;
 }
 
 function setNestedValue(target, path, value) {
@@ -928,15 +1084,15 @@ function setSetupSaveState(value) {
 function formatRobotCalibration(calibration) {
     const error = calibration?.calibration_error;
     if (error?.rms !== undefined) return `RMS ${Number(error.rms).toFixed(2)} / MAX ${Number(error.max || 0).toFixed(2)}`;
-    return calibration?.path ? 'Loaded' : '--';
+    return calibration?.path ? '已載入' : '--';
 }
 
 function formatVisionCalibration(calibration) {
     if (!calibration || !Object.keys(calibration).length) return '--';
     const quality = calibration.quality || {};
-    if (quality.max_error !== undefined) return `Error ${Number(quality.max_error).toFixed(2)}`;
-    if (calibration.calibrated !== undefined) return calibration.calibrated ? 'Calibrated' : 'Not calibrated';
-    return calibration.source || 'Loaded';
+    if (quality.max_error !== undefined) return `誤差 ${Number(quality.max_error).toFixed(2)}`;
+    if (calibration.calibrated !== undefined) return calibration.calibrated ? '已校正' : '尚未校正';
+    return calibration.source || '已載入';
 }
 
 function reconnectVideo({ force = false } = {}) {
@@ -946,7 +1102,7 @@ function reconnectVideo({ force = false } = {}) {
     startVideoStream({ force });
 }
 
-function startVideoStream({ force = false } = {}) {
+async function startVideoStream({ force = false } = {}) {
     const videoFeed = UIRegistry.get('videoFeed');
     if (!videoFeed) return;
     const src = videoFeed.dataset?.src || '/api/video_feed';
@@ -955,9 +1111,29 @@ function startVideoStream({ force = false } = {}) {
         markVideoStatus('live', '已連線');
         return;
     }
-    videoFeed.src = `${src}${src.includes('?') ? '&' : '?'}t=${Date.now()}`;
+    const streamSrc = await buildVisionStreamSrc(src);
+    videoFeed.src = appendQueryParam(streamSrc, 't', Date.now());
     videoStreamActive = true;
     markVideoStatus('standby', '連線中');
+}
+
+async function buildVisionStreamSrc(src) {
+    const base = String(src || '/api/video_feed');
+    try {
+        const payload = await apiJson('/api/vision/stream-token', { method: 'POST' }, 5000);
+        if (payload?.stream_token) {
+            return appendQueryParam(base, 'stream_token', payload.stream_token);
+        }
+    } catch {
+        // Keep the original URL as a fallback for cookie-auth or auth-disabled deployments.
+    }
+    return base;
+}
+
+function appendQueryParam(url, key, value) {
+    const text = String(url || '');
+    const separator = text.includes('?') ? '&' : '?';
+    return `${text}${separator}${encodeURIComponent(key)}=${encodeURIComponent(String(value ?? ''))}`;
 }
 
 function handleVideoLoad() {
@@ -998,9 +1174,9 @@ async function refreshVisionCalibration({ quiet = false } = {}) {
     try {
         const payload = await apiJson('/api/vision/calibration', { method: 'GET' }, 5000);
         applyVisionCalibrationStatus(payload);
-        if (!quiet) window.showAlert?.('Calibration status refreshed.', 'success');
+        if (!quiet) window.showAlert?.('校正狀態已更新。', 'success');
     } catch (error) {
-        if (!quiet) window.showAlert?.(error?.message || 'Calibration status unavailable.', 'warning');
+        if (!quiet) window.showAlert?.(error?.message || '校正狀態無法取得。', 'warning');
     }
 }
 
@@ -1103,8 +1279,52 @@ async function loadRuntimeControlStatus({ quiet = false } = {}) {
         const payload = await apiJson('/api/runtime/control', { method: 'GET' }, 5000);
         applyRuntimeControlStatus(payload);
     } catch (error) {
-        if (!quiet) window.showAlert?.(error?.message || 'Runtime control status unavailable.', 'warning');
+        if (!quiet) window.showAlert?.(error?.message || '執行控制狀態無法取得。', 'warning');
     }
+}
+
+function markConsoleStandbyState() {
+    const aiStatus = document.getElementById('stat-ai');
+    if (aiStatus) {
+        aiStatus.textContent = '待機中';
+        aiStatus.className = 'status-warning';
+    }
+
+    const cameraStatus = document.getElementById('stat-camera');
+    if (cameraStatus) {
+        cameraStatus.textContent = '待機中';
+        cameraStatus.className = 'status-warning';
+    }
+
+    setTextById('dashboard-engine-thinking', '待命');
+}
+
+async function prepareConsoleStandby({ quiet = true } = {}) {
+    if (!hasAdminAccess()) return;
+    markConsoleStandbyState();
+
+    const standbyPayload = { source: 'console_login_standby', standby: true };
+    const results = await Promise.allSettled([
+        apiJson('/api/control', {
+            method: 'POST',
+            body: JSON.stringify({ action: 'start_engine', payload: standbyPayload }),
+        }, 6000),
+        apiJson('/api/control', {
+            method: 'POST',
+            body: JSON.stringify({ action: 'sync_vision', payload: standbyPayload }),
+        }, 6000),
+        apiJson('/api/engine/status', { method: 'GET' }, 6000),
+        apiJson('/api/vision/status', { method: 'GET' }, 6000),
+    ]);
+
+    const failed = results.some((result) => result.status === 'rejected');
+    if (failed) {
+        if (!quiet) window.showAlert?.('Pikafish / YOLO 待機未完全完成，請查看狀態頁。', 'warning');
+        return;
+    }
+
+    if (!quiet) window.showAlert?.('Pikafish 與 YOLO 已進入待機。', 'success');
+    loadRuntimeControlStatus({ quiet: true });
 }
 
 async function submitAdminLogin(event) {
@@ -1123,10 +1343,11 @@ async function submitAdminLogin(event) {
         loadRuntimeControlStatus({ quiet: true });
         refreshVisionCalibration({ quiet: true });
         refreshAuthorizationUI();
-        window.showAlert?.('Admin console unlocked.', 'success');
+        void prepareConsoleStandby({ quiet: true });
+        window.showAlert?.('主控台已解鎖，Pikafish 與 YOLO 正在待機。', 'success');
     } catch (error) {
-        if (errorEl) errorEl.textContent = error?.message || 'Login failed.';
-        window.showAlert?.('Admin login failed.', 'error');
+        if (errorEl) errorEl.textContent = error?.message || '登入失敗。';
+        window.showAlert?.('主控台登入失敗。', 'error');
     } finally {
         if (form) form.reset();
     }
@@ -1143,11 +1364,11 @@ async function submitSetupLogin(event) {
         await loginSetup(password);
         hideSetupAuthOverlay();
         openSetupPane();
-        window.showAlert?.('Setup unlocked.', 'success');
+        window.showAlert?.('系統設定已解鎖。', 'success');
     } catch (error) {
         clearSetupToken();
-        if (errorEl) errorEl.textContent = error?.message || 'Login failed.';
-        window.showAlert?.('Setup login failed.', 'error');
+        if (errorEl) errorEl.textContent = error?.message || '登入失敗。';
+        window.showAlert?.('系統設定登入失敗。', 'error');
     } finally {
         if (form) form.reset();
         refreshAuthorizationUI();
@@ -1323,7 +1544,7 @@ function setupAiModeControls() {
 
 async function setEngineDepth(depth) {
     if (!canUseLiveAdminControls()) {
-        window.showAlert?.('Control channel is not ready.', 'warning');
+        window.showAlert?.('控制通道尚未就緒。', 'warning');
         refreshAuthorizationUI();
         return;
     }
@@ -1334,13 +1555,13 @@ async function setEngineDepth(depth) {
         });
         applyRuntimeControlStatus(payload);
     } catch (error) {
-        window.showAlert?.(error?.message || 'Failed to update AI depth.', 'error');
+        window.showAlert?.(error?.message || '更新 AI 深度失敗。', 'error');
     }
 }
 
 async function setAiMode(mode) {
     if (!canUseLiveAdminControls()) {
-        window.showAlert?.('Control channel is not ready.', 'warning');
+        window.showAlert?.('控制通道尚未就緒。', 'warning');
         refreshAuthorizationUI();
         return;
     }
@@ -1351,7 +1572,7 @@ async function setAiMode(mode) {
         });
         applyRuntimeControlStatus(payload);
     } catch (error) {
-        window.showAlert?.(error?.message || 'Failed to update AI mode.', 'error');
+        window.showAlert?.(error?.message || '更新 AI 模式失敗。', 'error');
     }
 }
 
@@ -1365,7 +1586,7 @@ async function setSafeMode(enabled) {
     const toggle = document.getElementById('safe-mode-toggle');
     if (!canUseLiveAdminControls()) {
         if (toggle) toggle.checked = !enabled;
-        window.showAlert?.('Control channel is not ready.', 'warning');
+        window.showAlert?.('控制通道尚未就緒。', 'warning');
         refreshAuthorizationUI();
         return;
     }
@@ -1377,7 +1598,7 @@ async function setSafeMode(enabled) {
         applyRuntimeControlStatus(payload);
     } catch (error) {
         if (toggle) toggle.checked = !enabled;
-        window.showAlert?.(error?.message || 'Failed to update Safe Mode.', 'error');
+        window.showAlert?.(error?.message || '更新安全模式失敗。', 'error');
     }
 }
 
@@ -1388,7 +1609,7 @@ function setupSessionControls() {
 
 async function startExperimentSession() {
     if (!canUseLiveAdminControls()) {
-        window.showAlert?.('Control channel is not ready.', 'warning');
+        window.showAlert?.('控制通道尚未就緒。', 'warning');
         refreshAuthorizationUI();
         return;
     }
@@ -1403,13 +1624,13 @@ async function startExperimentSession() {
         writeSessionValue('participantId', participantId);
         applyRuntimeControlStatus(payload);
     } catch (error) {
-        window.showAlert?.(error?.message || 'Failed to start session.', 'error');
+        window.showAlert?.(error?.message || '開始場次失敗。', 'error');
     }
 }
 
 async function endExperimentSession() {
     if (!canUseLiveAdminControls()) {
-        window.showAlert?.('Control channel is not ready.', 'warning');
+        window.showAlert?.('控制通道尚未就緒。', 'warning');
         refreshAuthorizationUI();
         return;
     }
@@ -1417,7 +1638,7 @@ async function endExperimentSession() {
         const payload = await apiJson('/api/runtime/session/end', { method: 'POST', body: JSON.stringify({}) });
         applyRuntimeControlStatus(payload);
     } catch (error) {
-        window.showAlert?.(error?.message || 'Failed to end session.', 'error');
+        window.showAlert?.(error?.message || '結束場次失敗。', 'error');
     }
 }
 

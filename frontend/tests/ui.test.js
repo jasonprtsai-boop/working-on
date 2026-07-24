@@ -155,26 +155,26 @@ test('SystemStatusStrip renders telemetry topology and hardware lights', () => {
   });
 
   expect(lights.children.length).toBeGreaterThan(10);
-  expect(lights.textContent).toContain('Queue');
-  expect(lights.textContent).toContain('Blocked');
+  expect(lights.textContent).toContain('佇列');
+  expect(lights.textContent).toContain('阻塞');
   expect(lights.textContent).toContain('Pikafish');
-  expect(lights.textContent).toContain('Running');
+  expect(lights.textContent).toContain('運行中');
   expect(lights.textContent).toContain('GPU');
-  expect(lights.textContent).toContain('Offline');
-  expect(document.getElementById('system-status-updated').textContent).toContain('updated');
+  expect(lights.textContent).toContain('離線');
+  expect(document.getElementById('system-status-updated').textContent).toContain('更新');
 });
 
 test('renderDiagnostics surfaces vision simulation mode', () => {
   renderDiagnostics({ vision: { mode: 'simulation', status: 'SIMULATION' } });
 
-  expect(document.getElementById('stat-camera').innerText).toBe('Simulation');
+  expect(document.getElementById('stat-camera').innerText).toBe('模擬模式');
   expect(document.getElementById('stat-camera').className).toBe('status-warning');
 });
 
 test('renderDiagnostics surfaces stale vision as warning', () => {
   renderDiagnostics({ vision: { status: 'STALE' } });
 
-  expect(document.getElementById('stat-camera').innerText).toBe('Stale');
+  expect(document.getElementById('stat-camera').innerText).toBe('資料延遲');
   expect(document.getElementById('stat-camera').className).toBe('status-warning');
 });
 

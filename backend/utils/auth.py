@@ -37,6 +37,19 @@ def create_jwt(role, *, subject="admin", ttl_minutes: int | None = None):
     return jwt.encode(payload, SECRET_KEY, algorithm='HS256')
 
 
+def create_scoped_jwt(scope: str, *, role: str = "operator", subject: str = "scoped", ttl_seconds: int = 300):
+    now = datetime.now(timezone.utc)
+    payload = {
+        "role": str(role or "operator"),
+        "sub": str(subject or scope or "scoped"),
+        "scope": str(scope or ""),
+        "iat": now,
+        "jti": str(uuid.uuid4()),
+        "exp": now + timedelta(seconds=max(1, int(ttl_seconds or 300))),
+    }
+    return jwt.encode(payload, SECRET_KEY, algorithm="HS256")
+
+
 def is_token_revoked(claims: dict | None) -> bool:
     if not claims:
         return True

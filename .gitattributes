@@ -30,5 +30,9 @@ snapshots/ export-ignore
 *.pt filter=lfs diff=lfs merge=lfs -text
 *.onnx filter=lfs diff=lfs merge=lfs -text
 *.exe filter=lfs diff=lfs merge=lfs -text
+*.nnue export-ignore
+*.pt export-ignore
+*.onnx export-ignore
+*.exe export-ignore
 backend/infrastructure/vision/models/ export-ignore
 .pytest_cache/ export-ignore

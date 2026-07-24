@@ -123,6 +123,6 @@ export const UIRegistry = {
         }
 
         if (this.refs.miniFps && data.fps !== undefined) this.refs.miniFps.innerText = `FPS: ${Math.round(data.fps)}`;
-        if (this.refs.miniLatency && data.latency !== undefined) this.refs.miniLatency.innerText = `LAT: ${Math.round(data.latency)}ms`;
+        if (this.refs.miniLatency && data.latency !== undefined) this.refs.miniLatency.innerText = `延遲：${Math.round(data.latency)}ms`;
     }
 };

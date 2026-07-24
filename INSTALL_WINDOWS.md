@@ -1,19 +1,19 @@
-# Windows Installation
+# Windows 安裝指南
 
-This is the recommended setup for a normal Windows test computer.
+這是針對一般 Windows 測試電腦的建議設定。
 
-## Supported Versions
+## 支援版本
 
-- Windows 10/11 64-bit
-- Python 3.11.9 recommended for lab PCs
-- Python 3.9, 3.10, 3.11, and 3.12 are supported
-- Python 3.13 is not supported yet for this project
-- Node.js 24 LTS recommended
-- npm 11 or newer
+- Windows 10/11 64位元
+- 實驗室電腦建議使用 Python 3.11.9
+- 支援 Python 3.9、3.10、3.11 與 3.12
+- 本專案目前尚未支援 Python 3.13
+- 建議使用 Node.js 24 LTS
+- npm 11 或更新版本
 
-## Clean Install
+## 全新安裝
 
-Run these commands from the project root in PowerShell:
+請在專案根目錄的 PowerShell 中執行以下指令：
 
 ```powershell
 py -3.11 -m venv .venv
@@ -24,22 +24,19 @@ Copy-Item .env.example .env
 .\.venv\Scripts\python.exe main.py
 ```
 
-Open `http://127.0.0.1:5000/`.
+開啟 `http://127.0.0.1:5000/`。
 
-## Setup Helper
+## 安裝輔助腳本
 
-The helper creates `.venv`, installs Python dependencies, installs Node
-dependencies if npm is available, initializes folders, and checks protected
-assets:
+此輔助腳本會建立 `.venv`、安裝 Python 依賴套件，若系統中有 npm 則會一併安裝 Node 依賴套件、初始化資料夾，並檢查受保護資產（protected assets）：
 
 ```powershell
 powershell.exe -ExecutionPolicy Bypass -File setup_env.ps1
 ```
 
-## Node Reset
+## Node 重設
 
-Use this when Jest or `node_modules` becomes inconsistent after copying the
-folder to another computer:
+當將資料夾複製到其他電腦，導致 Jest 或 `node_modules` 變得不一致時，請使用此方式：
 
 ```powershell
 Remove-Item -Recurse -Force node_modules
@@ -47,11 +44,11 @@ Remove-Item -Recurse -Force node_modules
 .\scripts\npm24.cmd test
 ```
 
-Keep `package-lock.json`. It is the reproducible dependency baseline.
+請保留 `package-lock.json`。它是可重製依賴套件的基準（baseline）。
 
-## Python Reset
+## Python 重設
 
-Use this when the venv was created by the wrong Python version:
+當虛擬環境（venv）由錯誤的 Python 版本建立時，請使用此方式：
 
 ```powershell
 Remove-Item -Recurse -Force .venv
@@ -60,13 +57,10 @@ py -3.11 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.runtime.txt -r requirements.vision.txt
 ```
 
-## Verification
+## 驗證
 
 ```powershell
 .\check_system.cmd
 ```
 
-Use `.\check_system_strict.cmd` before release packaging or copying the project
-as a stable baseline. These wrappers call PowerShell with `-ExecutionPolicy
-Bypass`, which avoids lab PCs failing because local script execution is
-disabled.
+在打包發佈版或是將專案作為穩定版本複製前，請使用 `.\check_system_strict.cmd`。這些包裝腳本會使用 `-ExecutionPolicy Bypass` 來呼叫 PowerShell，這可以避免實驗室電腦因為本機腳本執行被停用而發生錯誤。

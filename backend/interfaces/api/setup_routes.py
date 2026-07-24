@@ -88,8 +88,16 @@ def current_setup_settings() -> dict[str, Any]:
         vision_calibration = {}
     return {
         "vision": {
+            "source": str(getattr(config, "VISION_SOURCE", "opencv")),
             "camera_index": int(getattr(config, "CAMERA_INDEX", 0) or 0),
             "result_max_age_sec": float(getattr(config, "VISION_RESULT_MAX_AGE_SEC", 3.0)),
+            "tmflow_json": {
+                "host": str(getattr(config, "VISION_TMFLOW_IMAGE_HOST", "")),
+                "port": int(getattr(config, "VISION_TMFLOW_IMAGE_PORT", 5891)),
+                "timeout_sec": float(getattr(config, "VISION_TMFLOW_IMAGE_TIMEOUT_SEC", 2.0)),
+                "max_message_bytes": int(getattr(config, "VISION_TMFLOW_IMAGE_MAX_MESSAGE_BYTES", 1_048_576)),
+                "fps_limit": float(getattr(config, "VISION_TMFLOW_IMAGE_FPS_LIMIT", 2.0)),
+            },
             "calibration": vision_calibration,
         },
         "robot": {
@@ -99,10 +107,10 @@ def current_setup_settings() -> dict[str, Any]:
             },
             "connection": {
                 "adapter": str(getattr(config, "ROBOT_ADAPTER", "tmflow_json")),
-                "ip": str(getattr(config, "ROBOT_IP", "169.254.47.64")),
+                "ip": str(getattr(config, "ROBOT_IP", getattr(config, "DEFAULT_ROBOT_IP", "192.168.10.10"))),
                 "port": int(getattr(config, "ROBOT_PORT", 5890)),
-                "pc_ip": str(getattr(config, "ROBOT_PC_IP", "169.254.47.50")),
-                "subnet_mask": str(getattr(config, "ROBOT_SUBNET_MASK", "255.255.0.0")),
+                "pc_ip": str(getattr(config, "ROBOT_PC_IP", getattr(config, "DEFAULT_ROBOT_PC_IP", "192.168.10.50"))),
+                "subnet_mask": str(getattr(config, "ROBOT_SUBNET_MASK", getattr(config, "DEFAULT_ROBOT_SUBNET_MASK", "255.255.0.0"))),
                 "timeout_sec": float(getattr(config, "ROBOT_CONNECT_TIMEOUT_SEC", 3.0)),
                 "tmflow_version": str(getattr(config, "TMFLOW_VERSION", "1.82")),
                 "controller_version": str(getattr(config, "TM_CONTROLLER_VERSION", "1.82.51")),
@@ -199,8 +207,28 @@ def normalize_setup_settings(payload: Mapping[str, Any], base: Mapping[str, Any]
     normalized = deepcopy(dict(base or current_setup_settings()))
     merged = deep_merge(normalized, payload)
 
+    vision_source = _text(_get(merged, "vision.source", "opencv"), "vision.source").strip().lower()
+    if vision_source in {"usb", "usb_camera", "camera", "opencv_usb"}:
+        vision_source = "opencv"
+    if vision_source in {"tmflow", "tmflow_camera", "tmflow_json_camera"}:
+        vision_source = "tmflow_json"
+    if vision_source not in {"opencv", "tmflow_json"}:
+        raise ValueError("vision.source must be opencv or tmflow_json.")
+    _set(merged, "vision.source", vision_source)
     _set(merged, "vision.camera_index", _bounded_int(_get(merged, "vision.camera_index", 0), "vision.camera_index", 0, 15))
     _set(merged, "vision.result_max_age_sec", _finite_float(_get(merged, "vision.result_max_age_sec", 3.0), "vision.result_max_age_sec"))
+    default_robot_ip = str(getattr(config, "DEFAULT_ROBOT_IP", "192.168.10.10"))
+    default_robot_pc_ip = str(getattr(config, "DEFAULT_ROBOT_PC_IP", "192.168.10.50"))
+    default_subnet_mask = str(getattr(config, "DEFAULT_ROBOT_SUBNET_MASK", "255.255.0.0"))
+    _set(merged, "vision.tmflow_json.host", _text(_get(merged, "vision.tmflow_json.host", _get(merged, "robot.connection.ip", default_robot_ip)), "vision.tmflow_json.host"))
+    _set(merged, "vision.tmflow_json.port", _bounded_int(_get(merged, "vision.tmflow_json.port", 5891), "vision.tmflow_json.port", 1, 65535))
+    _set(merged, "vision.tmflow_json.timeout_sec", _finite_float(_get(merged, "vision.tmflow_json.timeout_sec", 2.0), "vision.tmflow_json.timeout_sec"))
+    _set(
+        merged,
+        "vision.tmflow_json.max_message_bytes",
+        _bounded_int(_get(merged, "vision.tmflow_json.max_message_bytes", 1_048_576), "vision.tmflow_json.max_message_bytes", 65_536, 10_485_760),
+    )
+    _set(merged, "vision.tmflow_json.fps_limit", _finite_float(_get(merged, "vision.tmflow_json.fps_limit", 2.0), "vision.tmflow_json.fps_limit"))
     _set(merged, "robot.runtime.fake_robot", _bool(_get(merged, "robot.runtime.fake_robot", True), "robot.runtime.fake_robot"))
     _set(merged, "robot.runtime.auto_execute_robot", _bool(_get(merged, "robot.runtime.auto_execute_robot", False), "robot.runtime.auto_execute_robot"))
     adapter = _text(_get(merged, "robot.connection.adapter", "tmflow_json"), "robot.connection.adapter").strip().lower()
@@ -209,8 +237,8 @@ def normalize_setup_settings(payload: Mapping[str, Any], base: Mapping[str, Any]
     _set(merged, "robot.connection.adapter", adapter)
     _set(merged, "robot.connection.ip", _text(_get(merged, "robot.connection.ip"), "robot.connection.ip"))
     _set(merged, "robot.connection.port", _bounded_int(_get(merged, "robot.connection.port"), "robot.connection.port", 1, 65535))
-    _set(merged, "robot.connection.pc_ip", _text(_get(merged, "robot.connection.pc_ip", "169.254.47.50"), "robot.connection.pc_ip"))
-    _set(merged, "robot.connection.subnet_mask", _text(_get(merged, "robot.connection.subnet_mask", "255.255.0.0"), "robot.connection.subnet_mask"))
+    _set(merged, "robot.connection.pc_ip", _text(_get(merged, "robot.connection.pc_ip", default_robot_pc_ip), "robot.connection.pc_ip"))
+    _set(merged, "robot.connection.subnet_mask", _text(_get(merged, "robot.connection.subnet_mask", default_subnet_mask), "robot.connection.subnet_mask"))
     _set(merged, "robot.connection.timeout_sec", _finite_float(_get(merged, "robot.connection.timeout_sec", 3.0), "robot.connection.timeout_sec"))
     _set(merged, "robot.connection.tmflow_version", _text(_get(merged, "robot.connection.tmflow_version", "1.82"), "robot.connection.tmflow_version"))
     _set(merged, "robot.connection.controller_version", _text(_get(merged, "robot.connection.controller_version", "1.82.51"), "robot.connection.controller_version"))
@@ -375,6 +403,13 @@ def _validate_setup_settings(settings: Mapping[str, Any]) -> None:
 
     if float(vision["result_max_age_sec"]) <= 0:
         raise ValueError("vision.result_max_age_sec must be positive.")
+    tmflow_vision = _get(settings, "vision.tmflow_json", {})
+    if float(tmflow_vision["timeout_sec"]) <= 0:
+        raise ValueError("vision.tmflow_json.timeout_sec must be positive.")
+    if float(tmflow_vision["fps_limit"]) <= 0 or float(tmflow_vision["fps_limit"]) > 30:
+        raise ValueError("vision.tmflow_json.fps_limit must be greater than 0 and no more than 30.")
+    if int(tmflow_vision["max_message_bytes"]) < 65_536:
+        raise ValueError("vision.tmflow_json.max_message_bytes must be at least 65536.")
     if float(connection["timeout_sec"]) <= 0:
         raise ValueError("robot.connection.timeout_sec must be positive.")
     if str(connection["adapter"]).strip().lower() in {"tmflow_json", "techmanpy"} and int(connection["port"]) != 5890:
@@ -508,8 +543,10 @@ def _validate_setup_settings(settings: Mapping[str, Any]) -> None:
 def _persisted_setup_payload(settings: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "vision": {
+            "source": _get(settings, "vision.source"),
             "camera_index": _get(settings, "vision.camera_index"),
             "result_max_age_sec": _get(settings, "vision.result_max_age_sec"),
+            "tmflow_json": dict(_get(settings, "vision.tmflow_json", {})),
         },
         "robot": {
             "runtime": dict(_get(settings, "robot.runtime", {})),
@@ -526,8 +563,14 @@ def _persisted_setup_payload(settings: Mapping[str, Any]) -> dict[str, Any]:
 def _apply_runtime_settings(settings: Mapping[str, Any]) -> list[str]:
     warnings: list[str] = []
 
+    config.VISION_SOURCE = str(_get(settings, "vision.source", "opencv")).strip().lower()
     config.CAMERA_INDEX = int(_get(settings, "vision.camera_index"))
     config.VISION_RESULT_MAX_AGE_SEC = float(_get(settings, "vision.result_max_age_sec"))
+    config.VISION_TMFLOW_IMAGE_HOST = str(_get(settings, "vision.tmflow_json.host"))
+    config.VISION_TMFLOW_IMAGE_PORT = int(_get(settings, "vision.tmflow_json.port"))
+    config.VISION_TMFLOW_IMAGE_TIMEOUT_SEC = float(_get(settings, "vision.tmflow_json.timeout_sec"))
+    config.VISION_TMFLOW_IMAGE_MAX_MESSAGE_BYTES = int(_get(settings, "vision.tmflow_json.max_message_bytes"))
+    config.VISION_TMFLOW_IMAGE_FPS_LIMIT = float(_get(settings, "vision.tmflow_json.fps_limit"))
     config.FAKE_ROBOT = bool(_get(settings, "robot.runtime.fake_robot"))
     config.AUTO_EXECUTE_ROBOT = bool(_get(settings, "robot.runtime.auto_execute_robot"))
     config.ROBOT_ADAPTER = str(_get(settings, "robot.connection.adapter")).strip().lower()
@@ -623,10 +666,12 @@ def _apply_runtime_settings(settings: Mapping[str, Any]) -> list[str]:
     config.SOFT_LIMIT_Z = (config.ROBOT_MIN_Z, config.ROBOT_MAX_Z)
 
     try:
-        if hasattr(vision_system, "set_camera_index"):
+        if hasattr(vision_system, "set_frame_source"):
+            vision_system.set_frame_source(config.VISION_SOURCE, camera_index=config.CAMERA_INDEX)
+        elif hasattr(vision_system, "set_camera_index"):
             vision_system.set_camera_index(config.CAMERA_INDEX)
     except Exception as exc:
-        warnings.append(f"Camera switch failed: {exc}")
+        warnings.append(f"Vision source switch failed: {exc}")
 
     try:
         from backend.application.container import container

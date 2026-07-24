@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ipaddress
 from typing import Any, Dict
 
 from backend.application.container import container
@@ -48,6 +49,16 @@ def build_preflight_report(*, require_auto_execute: bool = False) -> Dict[str, A
         "Auto Execute",
         "Robot auto execution is enabled." if auto_execute else "Robot auto execution is disabled.",
         severity="warning" if not require_auto_execute else "error",
+    )
+
+    network_status = _robot_network_config()
+    add(
+        "robot_network_config",
+        bool(network_status.get("ok")),
+        "Robot Network",
+        str(network_status.get("message") or "Robot and PC network settings are ready."),
+        severity="warning" if fake_robot else "error",
+        details=network_status.get("details", {}),
     )
 
     adapter = str(getattr(config, "ROBOT_ADAPTER", "tmflow_json")).strip().lower()
@@ -153,6 +164,16 @@ def build_preflight_report(*, require_auto_execute: bool = False) -> Dict[str, A
         severity="warning",
     )
 
+    ingest_key_status = _tmflow_vision_ingest_key_status(fake_robot=fake_robot)
+    add(
+        "tmflow_vision_ingest_key",
+        bool(ingest_key_status.get("ok")),
+        "TMflow Vision Key",
+        str(ingest_key_status.get("message") or "TMflow vision ingest key is ready."),
+        severity="error" if ingest_key_status.get("required") else "warning",
+        details=ingest_key_status.get("details", {}),
+    )
+
     add(
         "motion_profile_safe",
         _motion_profile_safe(),
@@ -180,9 +201,99 @@ def build_preflight_report(*, require_auto_execute: bool = False) -> Dict[str, A
             "auto_execute_robot": auto_execute,
             "robot_adapter": getattr(config, "ROBOT_ADAPTER", "tmflow_json"),
             "robot_ip": getattr(config, "ROBOT_IP", ""),
+            "robot_pc_ip": getattr(config, "ROBOT_PC_IP", ""),
+            "robot_subnet_mask": getattr(config, "ROBOT_SUBNET_MASK", ""),
             "robot_port": getattr(config, "ROBOT_PORT", None),
+            "vision_source": getattr(config, "VISION_SOURCE", "opencv"),
+            "vision_tmflow_image_port": getattr(config, "VISION_TMFLOW_IMAGE_PORT", None),
+            "vision_tmflow_ingest_key_configured": bool(str(getattr(config, "VISION_TMFLOW_INGEST_KEY", "") or "").strip()),
         },
         "robot": robot_status,
+    }
+
+
+def _robot_network_config() -> Dict[str, Any]:
+    robot_ip_text = str(getattr(config, "ROBOT_IP", "") or "").strip()
+    pc_ip_text = str(getattr(config, "ROBOT_PC_IP", "") or "").strip()
+    subnet_mask_text = str(getattr(config, "ROBOT_SUBNET_MASK", "") or "").strip()
+    details: Dict[str, Any] = {
+        "robot_ip": robot_ip_text,
+        "pc_ip": pc_ip_text,
+        "subnet_mask": subnet_mask_text,
+    }
+    try:
+        robot_ip = ipaddress.ip_address(robot_ip_text)
+        pc_ip = ipaddress.ip_address(pc_ip_text)
+        robot_network = ipaddress.ip_network(f"{robot_ip}/{subnet_mask_text}", strict=False)
+        pc_network = ipaddress.ip_network(f"{pc_ip}/{subnet_mask_text}", strict=False)
+    except ValueError as exc:
+        details["error"] = str(exc)
+        return {
+            "ok": False,
+            "message": "Robot IP, PC IP, or subnet mask is invalid.",
+            "details": details,
+        }
+
+    details.update({
+        "robot_network": str(robot_network),
+        "pc_network": str(pc_network),
+    })
+    if robot_ip.version != 4 or pc_ip.version != 4:
+        return {
+            "ok": False,
+            "message": "Robot and PC IPs must use IPv4 for the TMflow lab link.",
+            "details": details,
+        }
+    if robot_ip == pc_ip:
+        return {
+            "ok": False,
+            "message": "Robot IP and PC Ethernet IP must not be the same.",
+            "details": details,
+        }
+    if robot_network != pc_network:
+        return {
+            "ok": False,
+            "message": "Robot IP and PC Ethernet IP are not in the same subnet.",
+            "details": details,
+        }
+    return {
+        "ok": True,
+        "message": f"Robot and PC are on {robot_network}.",
+        "details": details,
+    }
+
+
+def _tmflow_vision_ingest_key_status(*, fake_robot: bool | None = None) -> Dict[str, Any]:
+    source = str(getattr(config, "VISION_SOURCE", "opencv") or "").strip().lower()
+    key_configured = bool(str(getattr(config, "VISION_TMFLOW_INGEST_KEY", "") or "").strip())
+    bind_host = str(getattr(config, "BIND_HOST", "127.0.0.1") or "").strip()
+    fake = bool(getattr(config, "FAKE_ROBOT", True) if fake_robot is None else fake_robot)
+    exposed_network = bind_host in {"0.0.0.0", "::"}
+    required = source == "tmflow_json" and (
+        bool(getattr(config, "IS_PRODUCTION", False)) or exposed_network or not fake
+    )
+    details = {
+        "vision_source": source,
+        "ingest_key_configured": key_configured,
+        "required": required,
+        "bind_host": bind_host,
+        "exposed_network": exposed_network,
+        "fake_robot": fake,
+    }
+    if required and not key_configured:
+        return {
+            "ok": False,
+            "message": "Set VISION_TMFLOW_INGEST_KEY before using TMflow vision with real hardware or a shared network.",
+            "details": details,
+        }
+    return {
+        "ok": True,
+        "message": (
+            "TMflow vision ingest key is configured."
+            if key_configured
+            else "TMflow vision ingest key is not required for local simulation."
+        ),
+        "details": details,
     }
 
 
