@@ -1,6 +1,5 @@
 # Keep source releases free of local secrets, dependency caches, and runtime artifacts.
 * text=auto eol=lf
-
 .env export-ignore
 .env.local export-ignore
 .env.development export-ignore
@@ -27,9 +26,9 @@ snapshots/ export-ignore
 *.before_excel_fix_*.xlsx export-ignore
 *.corrupt-* export-ignore
 *.xlsx export-ignore
-*.nnue export-ignore
-*.pt export-ignore
-*.onnx export-ignore
-*.exe export-ignore
+*.nnue filter=lfs diff=lfs merge=lfs -text
+*.pt filter=lfs diff=lfs merge=lfs -text
+*.onnx filter=lfs diff=lfs merge=lfs -text
+*.exe filter=lfs diff=lfs merge=lfs -text
 backend/infrastructure/vision/models/ export-ignore
 .pytest_cache/ export-ignore
