@@ -1,16 +1,29 @@
 # S.M.A.R.T. Chess Robot
 
-Local Flask + Socket.IO control system for a Xiangqi robot research setup.
+這是專為象棋機器人研究所開發的本機 Flask + Socket.IO 控制系統。
 
-The current runtime includes:
-- Flask-rendered web UI and static frontend modules.
-- Socket.IO state sync with a stable frontend event contract.
-- Pikafish engine analysis through protected engine and NNUE assets.
-- OpenCV / YOLO26-compatible vision pipeline with MJPEG streaming.
-- Robot facade with fake, TMflow TCP JSON, TechmanPy, and Modbus compatibility modes behind E-Stop safety guards.
-- SQLite-backed event persistence, replay, telemetry, and Excel/CSV exports.
+目前的執行環境包含：
+- 透過 Flask 渲染網頁介面以及靜態的前端模組。
+- 使用 Socket.IO 進行狀態同步，並具備穩定的前端事件合約 (event contract)。
+- 透過受保護的引擎及 NNUE 資源進行 Pikafish 引擎分析。
+- 具備 OpenCV / YOLO 視覺管線，並支援 MJPEG 串流。
+- 提供假訊號 (fake)、TMflow TCP JSON、TechmanPy 以及 Modbus 相容模式的機器人整合介面，並受到緊急停止 (E-Stop) 安全機制的保護。
+- 使用 SQLite 支援事件持久化、重播、遙測資料，以及 Excel/CSV 匯出功能。
 
-## Quickstart
+## Clone 與 Git LFS 注意事項
+
+本專案的 Pikafish 引擎與 YOLO 模型使用 Git LFS 管理。別台電腦第一次取得專案前，請先安裝 Git LFS，然後執行：
+
+```powershell
+git lfs install
+git clone https://github.com/jasonprtsai-boop/working-on.git
+cd working-on
+git lfs pull
+```
+
+如果沒有安裝 Git LFS，或 clone 後沒有執行 `git lfs pull`，`backend/infrastructure/protected_assets/` 內的模型與引擎檔可能只會是 LFS 指標檔，程式會找不到真正的二進位內容。
+
+## 快速開始
 
 Windows / PowerShell:
 
@@ -22,35 +35,31 @@ Copy-Item .env.example .env
 .\.venv\Scripts\python.exe main.py
 ```
 
-Alternatively, use the setup helper:
+或者使用安裝輔助腳本：
 
 ```powershell
 powershell.exe -ExecutionPolicy Bypass -File setup_env.ps1
 ```
 
-Open:
-- Console UI: `http://127.0.0.1:5000/`
-- Mission Control / Telemetry Dashboard: `http://127.0.0.1:5000/dashboard`
+開啟網頁：
+- 控制台 UI: `http://127.0.0.1:5000/`
+- 任務控制 / 遙測儀表板: `http://127.0.0.1:5000/dashboard`
 
-The dashboard requires a bearer token from `POST /api/login` with the configured `ADMIN_PASSWORD`.
+儀表板需要從 `POST /api/login` 取得且帶有設定之 `ADMIN_PASSWORD` 的 bearer token 才能存取。
 
-Recommended Windows system check:
+建議的 Windows 系統檢查：
 
 ```powershell
 .\check_system.cmd
 ```
 
-Use `.\check_system_strict.cmd` before release packaging or handoff. The `.cmd`
-wrappers intentionally bypass local PowerShell script policy for this project
-only, then call `scripts\check_system.ps1`.
+在發佈打包或交接前，請使用 `.\check_system_strict.cmd`。`.cmd` 包裝腳本會特別為了本專案略過本機 PowerShell 腳本執行原則，並接著呼叫 `scripts\check_system.ps1`。
 
-## Common Commands
+## 常用指令
 
-Run these from the project root in PowerShell. Prefer `.\scripts\npm24.cmd` for
-Node/npm commands on this project; it uses the project-local Node 24 runtime and
-avoids accidentally running unsupported Node 25+.
+請在專案根目錄的 PowerShell 執行這些指令。在本專案中建議使用 `.\scripts\npm24.cmd` 來執行 Node/npm 指令；這會使用專案本地的 Node 24 執行環境，並避免意外執行尚未支援的 Node 25+ 版本。
 
-Environment setup:
+環境設定：
 
 ```powershell
 py -3.11 -m venv .venv
@@ -60,7 +69,7 @@ py -3.11 -m venv .venv
 Copy-Item .env.example .env
 ```
 
-Start the app:
+啟動應用程式：
 
 ```powershell
 .\.venv\Scripts\python.exe main.py
@@ -68,7 +77,7 @@ Start the app:
 powershell.exe -ExecutionPolicy Bypass -File scripts\run_dev.ps1
 ```
 
-Version and dependency checks:
+版本與依賴套件檢查：
 
 ```powershell
 .\scripts\npm24.cmd run check:versions
@@ -76,7 +85,7 @@ Version and dependency checks:
 .\.venv\Scripts\python.exe scripts\audit_dependencies.py
 ```
 
-Quality and test commands:
+品質與測試指令：
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\quality_gate.py
@@ -86,7 +95,7 @@ Quality and test commands:
 .\.venv\Scripts\python.exe -m unittest discover tests -v
 ```
 
-Vision and camera commands:
+視覺與相機指令：
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\test_camera.py
@@ -96,7 +105,7 @@ Vision and camera commands:
 .\.venv\Scripts\python.exe scripts\update_vision_model.py <source-folder> --warmup
 ```
 
-Database, export, and report commands:
+資料庫、匯出與報告指令：
 
 ```powershell
 .\.venv\Scripts\python.exe -m backend.infrastructure.database.init_db
@@ -106,7 +115,7 @@ Database, export, and report commands:
 .\.venv\Scripts\python.exe scripts\repair_excel_workbook.py
 ```
 
-Cleanup and packaging:
+清理與打包：
 
 ```powershell
 .\scripts\npm24.cmd run cleanup:dry-run
@@ -114,7 +123,7 @@ Cleanup and packaging:
 .\scripts\npm24.cmd run share:zip
 ```
 
-Troubleshooting:
+疑難排解：
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip check
@@ -124,104 +133,104 @@ rg -n "[ \t]+$" .
 git diff --check
 ```
 
-Real TM5-700 robot network check:
+真實 TM5-700 機械手臂網路檢查：
 
 ```powershell
 Test-NetConnection 169.254.47.64 -Port 5890
 ```
 
-## Installation And Runbooks
+## 安裝與執行說明 (Installation And Runbooks)
 
-Use these documents when moving the project to a different computer or preparing the lab PC:
+當轉移專案到不同電腦，或是準備實驗室電腦時，請參閱以下文件：
 
-| File | Purpose |
+| 檔案 | 用途 |
 | --- | --- |
-| `INSTALL_WINDOWS.md` | Standard Windows setup and dependency reset. |
-| `INSTALL_LAB_PC.md` | Lab computer setup for camera and TM5-700 validation. |
-| `RUN_SIMULATION.md` | Safe first-run mode without real hardware. |
-| `RUN_REAL_ROBOT.md` | TM5-700 commissioning order and safety checklist. |
-| `TROUBLESHOOTING.md` | Common Python, npm, camera, robot, and quality-gate fixes. |
+| `INSTALL_WINDOWS.md` | 標準 Windows 設定與依賴套件重置。 |
+| `INSTALL_LAB_PC.md` | 用於相機與 TM5-700 驗證的實驗室電腦設定。 |
+| `RUN_SIMULATION.md` | 無實體硬體情況下的安全首跑模式。 |
+| `RUN_REAL_ROBOT.md` | TM5-700 試車順序與安全檢查清單。 |
+| `TROUBLESHOOTING.md` | 常見的 Python, npm, 相機, 機械手臂, 以及程式碼品質檢查修正。 |
 
-## Configuration
+## 組態設定 (Configuration)
 
-Use `.env.example` as the documented local-development baseline, then copy it to `.env`.
+請使用 `.env.example` 作為已文件化的本機開發基準，並將其複製到 `.env`。
 
-Important defaults:
+重要預設值：
 
-| Setting | Local default | Notes |
+| 設定 | 本機預設值 | 備註 |
 | --- | --- | --- |
-| `APP_ENV` | `development` | Set `production` only with hardened settings. |
-| `SYSTEM_MODE` | `simulation` | Production must not use `simulation`, `test`, or `demo`. |
-| `SMART_CHESS_HOST` / `PORT` | `127.0.0.1` / `5000` | Bind-all requires `SMART_CHESS_BIND_ALL=true` and hardened secrets/CORS. |
-| `CHESS_SECRET_KEY` | placeholder | Must be a random 32+ character value before deployment. |
-| `ADMIN_PASSWORD` | placeholder | Must not be `888888` outside explicit insecure test mode. |
-| `SETUP_PASSWORD` | placeholder | Must not be the default `login` in production. |
-| `FAKE_ROBOT` / `FAKE_AI` | `true` / `true` | Safe local defaults. Production requires both `false`. |
-| `FAKE_VISION` | `true` | Use `false` for real camera/model runtime. Production requires `false`. |
-| `ROBOT_ADAPTER` | `tmflow_json` | Primary real robot path for the TMflow 1.82 newline-delimited TCP JSON protocol. Use `techmanpy` or `modbus` only for compatibility. |
-| `ROBOT_IP` / `ROBOT_PORT` | `169.254.47.64` / `5890` | TM5-700 controller baseline confirmed for the lab. |
-| `CONTROL_AUTH_REQUIRED` | `true` | Control-plane API routes require JWT auth. |
-| `RATE_LIMITS_ENABLED` | `true` | Applies to login, control, and socket actions. |
-| `DB_PATH` | `data/runtime/app.db` | Production requires an explicit absolute path. |
-| `YOLO_CONFIG_DIR` | `logs/ultralytics` | Keeps Ultralytics settings inside ignored runtime logs. |
+| `APP_ENV` | `development` | 只有在安全性設定皆已配置妥當後才設定為 `production`。 |
+| `SYSTEM_MODE` | `simulation` | Production 模式絕不能使用 `simulation`、`test` 或 `demo`。 |
+| `SMART_CHESS_HOST` / `PORT` | `127.0.0.1` / `5000` | 若要綁定所有 IP（Bind-all）需設定 `SMART_CHESS_BIND_ALL=true`，並配置安全密碼/CORS。 |
+| `CHESS_SECRET_KEY` | placeholder | 在部署前必須是一組 32+ 字元的隨機字串。 |
+| `ADMIN_PASSWORD` | placeholder | 除了明確不安全的測試模式外，不能使用 `888888`。 |
+| `SETUP_PASSWORD` | placeholder | 在 production 模式下不可使用預設值 `login`。 |
+| `FAKE_ROBOT` / `FAKE_AI` | `true` / `true` | 安全的本機預設值。Production 模式兩者皆需為 `false`。 |
+| `FAKE_VISION` | `true` | 若為真實相機/模型執行環境請使用 `false`。Production 模式需為 `false`。 |
+| `ROBOT_ADAPTER` | `tmflow_json` | 針對 TMflow 1.82 支援換行符分隔的 TCP JSON 協定所設定的主要真實手臂路徑。只有為了相容性才使用 `techmanpy` 或 `modbus`。 |
+| `ROBOT_IP` / `ROBOT_PORT` | `169.254.47.64` / `5890` | 確認適用於實驗室的 TM5-700 控制器基準。 |
+| `CONTROL_AUTH_REQUIRED` | `true` | 核心控制 API 路徑需要 JWT 驗證。 |
+| `RATE_LIMITS_ENABLED` | `true` | 應用於登入、控制以及 socket 動作。 |
+| `DB_PATH` | `data/runtime/app.db` | Production 模式需要明確的絕對路徑。 |
+| `YOLO_CONFIG_DIR` | `logs/ultralytics` | 將 Ultralytics 的設定檔保持在被忽略的 runtime logs 內。 |
 
-Production preflight:
+上線前檢查 (Production preflight):
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\check_production_config.py --self-test
 .\.venv\Scripts\python.exe scripts\check_production_config.py --current --require-production
 ```
 
-## Verified Environment
+## 已驗證環境 (Verified Environment)
 
-Last local verification: 2026-07-15 via `.\.venv\Scripts\python.exe scripts\quality_gate.py`.
+最近一次的本機驗證：2026-07-15 透過 `.\.venv\Scripts\python.exe scripts\quality_gate.py`。
 
-Recommended install baseline:
-- Python 3.11.9 64-bit for lab PCs. Python 3.9-3.12 are supported; Python 3.13 is not supported yet.
-- Node.js 24 LTS with npm 11 or newer. `.nvmrc` and `.node-version` are set to Node 24.
+建議安裝基準：
+- 實驗室電腦使用 Python 3.11.9 64位元版本。支援 Python 3.9-3.12；尚未支援 Python 3.13。
+- 具備 npm 11 或更新版本的 Node.js 24 LTS。`.nvmrc` 與 `.node-version` 皆設為 Node 24。
 
-| Item | Verified version |
+| 項目 | 已驗證版本 |
 | --- | --- |
 | Python | 3.9.13 |
 | Flask | 3.1.3 |
 | Flask-SocketIO | 5.6.1 |
 | OpenCV | 4.11.0 (`opencv-python==4.11.0.86`) |
 | Ultralytics | 8.4.55 |
-| YOLO model | `backend/infrastructure/protected_assets/vision/best.onnx` |
+| YOLO 模型 | `backend/infrastructure/protected_assets/vision/best.onnx` |
 | ONNX Runtime | 1.19.2 |
 | Pikafish | 2026-01-31 (`pikafish-avx2.exe`) |
-| Node test stack | Node 24.18.0 via `scripts\npm24.cmd`, Jest 30.4.1, Playwright 1.60.0 |
+| Node 測試堆疊 | Node 24.18.0 (透過 `scripts\npm24.cmd`), Jest 30.4.1, Playwright 1.60.0 |
 
-Primary dependency files:
+主要的依賴套件檔案：
 
-| File | Purpose |
+| 檔案 | 用途 |
 | --- | --- |
-| `requirements.runtime.txt` | Minimal web, websocket, auth, engine, TMflow TCP JSON, TechmanPy, and Modbus compatibility runtime. |
-| `requirements.vision.txt` | Camera, ML vision, ONNX, benchmark, and report tooling. |
-| `requirements.txt` | Consolidated research environment. |
-| `requirements.lock.txt` | Reproducible Python baseline from the verified `.venv`. |
-| `package-lock.json` | Reproducible Node/Jest/Playwright baseline. |
+| `requirements.runtime.txt` | 最精簡的 web, websocket, auth, engine, TMflow TCP JSON, TechmanPy, 以及 Modbus 相容執行環境。 |
+| `requirements.vision.txt` | 相機, ML 視覺, ONNX, benchmark, 以及報告工具。 |
+| `requirements.txt` | 整合後的研究環境。 |
+| `requirements.lock.txt` | 源自已驗證 `.venv` 可重製的 Python 基準。 |
+| `package-lock.json` | 可重製的 Node/Jest/Playwright 基準。 |
 
-## Vision
+## 視覺系統 (Vision)
 
-- Active model slot: `backend/infrastructure/protected_assets/vision/best.onnx`
-- Optional source weights: `backend/infrastructure/protected_assets/vision/best.pt`
-- Dataset metadata: `backend/infrastructure/protected_assets/vision/dataset_mapping.yaml`
-- Training metadata: `backend/infrastructure/protected_assets/vision/args.yaml`
-- Calibration file: `data/vision_calibration.json`
+- 使用中的模型插槽: `backend/infrastructure/protected_assets/vision/best.onnx`
+- 選用的來源權重檔: `backend/infrastructure/protected_assets/vision/best.pt`
+- 資料集 metadata: `backend/infrastructure/protected_assets/vision/dataset_mapping.yaml`
+- 訓練 metadata: `backend/infrastructure/protected_assets/vision/args.yaml`
+- 校正檔案: `data/vision_calibration.json`
 
-Current recognition flow:
+目前的辨識流程：
 
-1. `CameraManager` reads OpenCV frames and stores the newest frame in `frame_buffer`.
-2. Board calibration uses manual corners or automatic ArUco/contour detection.
-3. A homography matrix rectifies `camera_frame` into `rectified_board` coordinates, default `1000x1000`.
-4. OpenCV preprocessing applies CLAHE color enhancement, optional denoising/blur, and sharpening.
-5. `YOLODetector` runs full-frame YOLO inference with the protected ONNX model.
-6. `BoardMapper` maps detection anchors to the nearest Xiangqi board intersection.
-7. Class labels are converted to Xiangqi FEN piece codes, then `TemporalValidator` requires stable repeated states.
-8. `FENGenerator` emits Xiangqi FEN and the runtime publishes `position fen ...` for engine use.
+1. `CameraManager` 讀取 OpenCV 的畫面，並將最新的一幀儲存至 `frame_buffer`。
+2. 棋盤校正採用手動標定角落點或是自動化 ArUco/輪廓偵測。
+3. 透過單應性矩陣（homography matrix）將 `camera_frame` 校正至預設為 `1000x1000` 的 `rectified_board` 座標。
+4. OpenCV 前處理應用 CLAHE 色彩增強、可選的去噪/模糊以及銳利化處理。
+5. `YOLODetector` 使用受保護的 ONNX 模型進行全畫面 YOLO 推論。
+6. `BoardMapper` 將偵測到的定錨點（anchors）對應至最接近的象棋棋盤交點。
+7. 分類標籤轉換為象棋 FEN 棋子編碼，接著由 `TemporalValidator` 確保能穩定重複相同狀態。
+8. `FENGenerator` 產生象棋 FEN，最後由系統發布 `position fen ...` 供引擎使用。
 
-Useful commands:
+實用指令：
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\check_vision_models.py --warmup
@@ -229,48 +238,48 @@ Useful commands:
 .\.venv\Scripts\python.exe scripts\vision_benchmark.py
 ```
 
-Vision endpoints:
+視覺相關 endpoints：
 - `GET /api/vision/status`
 - `GET /api/vision/cameras`
-- `POST /api/vision/camera` with `{"index": 0}`
+- `POST /api/vision/camera` 含 payload `{"index": 0}`
 - `GET /api/vision/calibration`
 - `POST /api/vision/calibration`
 - `GET /api/vision/stream`
 - `GET /api/video_feed`
 - `GET /api/vision/snapshot`
 
-If the camera or YOLO model cannot be opened, the runtime reports the error instead of silently switching detector modes.
+如果相機或 YOLO 模型無法開啟，系統會直接回報錯誤，而不是靜默地切換偵測模式。
 
-## Engine And Robot
+## 引擎與機械手臂 (Engine And Robot)
 
-Protected engine assets:
+受保護的引擎資源：
 - `backend/infrastructure/protected_assets/engine/pikafish-avx2.exe`
 - `backend/infrastructure/protected_assets/engine/pikafish.nnue`
 
-Key engine parameters:
+關鍵引擎參數：
 - `ENGINE_PROBE_ON_BOOT=false`
-- `ENGINE_AUTO_ANALYZE=false` (player mode starts analysis only after the Start button)
+- `ENGINE_AUTO_ANALYZE=false` (玩家模式只會在按下 Start 按鈕後才開始分析)
 - `ENGINE_OUTPUT_QUEUE_SIZE=2000`
 
-Robot mode defaults are safe for development:
+對開發安全的機械手臂預設值：
 - `FAKE_ROBOT=true`
 - `AUTO_EXECUTE_ROBOT=false`
 - `ROBOT_ADAPTER=tmflow_json`
 - `ROBOT_IP=169.254.47.64`
 - `ROBOT_PORT=5890`
 - `ROBOT_COMMAND_QUEUE_SIZE=200`
-- Conservative first-run speed defaults: `ROBOT_MAX_SPEED=80`, `ROBOT_TRAVEL_SPEED=30`, `ROBOT_LIFT_SPEED=30`, `ROBOT_APPROACH_SPEED=15`
+- 保守的首跑速度預設值: `ROBOT_MAX_SPEED=80`, `ROBOT_TRAVEL_SPEED=30`, `ROBOT_LIFT_SPEED=30`, `ROBOT_APPROACH_SPEED=15`
 
-Real robot mode requires `FAKE_ROBOT=false`, `ROBOT_ADAPTER=tmflow_json`, a reachable TMflow TCP JSON socket server on TCP `5890`, and ACK/DONE/ERROR responses that follow the Part 2 protocol.
-Follow `RUN_REAL_ROBOT.md` before enabling `AUTO_EXECUTE_ROBOT=true`; TMflow/controller TCP speed limits, force/collision detection, G-Sensor, safety zones, virtual walls, and a tested physical E-Stop are required for human-facing operation.
+真實手臂模式需要 `FAKE_ROBOT=false`，`ROBOT_ADAPTER=tmflow_json`，TCP 埠 `5890` 上有一個可連線的 TMflow TCP JSON socket server，並回傳遵循 Part 2 協定的 ACK/DONE/ERROR。
+在啟用 `AUTO_EXECUTE_ROBOT=true` 之前，請遵循 `RUN_REAL_ROBOT.md`；與人面對面運作前，必須設定 TMflow/controller TCP 速度限制、力道/碰撞偵測、G-Sensor、安全區域、虛擬牆，並有一個經過測試的實體緊急停止按鈕 (E-Stop)。
 
-## API Summary
+## API 總覽 (API Summary)
 
-Authentication:
+身分驗證：
 - `POST /api/login`
 - `POST /api/logout`
 
-Health and diagnostics:
+健康狀況與診斷：
 - `GET /api/ready`
 - `GET /api/health`
 - `GET /api/runtime/status`
@@ -278,7 +287,7 @@ Health and diagnostics:
 - `GET /api/assets/status`
 - `GET /api/engine/status`
 
-State and control:
+狀態與控制：
 - `GET /api/state`
 - `POST /api/control`
 - `POST /api/control/<action>`
@@ -291,12 +300,12 @@ State and control:
 - `POST /api/runtime/session/start`
 - `POST /api/runtime/session/end`
 
-Safety:
+安全性：
 - `GET /api/estop/status`
-- `POST /api/estop/trigger` with `{"reason": "..."}`
+- `POST /api/estop/trigger` 包含 `{"reason": "..."}`
 - `POST /api/estop/reset`
 
-Replay and export:
+重播與匯出：
 - `GET /api/replay/sessions`
 - `GET /api/replay/steps`
 - `GET /api/replay/step/<index>`
@@ -306,27 +315,27 @@ Replay and export:
 - `GET /api/export_json`
 - `GET /api/export_kpi`
 
-Robot calibration:
+機械手臂校正：
 - `GET /api/robot/calibration`
 - `POST /api/robot/calibration`
 
-## Runtime Contract
+## 系統合約 (Runtime Contract)
 
-Frontend code should rely on these stable backend-to-frontend event names:
+前端程式應依賴這些穩定由後端發送至前端的事件名稱：
 - `STATE_UPDATE`
 - `ENGINE.INFO_UPDATED`
 - `DIAGNOSTICS.UPDATED`
 - `VISION.FRAME_PROCESSED`
 - `ROBOT.STATUS_UPDATED`
 
-Contract code:
+合約程式碼：
 - `backend/runtime/contract.py`
 - `backend/runtime/contract_schema.py`
 - `scripts/check_contract.py`
 
-## Quality Checks
+## 品質檢查 (Quality Checks)
 
-Fast targeted checks:
+快速的指定檢查：
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\check_artifact_hygiene.py
@@ -336,57 +345,51 @@ Fast targeted checks:
 .\scripts\npm24.cmd test
 ```
 
-If the Node wrapper cannot find the project-local Node 24 runtime, install Node.js 24 LTS
-or extract the Node 24 portable build into `.tools\node-v24.18.0-win-x64`. If tests
-cannot find Jest after copying the folder to another computer, remove `node_modules`
-and run `.\scripts\npm24.cmd ci` from the project root. Keep `package-lock.json`.
+如果 Node 包裝腳本找不到專案本機的 Node 24，請安裝 Node.js 24 LTS，或將 Node 24 免安裝版解壓縮至 `.tools\node-v24.18.0-win-x64`。如果將資料夾複製到另一台電腦後，測試指令找不到 Jest，請刪除 `node_modules` 並在專案根目錄執行 `.\scripts\npm24.cmd ci`。請保留 `package-lock.json`。
 
-Full local system check:
+完整本機系統檢查：
 
 ```powershell
 .\check_system.cmd
 ```
 
-Strict clean-tree system check:
+嚴格的乾淨檔案樹（clean-tree）系統檢查：
 
 ```powershell
 .\check_system_strict.cmd
 ```
 
-The non-strict check intentionally skips the clean Git tree requirement and is useful while the working tree contains active development changes.
+非嚴格檢查刻意跳過了乾淨 Git 檔案樹的要求，這在工作目錄包含活躍開發中的變更時非常實用。
 
-## Development Planning
+## 開發規劃 (Development Planning)
 
-Current planning and changeset triage:
+目前的規劃與 changeset 分類：
 - `docs/ROADMAP.md`
 - `docs/CHANGESET_TRIAGE.md`
 
-Use the roadmap for phased development priorities. Use the triage document to
-decide which modified, deleted, and untracked files belong in the next stable
-baseline.
+請使用 roadmap 了解分階段的開發優先事項。使用 triage 文件來決定哪些被修改、刪除以及未追蹤的檔案該列入下一次穩定的 baseline 中。
 
-## Cleanup And Release
+## 清理與打包 (Cleanup And Release)
 
-Dry-run cleanup:
+乾跑測試清理 (Dry-run cleanup)：
 
 ```powershell
 .\scripts\npm24.cmd run cleanup:dry-run
 ```
 
-Build release zip:
+建立發佈 zip 檔：
 
 ```powershell
 .\scripts\npm24.cmd run release:zip
 ```
 
-Build a sanitized source-review/share zip without local runtime data or protected
-binary/model assets:
+建立一個經過淨化、供原始碼審查或分享的 zip 檔（不含本地執行資料或受保護的二進位/模型資產）：
 
 ```powershell
 .\scripts\npm24.cmd run share:zip
 ```
 
-Runtime artifacts are intentionally excluded from Git and release output:
+執行時產生的工件會刻意從 Git 與發佈輸出中排除：
 - `.env`
 - `.venv/`
 - `.tools/`
@@ -398,4 +401,4 @@ Runtime artifacts are intentionally excluded from Git and release output:
 - `reports/`
 - `analysis_artifacts/`
 - `*.db`, `*.log`, `*.xlsx`
-- model/engine binaries outside protected release handling
+- 不屬於受保護發佈流程處理的模型/引擎執行檔
