@@ -2,7 +2,6 @@ import { RenderScheduler } from '../core/render_scheduler.js';
 
 const DEFAULT_LIGHTS = [
     { id: 'frontend', label: '前端介面', group: 'logic', status: 'running', message: '介面已載入' },
-    { id: 'socket', label: 'Socket.IO', group: 'logic' },
     { id: 'eventbus', label: 'EventBus', group: 'logic' },
     { id: 'state', label: '狀態儲存', group: 'logic' },
     { id: 'vision', label: '視覺', group: 'logic' },
@@ -13,11 +12,8 @@ const DEFAULT_LIGHTS = [
     { id: 'robot', label: '機械手臂', group: 'hardware' },
     { id: 'serial', label: '序列埠', group: 'hardware' },
     { id: 'usb', label: 'USB', group: 'hardware' },
-    { id: 'storage', label: '儲存', group: 'hardware' },
     { id: 'cpu', label: 'CPU', group: 'hardware' },
     { id: 'ram', label: 'RAM', group: 'hardware' },
-    { id: 'gpu', label: 'GPU', group: 'hardware' },
-    { id: 'temperature', label: '溫度', group: 'hardware' },
 ];
 
 const STATUS_PRIORITY = {
@@ -118,8 +114,6 @@ export const SystemStatusStrip = {
         this.mergeLight('usb', linkLight('USB', robot.usb));
         this.mergeLight('cpu', cpuLight(health));
         this.mergeLight('ram', ramLight(health));
-        this.mergeLight('gpu', gpuLight(health.gpu));
-        this.mergeLight('temperature', temperatureLight(health.temperature));
 
         if (this.updated) {
             this.updated.textContent = `更新 ${formatTime(topology.updated_at || health.timestamp || Date.now() / 1000)}`;
@@ -360,30 +354,7 @@ function ramLight(health) {
     };
 }
 
-function gpuLight(gpu) {
-    if (!gpu || gpu.available === false) {
-        return { label: 'GPU', status: 'offline', message: gpu?.reason || '無法取得', lastEvent: 'GPU_UNAVAILABLE' };
-    }
-    return {
-        label: 'GPU',
-        status: Number(gpu.load_percent) >= 90 ? 'warning' : 'success',
-        message: `${gpu.name || 'GPU'} ${formatNumber(gpu.load_percent)}%`,
-        lastEvent: 'GPU_STATUS',
-    };
-}
 
-function temperatureLight(temp) {
-    if (!temp || temp.available === false) {
-        return { label: '溫度', status: 'offline', message: temp?.reason || '無法取得', lastEvent: 'TEMP_UNAVAILABLE' };
-    }
-    const value = Number(temp.max_c);
-    return {
-        label: '溫度',
-        status: Number.isFinite(value) && value >= 80 ? 'warning' : 'success',
-        message: Number.isFinite(value) ? `${value.toFixed(1)} C ${temp.label || ''}` : '可用',
-        lastEvent: 'TEMPERATURE_STATUS',
-    };
-}
 
 function detailText(light) {
     if (!light) return '';
