@@ -152,6 +152,7 @@ function setupUI() {
     setupSettingsControls();
     setupPlayerGuide();
     setupSidebarTabs();
+    setupModeTabsKeyboard();
     installAuthorizationGuards();
 
     const videoFeed = UIRegistry.get('videoFeed');
@@ -346,10 +347,40 @@ function hideSystemOverlay() {
 
 function switchPane(paneId, buttonId) {
     document.querySelectorAll('.view-pane').forEach((pane) => {
-        pane.classList.toggle('active', pane.id === paneId);
+        const active = pane.id === paneId;
+        pane.classList.toggle('active', active);
+        pane.setAttribute('aria-hidden', active ? 'false' : 'true');
     });
     document.querySelectorAll('.mode-btn').forEach((button) => {
-        button.classList.toggle('active', button.id === buttonId);
+        const active = button.id === buttonId;
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+}
+
+function setupModeTabsKeyboard() {
+    const tabs = Array.from(document.querySelectorAll('.view-mode-toggle .mode-btn'));
+    tabs.forEach((tab, index) => {
+        tab.addEventListener('keydown', (event) => {
+            let nextIndex = null;
+            if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+                nextIndex = (index + 1) % tabs.length;
+            } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+                nextIndex = (index - 1 + tabs.length) % tabs.length;
+            } else if (event.key === 'Home') {
+                nextIndex = 0;
+            } else if (event.key === 'End') {
+                nextIndex = tabs.length - 1;
+            }
+
+            if (nextIndex === null) {
+                return;
+            }
+
+            event.preventDefault();
+            tabs[nextIndex].focus();
+            tabs[nextIndex].click();
+        });
     });
 }
 

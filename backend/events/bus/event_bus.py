@@ -31,9 +31,9 @@ class EventBus:
         if allow_legacy_dict_events is None:
             try:
                 from backend.utils import config
-                allow_legacy_dict_events = bool(getattr(config, "EVENTBUS_ALLOW_LEGACY_DICT_EVENTS", True))
+                allow_legacy_dict_events = bool(getattr(config, "EVENTBUS_ALLOW_LEGACY_DICT_EVENTS", False))
             except Exception:
-                allow_legacy_dict_events = True
+                allow_legacy_dict_events = False
         self._subscribers = defaultdict(list) # List[Tuple[Callable, bool]] (handler, is_async)
         self._global_subscribers = [] # List[Tuple[Callable, bool]]
         self._global_subscriber_keys = {}

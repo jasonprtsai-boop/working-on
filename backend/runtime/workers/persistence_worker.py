@@ -18,11 +18,18 @@ class PersistenceWorker:
         self.store = EventStore(config.DB_PATH)
         self._task: Optional[asyncio.Task] = None
         self._queue: "queue.Queue[dict]" = queue.Queue(maxsize=max(100, int(getattr(config, "PERSISTENCE_QUEUE_SIZE", 2000))))
+        self._critical_queue: "queue.Queue[dict]" = queue.Queue(
+            maxsize=max(10, int(getattr(config, "PERSISTENCE_CRITICAL_QUEUE_SIZE", 500)))
+        )
+        self._critical_event_types = {
+            str(item) for item in getattr(config, "PERSISTENCE_CRITICAL_EVENT_TYPES", ()) if str(item)
+        }
         self._batch_size = max(1, int(getattr(config, "PERSISTENCE_BATCH_SIZE", 100)))
         self._flush_interval = max(0.05, float(getattr(config, "PERSISTENCE_FLUSH_INTERVAL_SEC", 0.25)))
         self._stop = threading.Event()
         self._subscribed = False
         self._dropped_events = 0
+        self._critical_overflow_events = 0
         self._received_events = 0
         self._persisted_events = 0
         self._last_drop_at = None
@@ -61,7 +68,10 @@ class PersistenceWorker:
 
             try:
                 self._received_events += 1
-                self._queue.put_nowait(data)
+                if self._is_critical_event(data):
+                    self._enqueue_critical(data)
+                else:
+                    self._queue.put_nowait(data)
             except queue.Full:
                 self._dropped_events += 1
                 self._last_drop_at = time.time()
@@ -155,6 +165,11 @@ class PersistenceWorker:
             "queue_size": self._queue.qsize(),
             "queue_maxsize": self._queue.maxsize,
             "queue_full": self._queue.full(),
+            "critical_queue_size": self._critical_queue.qsize(),
+            "critical_queue_maxsize": self._critical_queue.maxsize,
+            "critical_queue_full": self._critical_queue.full(),
+            "critical_event_types": sorted(self._critical_event_types),
+            "critical_overflow_events": self._critical_overflow_events,
             "received_events": self._received_events,
             "dropped_events": self._dropped_events,
             "drop_warning": self._dropped_events >= max(1, int(getattr(config, "PERSISTENCE_DROP_WARNING_THRESHOLD", 1))),
@@ -168,10 +183,23 @@ class PersistenceWorker:
     def _collect_batch(self):
         batch = []
         try:
-            first = self._queue.get(timeout=self._flush_interval)
+            first = self._critical_queue.get_nowait()
             batch.append(first)
         except queue.Empty:
-            return batch
+            pass
+
+        if not batch:
+            try:
+                first = self._queue.get(timeout=self._flush_interval)
+                batch.append(first)
+            except queue.Empty:
+                return batch
+
+        while len(batch) < self._batch_size:
+            try:
+                batch.append(self._critical_queue.get_nowait())
+            except queue.Empty:
+                break
 
         while len(batch) < self._batch_size:
             try:
@@ -184,10 +212,31 @@ class PersistenceWorker:
         batch = []
         while len(batch) < self._batch_size:
             try:
+                batch.append(self._critical_queue.get_nowait())
+            except queue.Empty:
+                break
+        while len(batch) < self._batch_size:
+            try:
                 batch.append(self._queue.get_nowait())
             except queue.Empty:
                 break
         return batch
+
+    def _is_critical_event(self, event_data: dict) -> bool:
+        event_type = str(event_data.get("type") or event_data.get("event_type") or "")
+        return event_type in self._critical_event_types
+
+    def _enqueue_critical(self, data: dict):
+        try:
+            self._critical_queue.put_nowait(data)
+        except queue.Full:
+            self._critical_overflow_events += 1
+            logger.error(
+                "[PersistenceWorker] critical queue full; synchronously persisting event type=%s",
+                data.get("type") or data.get("event_type"),
+            )
+            self.store.save_event(data)
+            self._record_persisted(1)
 
     def stop(self):
         self._stop.set()

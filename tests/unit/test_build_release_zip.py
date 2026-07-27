@@ -18,6 +18,13 @@ class BuildReleaseZipTests(unittest.TestCase):
         self.assertIsNotNone(build_release_zip.exclusion_reason(Path("data/runtime/app.db"), is_dir=False))
         self.assertIsNotNone(build_release_zip.exclusion_reason(Path("logs/app.log"), is_dir=False))
         self.assertIsNotNone(build_release_zip.exclusion_reason(Path("analysis_artifacts/image_inventory.json"), is_dir=False))
+        self.assertIsNotNone(build_release_zip.exclusion_reason(Path("tests/unit/test_api.py"), is_dir=False))
+        self.assertIsNotNone(build_release_zip.exclusion_reason(Path("frontend/tests/api.test.js"), is_dir=False))
+        self.assertIsNotNone(build_release_zip.exclusion_reason(Path(".github/workflows/ci.yml"), is_dir=False))
+        self.assertIsNotNone(build_release_zip.exclusion_reason(Path("docs/CHANGESET_TRIAGE.md"), is_dir=False))
+        self.assertIsNotNone(build_release_zip.exclusion_reason(Path("PLANS.md"), is_dir=False))
+        self.assertIsNotNone(build_release_zip.exclusion_reason(Path("scripts/quality_gate.py"), is_dir=False))
+        self.assertIsNotNone(build_release_zip.exclusion_reason(Path("scripts/check_css_integrity.mjs"), is_dir=False))
         self.assertIsNotNone(
             build_release_zip.exclusion_reason(Path("chess_robot_experiment.before_excel_fix_20260515040648.xlsx"), is_dir=False)
         )
@@ -47,6 +54,13 @@ class BuildReleaseZipTests(unittest.TestCase):
                 root / "logs" / "app.log",
                 root / "analysis_artifacts" / "image_inventory.json",
                 root / "chess_robot_experiment.xlsx",
+                root / "tests" / "unit" / "test_api.py",
+                root / "frontend" / "tests" / "api.test.js",
+                root / ".github" / "workflows" / "ci.yml",
+                root / "docs" / "CHANGESET_TRIAGE.md",
+                root / "PLANS.md",
+                root / "scripts" / "quality_gate.py",
+                root / "scripts" / "check_css_integrity.mjs",
             ]
             for path in [keep, protected, protected_onnx, *drop_files]:
                 path.parent.mkdir(parents=True, exist_ok=True)

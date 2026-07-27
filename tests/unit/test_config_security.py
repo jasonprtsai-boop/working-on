@@ -168,6 +168,29 @@ class TestConfigSecurity(unittest.TestCase):
         self.assertNotEqual(relative_result.returncode, 0)
         self.assertIn("absolute path", relative_result.stderr + relative_result.stdout)
 
+    def test_production_rejects_memory_jwt_revocation_store(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            env = self._production_env(tmpdir)
+            env["JWT_REVOCATION_DB_PATH"] = ":memory:"
+            result = self._import_config(env)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("JWT_REVOCATION_DB_PATH", result.stderr + result.stdout)
+
+    def test_rejects_unknown_vision_runtime_owner(self):
+        env = os.environ.copy()
+        env.update({
+            "APP_ENV": "development",
+            "TEST_MODE": "1",
+            "ALLOW_INSECURE_DEFAULTS": "1",
+            "VISION_RUNTIME_OWNER": "both",
+            "PYTHONPATH": os.getcwd(),
+        })
+        result = self._import_config(env)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("VISION_RUNTIME_OWNER", result.stderr + result.stdout)
+
     def test_production_rejects_engine_assets_outside_protected_root(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             engine_path = os.path.join(tmpdir, "pikafish.exe")

@@ -1,6 +1,7 @@
 import os
 import uuid
 import unittest
+import zipfile
 from io import BytesIO
 
 from openpyxl import load_workbook
@@ -75,6 +76,7 @@ class TestApiRoutes(unittest.TestCase):
             "/api/vision/snapshot",
             "/api/snapshot",
             "/api/export/excel",
+            "/api/export/diagnostics.zip",
             "/api/replay/sessions",
             "/api/replay/steps",
             "/api/replay/step/0",
@@ -192,6 +194,17 @@ class TestApiRoutes(unittest.TestCase):
         text = resp.get_data(as_text=True)
         resp.close()
         self.assertIn("sequence_id,session_id,trace_id,type,timestamp,payload_json", text)
+
+    def test_diagnostics_export_returns_redacted_zip(self):
+        resp = self.client.get("/api/export/diagnostics.zip", headers=self.auth_headers)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.mimetype, "application/zip")
+
+        with zipfile.ZipFile(BytesIO(resp.data)) as archive:
+            names = set(archive.namelist())
+            self.assertIn("summary.json", names)
+            self.assertIn("config/redacted_config.json", names)
+        resp.close()
 
     def test_replay_routes_expose_sessions_steps_snapshot_and_export(self):
         from backend.events.store.event_store import event_store

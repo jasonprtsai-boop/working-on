@@ -1,0 +1,31 @@
+* { margin:0; padding:0; box-sizing: border-box; }
+
+body {
+    background: var(--bg-main);
+    color: var(--text-main);
+    font-family: var(--font-sans);
+    line-height: 1.5;
+    overflow-x: hidden;
+    min-height: 100vh;
+}
+
+.bg-gradient {
+    position: fixed; inset: 0;
+    background:
+        radial-gradient(circle at 100% 0%, #f0f9ff 0%, #ffffff 60%, var(--bg-main) 100%);
+    z-index: -2;
+}
+
+.bg-grid {
+    position: fixed; inset: 0;
+    background-image:
+        linear-gradient(#e2e8f0 1px, transparent 1px),
+        linear-gradient(90deg, #e2e8f0 1px, transparent 1px);
+    background-size: 50px 50px;
+    z-index: -1;
+    opacity: 0.3;
+    mask-image: radial-gradient(circle at center, black, transparent 80%);
+}
+
+.hidden { display: none !important; }
+

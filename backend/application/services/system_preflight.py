@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import ipaddress
+import socket
+import time
 from typing import Any, Dict
 
 from backend.application.container import container
@@ -62,6 +64,17 @@ def build_preflight_report(*, require_auto_execute: bool = False) -> Dict[str, A
     )
 
     adapter = str(getattr(config, "ROBOT_ADAPTER", "tmflow_json")).strip().lower()
+    tcp_probe = _robot_tcp_connect_probe(fake_robot=fake_robot, adapter=adapter, robot_status=robot_status)
+    if tcp_probe.get("required") or not tcp_probe.get("ok"):
+        add(
+            "robot_tcp_connect_probe",
+            bool(tcp_probe.get("ok")),
+            "Robot TCP Probe",
+            str(tcp_probe.get("message") or "Robot TCP probe completed."),
+            severity="warning" if fake_robot else "error",
+            details=tcp_probe.get("details", {}),
+        )
+
     if adapter == "modbus":
         add(
             "robot_communication_probe",
@@ -156,12 +169,14 @@ def build_preflight_report(*, require_auto_execute: bool = False) -> Dict[str, A
             },
         )
 
+    vision_readiness = _vision_readiness_status(fake_robot=fake_robot)
     add(
         "vision_ready",
-        _vision_ready(),
+        bool(vision_readiness.get("ok")),
         "Vision",
-        "Vision system is calibrated or running in simulation." if _vision_ready() else "Vision is not calibrated or unavailable.",
-        severity="warning",
+        str(vision_readiness.get("message") or "Vision is not calibrated or unavailable."),
+        severity="warning" if fake_robot else "error",
+        details=vision_readiness.get("details", {}),
     )
 
     ingest_key_status = _tmflow_vision_ingest_key_status(fake_robot=fake_robot)
@@ -263,6 +278,68 @@ def _robot_network_config() -> Dict[str, Any]:
     }
 
 
+def _robot_tcp_connect_probe(
+    *,
+    fake_robot: bool,
+    adapter: str,
+    robot_status: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
+    adapter_name = str(adapter or "").strip().lower()
+    required = bool(not fake_robot and adapter_name == "tmflow_json")
+    host = str(getattr(config, "ROBOT_IP", "") or "").strip()
+    port = int(getattr(config, "ROBOT_PORT", 5890) or 5890)
+    timeout = max(0.05, float(getattr(config, "ROBOT_CONNECT_TIMEOUT_SEC", 1.0) or 1.0))
+    details: Dict[str, Any] = {
+        "adapter": adapter_name,
+        "required": required,
+        "host": host,
+        "port": port,
+        "timeout_sec": timeout,
+    }
+    if fake_robot:
+        return {
+            "ok": True,
+            "required": False,
+            "message": "Simulation mode does not require a robot TCP probe.",
+            "details": details,
+        }
+    if adapter_name != "tmflow_json":
+        return {
+            "ok": True,
+            "required": False,
+            "message": "Robot TCP probe is only required for TMflow TCP JSON mode.",
+            "details": details,
+        }
+    if bool((robot_status or {}).get("connected")):
+        details["source"] = "robot_status"
+        return {
+            "ok": True,
+            "required": True,
+            "message": "Robot TCP connection is already established.",
+            "details": details,
+        }
+    start = time.monotonic()
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            pass
+        details["rtt_ms"] = round((time.monotonic() - start) * 1000.0, 2)
+        return {
+            "ok": True,
+            "required": True,
+            "message": "Robot TCP port accepted a connection.",
+            "details": details,
+        }
+    except Exception as exc:
+        details["error"] = str(exc)
+        details["rtt_ms"] = round((time.monotonic() - start) * 1000.0, 2)
+        return {
+            "ok": False,
+            "required": True,
+            "message": "Robot TCP port did not accept a connection.",
+            "details": details,
+        }
+
+
 def _tmflow_vision_ingest_key_status(*, fake_robot: bool | None = None) -> Dict[str, Any]:
     source = str(getattr(config, "VISION_SOURCE", "opencv") or "").strip().lower()
     key_configured = bool(str(getattr(config, "VISION_TMFLOW_INGEST_KEY", "") or "").strip())
@@ -307,14 +384,90 @@ def _robot_status() -> Dict[str, Any]:
     return {"connected": False, "busy": False, "error": "robot_not_registered"}
 
 
+def _vision_readiness_status(*, fake_robot: bool | None = None) -> Dict[str, Any]:
+    fake = bool(getattr(config, "FAKE_ROBOT", True) if fake_robot is None else fake_robot)
+    configured_fake_vision = bool(getattr(config, "FAKE_VISION", False))
+    details: Dict[str, Any] = {
+        "fake_robot": fake,
+        "configured_fake_vision": configured_fake_vision,
+        "vision_source": getattr(config, "VISION_SOURCE", "opencv"),
+    }
+    if configured_fake_vision:
+        details.update({
+            "simulation": True,
+            "fallback": False,
+        })
+        if fake:
+            return {
+                "ok": True,
+                "message": "Vision simulation is active.",
+                "details": details,
+            }
+        return {
+            "ok": False,
+            "message": "Fake vision is enabled while real robot mode is selected.",
+            "details": details,
+        }
+
+    try:
+        from backend.interfaces.api.shared import runtime_vision_status, vision_system
+
+        runtime_status = runtime_vision_status()
+        calibration = vision_system.get_calibration_status() if hasattr(vision_system, "get_calibration_status") else {}
+        fallback_reason = (
+            runtime_status.get("fallback_reason")
+            or calibration.get("fallback_reason")
+            or getattr(vision_system, "_fallback_reason", None)
+        )
+        fallback = bool(runtime_status.get("fallback") or calibration.get("fallback") or fallback_reason)
+        simulation = bool(runtime_status.get("simulation") or calibration.get("simulation"))
+        calibrated = bool(calibration.get("calibrated") or calibration.get("loaded_from_file"))
+        details.update({
+            "system": runtime_status.get("system") or vision_system.__class__.__name__,
+            "mode": runtime_status.get("mode"),
+            "simulation": simulation,
+            "fallback": fallback,
+            "fallback_reason": str(fallback_reason) if fallback_reason else None,
+            "calibrated": bool(calibration.get("calibrated")),
+            "loaded_from_file": bool(calibration.get("loaded_from_file")),
+            "calibration_path": calibration.get("path"),
+            "calibration_path_exists": bool(calibration.get("path_exists")),
+        })
+        if fallback:
+            return {
+                "ok": False,
+                "message": "Real vision failed to start and fallback simulation is active.",
+                "details": details,
+            }
+        if simulation:
+            return {
+                "ok": False,
+                "message": "Vision is running in simulation while FAKE_VISION is false.",
+                "details": details,
+            }
+        if calibrated:
+            return {
+                "ok": True,
+                "message": "Vision system is calibrated.",
+                "details": details,
+            }
+        return {
+            "ok": False,
+            "message": "Vision is not calibrated or unavailable.",
+            "details": details,
+        }
+    except Exception as exc:
+        details["error"] = str(exc)
+        return {
+            "ok": False,
+            "message": "Vision readiness check failed.",
+            "details": details,
+        }
+
+
 def _vision_ready() -> bool:
     try:
-        if bool(getattr(config, "FAKE_VISION", False)):
-            return True
-        from backend.interfaces.api.shared import vision_system
-
-        status = vision_system.get_calibration_status() if hasattr(vision_system, "get_calibration_status") else {}
-        return bool(status.get("calibrated") or status.get("loaded_from_file") or status.get("simulation"))
+        return bool(_vision_readiness_status().get("ok"))
     except Exception:
         return False
 

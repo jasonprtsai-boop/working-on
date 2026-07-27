@@ -138,8 +138,8 @@ PORT = int(_env_or_cfg("PORT", "server.port", 5000))
 # Runtime contract validation (best-effort, non-fatal)
 CONTRACT_VALIDATE = _as_bool(os.environ.get('CONTRACT_VALIDATE', get_cfg('system.contract_validate', True)), default=True)
 EVENTBUS_ALLOW_LEGACY_DICT_EVENTS = _as_bool(
-    _env_or_cfg("EVENTBUS_ALLOW_LEGACY_DICT_EVENTS", "system.eventbus_allow_legacy_dict_events", not IS_PRODUCTION),
-    default=not IS_PRODUCTION,
+    _env_or_cfg("EVENTBUS_ALLOW_LEGACY_DICT_EVENTS", "system.eventbus_allow_legacy_dict_events", False),
+    default=False,
 )
 CONTROL_AUTH_REQUIRED = _as_bool(
     os.environ.get("CONTROL_AUTH_REQUIRED", get_cfg("security.control_auth_required", True)),
@@ -328,12 +328,54 @@ DB_PATH = ":memory:" if _db_path_text == ":memory:" else os.path.abspath(_db_pat
 if DB_PATH != ":memory:":
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
 
+_jwt_revocation_db_raw = _env_or_cfg("JWT_REVOCATION_DB_PATH", "security.jwt_revocation_db_path", DB_PATH)
+_jwt_revocation_db_text = str(_jwt_revocation_db_raw).strip()
+JWT_REVOCATION_DB_PATH = (
+    ":memory:" if _jwt_revocation_db_text == ":memory:" else os.path.abspath(_jwt_revocation_db_text or DB_PATH)
+)
+if JWT_REVOCATION_DB_PATH != ":memory:":
+    os.makedirs(os.path.dirname(JWT_REVOCATION_DB_PATH), exist_ok=True)
+
 WAL_MODE = get_cfg('database.wal_mode', True)
 PERSISTENCE_QUEUE_SIZE = int(get_cfg("database.persistence_queue_size", 2000))
+PERSISTENCE_CRITICAL_QUEUE_SIZE = int(
+    _env_or_cfg("PERSISTENCE_CRITICAL_QUEUE_SIZE", "database.persistence_critical_queue_size", 500)
+)
+PERSISTENCE_CRITICAL_EVENT_TYPES = tuple(
+    item.strip()
+    for item in str(
+        _env_or_cfg(
+            "PERSISTENCE_CRITICAL_EVENT_TYPES",
+            "database.persistence_critical_event_types",
+            ",".join(
+                [
+                    "EMERGENCY_STOP",
+                    "ROBOT_MOVE_REQUESTED",
+                    "ROBOT_MOVE_STARTED",
+                    "ROBOT_MOVE_COMPLETED",
+                    "ROBOT.STATUS_UPDATED",
+                    "ENGINE_MOVE_GENERATED",
+                    "ENGINE_ANALYSIS_COMPLETED",
+                    "VISION_MOVE_DETECTED",
+                    "GAME_PLAYER_MOVE",
+                    "MOVE_APPLIED",
+                    "SYSTEM_ERROR",
+                    "SYSTEM_RESET",
+                ]
+            ),
+        )
+    ).split(",")
+    if item.strip()
+)
 PERSISTENCE_BATCH_SIZE = int(get_cfg("database.persistence_batch_size", 100))
 PERSISTENCE_FLUSH_INTERVAL_SEC = float(get_cfg("database.persistence_flush_interval_sec", 0.25))
 PERSISTENCE_DROP_WARNING_THRESHOLD = int(_env_or_cfg("PERSISTENCE_DROP_WARNING_THRESHOLD", "database.persistence_drop_warning_threshold", 1))
 PERSISTENCE_DROP_WARNING_INTERVAL_SEC = float(_env_or_cfg("PERSISTENCE_DROP_WARNING_INTERVAL_SEC", "database.persistence_drop_warning_interval_sec", 5.0))
+EVENT_STORE_RETENTION_DAYS = int(_env_or_cfg("EVENT_STORE_RETENTION_DAYS", "database.event_store_retention_days", 0))
+EVENT_STORE_VACUUM_AFTER_RETENTION = _as_bool(
+    _env_or_cfg("EVENT_STORE_VACUUM_AFTER_RETENTION", "database.event_store_vacuum_after_retention", False),
+    default=False,
+)
 EXCEL_EXPORT_EVENT_LIMIT = int(_env_or_cfg("EXCEL_EXPORT_EVENT_LIMIT", "database.excel_export_event_limit", 1000))
 AUTO_EXPORT_SESSION_RECORD = _as_bool(
     _env_or_cfg("AUTO_EXPORT_SESSION_RECORD", "database.auto_export_session_record", True),
@@ -348,6 +390,10 @@ if IS_PRODUCTION:
         _security_errors.append("DB_PATH must not use in-memory SQLite in production.")
     if _db_path_text != ":memory:" and not os.path.isabs(_db_path_text):
         _security_errors.append("DB_PATH must be an absolute path in production.")
+    if _jwt_revocation_db_text == ":memory:":
+        _security_errors.append("JWT_REVOCATION_DB_PATH must not use in-memory SQLite in production.")
+    if _jwt_revocation_db_text != ":memory:" and not os.path.isabs(_jwt_revocation_db_text):
+        _security_errors.append("JWT_REVOCATION_DB_PATH must be an absolute path in production.")
     if SYSTEM_MODE.strip().lower() in {"simulation", "test", "demo"}:
         _security_errors.append("SYSTEM_MODE must not be simulation/test/demo in production.")
     if FAKE_VISION:
@@ -450,6 +496,9 @@ VISION_WORKER_PIPELINE_ENABLED = _as_bool(
     _env_or_cfg("VISION_WORKER_PIPELINE_ENABLED", "vision.worker_pipeline_enabled", False),
     default=False,
 )
+VISION_RUNTIME_OWNER = str(_env_or_cfg("VISION_RUNTIME_OWNER", "vision.runtime_owner", "vision_system")).strip().lower()
+if VISION_RUNTIME_OWNER not in {"vision_system", "vision_pipeline"}:
+    raise RuntimeError("VISION_RUNTIME_OWNER must be 'vision_system' or 'vision_pipeline'.")
 WARP_WIDTH = int(_env_or_cfg('WARP_WIDTH', 'vision.warp_width', 1000))
 WARP_HEIGHT = int(_env_or_cfg('WARP_HEIGHT', 'vision.warp_height', 1000))
 VISION_CALIBRATION_MAX_DIM = int(_env_or_cfg("VISION_CALIBRATION_MAX_DIM", "vision.calibration_max_dim", 960))
@@ -694,6 +743,9 @@ ROBOT_DEFAULT_ACCELERATION = float(
 )
 ROBOT_MOTION_TIMEOUT_SEC = float(
     _setup_or_env_or_cfg("ROBOT_MOTION_TIMEOUT_SEC", "robot.motion.timeout_sec", "robot.motion.timeout_sec", 10.0)
+)
+ROBOT_HALT_TIMEOUT_SEC = float(
+    _setup_or_env_or_cfg("ROBOT_HALT_TIMEOUT_SEC", "robot.motion.halt_timeout_sec", "robot.motion.halt_timeout_sec", 1.5)
 )
 ROBOT_PLACE_Z_OFFSET = float(
     _setup_or_env_or_cfg("ROBOT_PLACE_Z_OFFSET", "robot.motion.place_z_offset", "robot.motion.place_z_offset", 2.0)

@@ -37,6 +37,8 @@ def health():
         bootstrap_status = {}
 
     runtime_vision = runtime_vision_status()
+    vision_simulation = bool(runtime_vision.get("simulation") or getattr(config, "FAKE_VISION", False))
+    vision_fallback = bool(runtime_vision.get("fallback") or runtime_vision.get("fallback_reason"))
     active_model_path = (
         ((runtime_vision.get("detector") or {}) if isinstance(runtime_vision, dict) else {}).get("model_path")
         or ((runtime_vision.get("model") or {}) if isinstance(runtime_vision, dict) else {}).get("path")
@@ -73,7 +75,9 @@ def health():
         },
         "vision": {
             "fake_vision": bool(getattr(config, "FAKE_VISION", False)),
-            "simulation": bool(getattr(config, "FAKE_VISION", False)),
+            "simulation": vision_simulation,
+            "fallback": vision_fallback,
+            "fallback_reason": runtime_vision.get("fallback_reason"),
             "detector": getattr(getattr(vision_system, "detector", None), "__class__", type("x", (), {})).__name__,
             "yolo_model_path": os.path.abspath(getattr(config, "YOLO_MODEL_PATH", "") or ""),
             "yolo_model_exists": os.path.exists(os.path.abspath(getattr(config, "YOLO_MODEL_PATH", "") or "")),
@@ -116,6 +120,8 @@ def vision_status():
     yolo_path = os.path.abspath(getattr(config, "YOLO_MODEL_PATH", "") or "")
     tf_saved_model = os.path.abspath(os.path.join("backend", "infrastructure", "vision", "models", "chess_pieces", "saved_model.pb"))
     runtime_status = runtime_vision_status()
+    vision_simulation = bool(runtime_status.get("simulation") or getattr(config, "FAKE_VISION", False))
+    vision_fallback = bool(runtime_status.get("fallback") or runtime_status.get("fallback_reason"))
     active_model_path = (
         ((runtime_status.get("detector") or {}) if isinstance(runtime_status, dict) else {}).get("model_path")
         or ((runtime_status.get("model") or {}) if isinstance(runtime_status, dict) else {}).get("path")
@@ -123,7 +129,9 @@ def vision_status():
     )
     return jsonify({
         "fake_vision": bool(getattr(config, "FAKE_VISION", False)),
-        "simulation": bool(getattr(config, "FAKE_VISION", False)),
+        "simulation": vision_simulation,
+        "fallback": vision_fallback,
+        "fallback_reason": runtime_status.get("fallback_reason"),
         "system": vision_system.__class__.__name__,
         "detector": getattr(getattr(vision_system, "detector", None), "__class__", type("x", (), {})).__name__,
         "camera_index": getattr(config, "CAMERA_INDEX", 0),

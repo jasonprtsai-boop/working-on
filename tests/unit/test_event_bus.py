@@ -1,7 +1,9 @@
 import unittest
+from unittest.mock import patch
 
 from backend.events.bus.event_bus import EventBus
 from backend.events.models.base_event import BaseEvent
+from backend.utils import config
 
 
 def event(event_type, payload=None):
@@ -119,7 +121,7 @@ class TestEventBus(unittest.TestCase):
         self.assertEqual(bus.stats()["dead_letters"], 1)
 
     def test_legacy_dict_events_are_counted_and_resettable(self):
-        bus = EventBus(is_singleton=False)
+        bus = EventBus(is_singleton=False, allow_legacy_dict_events=True)
         calls = []
         bus.subscribe("TEST.LEGACY", lambda event: calls.append(event.event_type))
 
@@ -137,6 +139,17 @@ class TestEventBus(unittest.TestCase):
         self.assertEqual(stats["legacy_dict_events"], 0)
         self.assertEqual(stats["legacy_dict_event_types"], {})
         self.assertEqual(stats["sequence"], 0)
+
+    def test_legacy_dict_events_are_disabled_by_default(self):
+        with patch.object(config, "EVENTBUS_ALLOW_LEGACY_DICT_EVENTS", False):
+            bus = EventBus(is_singleton=False)
+
+            bus.publish_from_legacy({"type": "TEST.LEGACY", "payload": {}, "source": "unit"})
+
+            stats = bus.stats()
+        self.assertFalse(stats["legacy_dict_enabled"])
+        self.assertEqual(stats["legacy_dict_events"], 0)
+        self.assertEqual(stats["dead_letters"], 1)
 
     def test_legacy_dict_events_can_be_disabled(self):
         bus = EventBus(is_singleton=False, allow_legacy_dict_events=False)

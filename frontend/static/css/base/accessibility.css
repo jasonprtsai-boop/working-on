@@ -1,0 +1,148 @@
+:where(
+    a[href],
+    button,
+    input,
+    select,
+    textarea,
+    summary,
+    [role="button"],
+    [role="tab"],
+    [tabindex]:not([tabindex="-1"])
+):focus-visible {
+    outline: 3px solid var(--focus-ring-color);
+    outline-offset: 3px;
+    box-shadow: var(--focus-ring-shadow);
+}
+
+.mode-btn:focus-visible,
+.system-status-light:focus-visible,
+.btn-remote:focus-visible,
+.admin-btn:focus-visible,
+.action-buttons button:focus-visible {
+    position: relative;
+    z-index: 2;
+}
+
+.system-status-light.is-running,
+.system-status-light.is-active,
+.system-status-light.is-processing {
+    background: #eff6ff;
+    border-color: #2563eb;
+}
+
+.system-status-light.is-success {
+    background: #ecfdf5;
+    border-color: #059669;
+}
+
+.system-status-light.is-warning {
+    background: #fffbeb;
+    border-color: #d97706;
+}
+
+.system-status-light.is-blocked,
+.system-status-light.is-error {
+    background: #fef2f2;
+    border-color: #dc2626;
+}
+
+.system-status-light.is-offline,
+.system-status-light.is-idle {
+    background: #f8fafc;
+    border-color: #64748b;
+}
+
+.system-status-light__state,
+.status-warning {
+    color: #92400e;
+}
+
+.system-status-light.is-success .system-status-light__state,
+.status-ok {
+    color: #047857;
+}
+
+.system-status-light.is-blocked .system-status-light__state,
+.system-status-light.is-error .system-status-light__state,
+.status-error {
+    color: #b91c1c;
+}
+
+.system-status-light.is-running .system-status-light__state,
+.system-status-light.is-active .system-status-light__state,
+.system-status-light.is-processing .system-status-light__state {
+    color: #1d4ed8;
+}
+
+.player-guide-status[data-state="ok"] {
+    background: #ecfdf5;
+    border-color: #059669;
+}
+
+.player-guide-status[data-state="warning"] {
+    background: #fffbeb;
+    border-color: #d97706;
+}
+
+.player-guide-status[data-state="error"] {
+    background: #fef2f2;
+    border-color: #dc2626;
+}
+
+.setup-wizard-list li[data-status="ok"] {
+    background: #ecfdf5;
+    border-color: #059669;
+}
+
+.setup-wizard-list li[data-status="warning"] {
+    background: #fffbeb;
+    border-color: #d97706;
+}
+
+.setup-wizard-list li[data-status="blocked"] {
+    background: #fef2f2;
+    border-color: #dc2626;
+}
+
+.status-pill,
+.badge,
+.turn-indicator-pill {
+    text-shadow: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        scroll-behavior: auto !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+
+@media (forced-colors: active) {
+    :where(
+        a[href],
+        button,
+        input,
+        select,
+        textarea,
+        summary,
+        [role="button"],
+        [role="tab"],
+        [tabindex]:not([tabindex="-1"])
+    ):focus-visible {
+        outline: 3px solid CanvasText;
+        box-shadow: none;
+    }
+
+    .system-status-light,
+    .player-guide-status,
+    .setup-wizard-list li {
+        forced-color-adjust: none;
+        background: Canvas;
+        border-color: CanvasText;
+        color: CanvasText;
+    }
+}

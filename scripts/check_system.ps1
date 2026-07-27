@@ -107,7 +107,10 @@ Invoke-Step "Git diff hygiene" {
 
 Invoke-Step "Git tracked-file safety" {
   $blockedPattern = '(^|/)(\.env|\.venv|node_modules|logs|data|reports|analysis_artifacts)(/|$)|\.db$|\.log$|\.xlsx$|\.nnue$|\.pt$|\.onnx$|\.exe$|backend/infrastructure/vision/models/'
-  $blocked = Invoke-Git ls-files | Where-Object { $_ -match $blockedPattern }
+  $protectedAssetPattern = '^backend/infrastructure/protected_assets/'
+  $blocked = Invoke-Git ls-files | Where-Object {
+    ($_ -match $blockedPattern) -and ($_ -notmatch $protectedAssetPattern)
+  }
   if ($blocked) {
     $blocked | ForEach-Object { Write-Host "Blocked tracked file: $_" -ForegroundColor Red }
     throw "Tracked-file safety check failed."
@@ -118,6 +121,11 @@ Invoke-Step "Git tracked-file safety" {
 Invoke-Step "Quality gate" {
   & npm.cmd run quality
   Assert-CommandSucceeded $LASTEXITCODE "npm.cmd run quality"
+}
+
+Invoke-Step "CSS integrity check" {
+  & npm.cmd run check:css
+  Assert-CommandSucceeded $LASTEXITCODE "npm.cmd run check:css"
 }
 
 Invoke-Step "System diagnostic" {

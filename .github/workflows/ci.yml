@@ -13,19 +13,30 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: "3.11"
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
+          cache: "npm"
+
+      - name: Verify toolchain versions
+        run: |
+          python --version
+          node --version
+          npm --version
+          npm run check:versions
 
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r requirements.runtime.txt
+          python -m pip install -r requirements.runtime.txt -r requirements.vision.txt
 
       - name: Install frontend dependencies
         run: npm ci
+
+      - name: CSS integrity check
+        run: npm run check:css
 
       - name: Quality gate
         run: python scripts/quality_gate.py

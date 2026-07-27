@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import patch
 
 from backend.infrastructure.robot.tmflow_json_adapter import TMflowJsonAdapter
+from backend.infrastructure.robot.tmflow_json_client import TMflowJsonClient
 from backend.infrastructure.robot.tmflow_json_protocol import RobotCommand
 from backend.utils import config
 
@@ -161,6 +162,34 @@ class TestTMflowJsonAdapter(unittest.TestCase):
             self.assertFalse(adapter.connect())
             self.assertFalse(adapter.connected)
             self.assertIsNotNone(adapter.last_error)
+
+    def test_client_read_message_enforces_whole_message_deadline(self):
+        class DripSocket:
+            def __init__(self):
+                self.timeouts = []
+                self.recv_count = 0
+
+            def settimeout(self, value):
+                self.timeouts.append(value)
+
+            def recv(self, _size):
+                self.recv_count += 1
+                return b"{"
+
+        client = TMflowJsonClient("127.0.0.1", 5890, timeout=1.0)
+        drip_socket = DripSocket()
+        client.sock = drip_socket
+
+        with patch(
+            "backend.infrastructure.robot.tmflow_json_client.time.monotonic",
+            side_effect=[100.0, 100.0, 100.04, 100.08],
+        ):
+            with self.assertRaises(TimeoutError):
+                client.read_message(timeout=0.05)
+
+        self.assertEqual(drip_socket.recv_count, 2)
+        self.assertEqual(len(drip_socket.timeouts), 2)
+        self.assertLess(drip_socket.timeouts[-1], drip_socket.timeouts[0])
 
 
 if __name__ == "__main__":

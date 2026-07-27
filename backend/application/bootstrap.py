@@ -131,7 +131,9 @@ def bootstrap_system():
         "persistence_started": False,
         "vision_started": False,
         "vision_fallback": False,
+        "vision_fallback_reason": None,
         "vision_mode": "unknown",
+        "vision_runtime_owner": getattr(config, "VISION_RUNTIME_OWNER", "vision_system"),
         "vision_start_error": None,
     }
     container.register("bootstrap_status", bootstrap_status)
@@ -237,8 +239,14 @@ def bootstrap_system():
     # Start old VisionSystem (legacy MJPEG stream)
     from backend.infrastructure.vision.vision_system import vision_system
     _register_shutdown_hooks(runtime, vision_system)
-    bootstrap_status["vision_fallback"] = vision_system.__class__.__name__.lower().startswith("fallback")
-    bootstrap_status["vision_mode"] = "fallback" if bootstrap_status["vision_fallback"] else "real"
+    fallback_reason = getattr(vision_system, "_fallback_reason", None)
+    bootstrap_status["vision_fallback"] = bool(getattr(vision_system, "_fallback_from_real_vision", False) or fallback_reason)
+    bootstrap_status["vision_fallback_reason"] = str(fallback_reason) if fallback_reason else None
+    bootstrap_status["vision_mode"] = (
+        "fallback"
+        if bootstrap_status["vision_fallback"]
+        else ("simulation" if getattr(config, "FAKE_VISION", False) else "real")
+    )
     try:
         bootstrap_status["vision_started"] = bool(vision_system.start())
     except Exception as e:
@@ -251,8 +259,10 @@ def bootstrap_system():
         payload={
             "vision": {
                 "mode": bootstrap_status["vision_mode"],
+                "owner": bootstrap_status["vision_runtime_owner"],
                 "fallback": bootstrap_status["vision_fallback"],
                 "status": "FALLBACK" if bootstrap_status["vision_fallback"] else "READY",
+                "fallback_reason": bootstrap_status["vision_fallback_reason"],
                 "start_error": bootstrap_status["vision_start_error"],
             }
         },
@@ -307,7 +317,10 @@ def bootstrap_system():
         # Persistence is critical for research data integrity
         raise FatalBootstrapError(f"Failed to start PersistenceWorker: {exc}") from exc
 
-    vision_ready = bool(bootstrap_status["vision_started"] or bootstrap_status["vision_fallback"])
+    vision_uses_simulation = bool(getattr(config, "FAKE_VISION", False) or bootstrap_status["vision_fallback"])
+    vision_ready = bool(bootstrap_status["vision_started"]) and (
+        not vision_uses_simulation or bool(getattr(config, "FAKE_ROBOT", False))
+    )
     bootstrap_status["ready"] = all(
         [
             bootstrap_status["runtime_started"],

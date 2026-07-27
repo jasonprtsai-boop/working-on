@@ -6,19 +6,19 @@
                     <span>智慧象棋機械手臂主控台</span>
                     <span class="badge secondary" id="state-source-indicator">事件匯流排</span>
                     <button id="btn-toggle-setup" type="button" class="admin-btn mini">系統設定</button>
-                    <button id="btn-console-exit" type="button" class="btn-nav-home">
+                    <button id="btn-console-exit" type="button" class="btn-nav-home" aria-label="返回主畫面">
                         <i class="icon">←</i> <span>返回主畫面</span>
                     </button>
                 </div>
             </header>
 
-            <nav class="view-mode-toggle glass">
-                <button id="btn-toggle-board" type="button" class="mode-btn active">棋盤</button>
-                <button id="btn-toggle-video" type="button" class="mode-btn">視覺</button>
-                <button id="btn-toggle-status" type="button" class="mode-btn">狀態</button>
+            <nav class="view-mode-toggle glass" role="tablist" aria-label="主控台顯示模式">
+                <button id="btn-toggle-board" type="button" class="mode-btn active" role="tab" aria-selected="true" aria-controls="pane-board-view">棋盤</button>
+                <button id="btn-toggle-video" type="button" class="mode-btn" role="tab" aria-selected="false" aria-controls="pane-video-view">視覺</button>
+                <button id="btn-toggle-status" type="button" class="mode-btn" role="tab" aria-selected="false" aria-controls="pane-status-view">狀態</button>
             </nav>
 
-            <div id="pane-board-view" class="view-pane active">
+            <div id="pane-board-view" class="view-pane active" role="tabpanel" aria-labelledby="btn-toggle-board" tabindex="0">
                 <div class="board-unit">
                     <div class="board-header flex-row">
                         <div class="turn-status-inline" aria-live="polite">
@@ -56,7 +56,7 @@
                 </div>
             </div>
 
-            <div id="pane-video-view" class="view-pane">
+            <div id="pane-video-view" class="view-pane" role="tabpanel" aria-labelledby="btn-toggle-video" tabindex="0" aria-hidden="true">
                 <div class="stat-card-glass video-monitor-card">
                     <div class="video-monitor-head">
                         <div>
@@ -88,7 +88,7 @@
                 </div>
             </div>
 
-            <div id="pane-status-view" class="view-pane" style="overflow-y: auto; padding-right: 8px;">
+            <div id="pane-status-view" class="view-pane" role="tabpanel" aria-labelledby="btn-toggle-status" tabindex="0" aria-hidden="true" style="overflow-y: auto; padding-right: 8px;">
                 {% include 'templates/components/system_status_strip.html' %}
 
                 <div class="stat-card-glass detailed-status-card">

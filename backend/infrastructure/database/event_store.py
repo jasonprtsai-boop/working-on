@@ -4,7 +4,7 @@ import time
 from typing import List, Dict, Any, Optional, Sequence
 from backend.utils import config
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 class EventStore:
     """
@@ -18,6 +18,7 @@ class EventStore:
             self._memory_uri = "file:smart_chess_event_store?mode=memory&cache=shared"
             self._keeper_conn = sqlite3.connect(self._memory_uri, timeout=5.0, uri=True, check_same_thread=False)
         self._init_db()
+        self.apply_retention_policy()
 
     def _connect(self):
         if self._memory_uri:
@@ -47,6 +48,10 @@ class EventStore:
                     source TEXT,
                     payload TEXT NOT NULL,
                     metadata TEXT,
+                    duration_ms REAL,
+                    move_number INTEGER,
+                    move TEXT,
+                    status TEXT,
                     timestamp REAL NOT NULL
                 )
             """)
@@ -74,6 +79,10 @@ class EventStore:
                 "session_id": "ALTER TABLE events ADD COLUMN session_id TEXT",
                 "source": "ALTER TABLE events ADD COLUMN source TEXT",
                 "metadata": "ALTER TABLE events ADD COLUMN metadata TEXT",
+                "duration_ms": "ALTER TABLE events ADD COLUMN duration_ms REAL",
+                "move_number": "ALTER TABLE events ADD COLUMN move_number INTEGER",
+                "move": "ALTER TABLE events ADD COLUMN move TEXT",
+                "status": "ALTER TABLE events ADD COLUMN status TEXT",
             }
             for column, ddl in migrations.items():
                 if column not in cols:
@@ -81,12 +90,12 @@ class EventStore:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_events_session_sequence ON events(session_id, sequence_id)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_events_trace_id ON events(trace_id)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_events_event_id ON events(event_id)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_events_source_sequence ON events(source, sequence_id)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_events_type_sequence ON events(type, sequence_id)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_events_session_type_sequence ON events(session_id, type, sequence_id)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_events_session_timestamp ON events(session_id, timestamp)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_events_type_timestamp ON events(type, timestamp)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events(timestamp)")
+            conn.execute("DROP INDEX IF EXISTS idx_events_source_sequence")
             conn.commit()
         finally:
             conn.close()
@@ -108,6 +117,7 @@ class EventStore:
                 metadata = event_dict.get("metadata") or {}
                 if not isinstance(metadata, dict):
                     metadata = {"value": metadata}
+                duration_ms, move_number, move, status = self._extract_analysis_fields(payload, metadata, event_dict)
                 row = (
                     event_dict.get("event_id") or payload.get("event_id"),
                     event_dict.get("session_id"),
@@ -116,10 +126,20 @@ class EventStore:
                     event_dict.get("source") or payload.get("source"),
                     json.dumps(payload, ensure_ascii=False, default=str),
                     json.dumps(metadata, ensure_ascii=False, default=str),
+                    duration_ms,
+                    move_number,
+                    move,
+                    status,
                     event_dict.get("timestamp") or time.time(),
                 )
                 conn.execute(
-                    "INSERT INTO events (event_id, session_id, trace_id, type, source, payload, metadata, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    """
+                    INSERT INTO events (
+                        event_id, session_id, trace_id, type, source, payload, metadata,
+                        duration_ms, move_number, move, status, timestamp
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
                     row,
                 )
             conn.commit()
@@ -155,7 +175,10 @@ class EventStore:
     ) -> List[Dict[str, Any]]:
         conn = self._connect()
         try:
-            sql = "SELECT sequence_id, session_id, trace_id, type, payload, timestamp, event_id, source, metadata FROM events"
+            sql = (
+                "SELECT sequence_id, session_id, trace_id, type, payload, timestamp, "
+                "event_id, source, metadata, duration_ms, move_number, move, status FROM events"
+            )
             clauses = []
             params: List[Any] = []
             if session_id:
@@ -180,6 +203,28 @@ class EventStore:
         finally:
             conn.close()
         return self._rows_to_events(rows)
+
+    def purge_events_before(self, cutoff_timestamp: float, *, vacuum: bool = False) -> int:
+        conn = self._connect()
+        try:
+            cursor = conn.execute("DELETE FROM events WHERE timestamp < ?", (float(cutoff_timestamp),))
+            deleted = int(cursor.rowcount or 0)
+            conn.commit()
+            if vacuum and deleted and not self._memory_uri:
+                conn.execute("VACUUM")
+            return deleted
+        finally:
+            conn.close()
+
+    def apply_retention_policy(self) -> int:
+        days = int(getattr(config, "EVENT_STORE_RETENTION_DAYS", 0) or 0)
+        if days <= 0:
+            return 0
+        cutoff = time.time() - (days * 86400)
+        return self.purge_events_before(
+            cutoff,
+            vacuum=bool(getattr(config, "EVENT_STORE_VACUUM_AFTER_RETENTION", False)),
+        )
 
     def count_events(
         self,
@@ -286,6 +331,10 @@ class EventStore:
             event_id = row[6] if len(row) > 6 else None
             source = row[7] if len(row) > 7 else None
             metadata = row[8] if len(row) > 8 else None
+            duration_ms = row[9] if len(row) > 9 else None
+            move_number = row[10] if len(row) > 10 else None
+            move = row[11] if len(row) > 11 else None
+            status = row[12] if len(row) > 12 else None
             try:
                 payload_obj = json.loads(payload) if payload else {}
             except Exception:
@@ -304,7 +353,60 @@ class EventStore:
                     "source": source or "",
                     "payload": payload_obj,
                     "metadata": metadata_obj,
+                    "duration_ms": duration_ms,
+                    "move_number": move_number,
+                    "move": move,
+                    "status": status,
                     "timestamp": ts,
                 }
             )
         return out
+
+    def _extract_analysis_fields(
+        self,
+        payload: Dict[str, Any],
+        metadata: Dict[str, Any],
+        event_dict: Dict[str, Any],
+    ) -> tuple[Optional[float], Optional[int], Optional[str], Optional[str]]:
+        sources = (event_dict, payload, metadata)
+        duration_ms = self._first_float(sources, ("duration_ms", "latency_ms", "robot_ms", "elapsed_ms"))
+        move_number = self._first_int(sources, ("move_number", "move_index", "index"))
+        move = self._first_text(sources, ("move", "best_move", "ucci"))
+        status = self._first_text(sources, ("status", "state", "phase"))
+        return duration_ms, move_number, move, status
+
+    @staticmethod
+    def _first_float(sources: Sequence[Dict[str, Any]], keys: Sequence[str]) -> Optional[float]:
+        for source in sources:
+            for key in keys:
+                value = source.get(key) if isinstance(source, dict) else None
+                if isinstance(value, bool) or value in (None, ""):
+                    continue
+                try:
+                    return float(value)
+                except (TypeError, ValueError):
+                    continue
+        return None
+
+    @staticmethod
+    def _first_int(sources: Sequence[Dict[str, Any]], keys: Sequence[str]) -> Optional[int]:
+        for source in sources:
+            for key in keys:
+                value = source.get(key) if isinstance(source, dict) else None
+                if isinstance(value, bool) or value in (None, ""):
+                    continue
+                try:
+                    return int(value)
+                except (TypeError, ValueError):
+                    continue
+        return None
+
+    @staticmethod
+    def _first_text(sources: Sequence[Dict[str, Any]], keys: Sequence[str]) -> Optional[str]:
+        for source in sources:
+            for key in keys:
+                value = source.get(key) if isinstance(source, dict) else None
+                if value in (None, ""):
+                    continue
+                return str(value)
+        return None

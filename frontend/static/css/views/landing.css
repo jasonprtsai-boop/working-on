@@ -1,0 +1,259 @@
+/* --- 🚀 LANDING PAGE --- */
+.landing-header {
+    margin-bottom: 60px;
+}
+
+.badge {
+    display: inline-block;
+    padding: 6px 14px;
+    background: var(--primary-light);
+    color: var(--primary);
+    border-radius: 100px;
+    font-size: 0.7rem;
+    font-weight: 900;
+    margin-bottom: 16px;
+    letter-spacing: 1px;
+}
+
+.landing-header h1 {
+    font-size: 4.5rem;
+    line-height: 0.9;
+    font-weight: 900;
+    color: var(--text-main);
+    letter-spacing: -2px;
+}
+
+.landing-header h1 span {
+    color: var(--primary);
+    display: block;
+}
+
+.landing-header p {
+    margin-top: 20px;
+    color: var(--text-secondary);
+    font-weight: 500;
+    font-size: 1.1rem;
+}
+
+.role-cards {
+    display: flex;
+    gap: 24px;
+    perspective: 1000px;
+}
+
+.role-card {
+    width: 280px;
+    padding: 40px 30px;
+    text-align: left;
+    transition: var(--transition-smooth);
+    border: 1px solid var(--border);
+    cursor: pointer;
+    background: var(--card-bg);
+}
+
+.role-card:hover {
+    transform: translateY(-10px) rotateX(5deg);
+    border-color: var(--primary);
+    box-shadow: var(--shadow-heavy);
+}
+
+.card-icon {
+    font-size: 2.5rem;
+    margin-bottom: 24px;
+}
+
+.role-card h2 {
+    font-size: 1.5rem;
+    font-weight: 900;
+    margin-bottom: 16px;
+}
+
+.card-features {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.card-features span {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.card-features span::before {
+    content: "•";
+    color: var(--primary);
+}
+
+body.locked-system {
+    filter: grayscale(0.5) contrast(0.9);
+    pointer-events: none;
+}
+
+.telemetry-mini {
+    display: flex; gap: 16px; font-family: var(--font-mono); color: var(--text-secondary);
+}
+
+
+/* LANDING HEADER UPGRADE */
+.landing-header {
+    text-align: center;
+    margin-bottom: 60px;
+    animation: float 6s ease-in-out infinite;
+}
+
+.badge {
+    display: inline-block; padding: 6px 16px;
+    background: linear-gradient(90deg, var(--primary), var(--secondary));
+    color: white; font-size: 0.7rem; font-weight: 900; border-radius: 100px;
+    margin-bottom: 24px; letter-spacing: 2px;
+    box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4);
+}
+
+.landing-header h1 {
+    font-size: 5rem;
+    font-weight: 950;
+    letter-spacing: -3px;
+    line-height: 0.9;
+    margin-bottom: 16px;
+    background: linear-gradient(to bottom, var(--text-main), var(--text-secondary));
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.landing-header h1 span {
+    background: linear-gradient(90deg, var(--primary), var(--secondary));
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.landing-header p {
+    color: var(--text-secondary);
+    font-size: 1.2rem;
+    max-width: 600px;
+    margin: 0 auto;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+}
+.view-landing {
+    min-height: 100vh;
+    padding: 100px 24px 60px; /* Offset for fixed safety-bar + extra breathing room */
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    position: relative;
+    overflow: hidden;
+}
+
+.role-cards {
+    display: flex;
+    gap: 32px;
+    z-index: 10;
+}
+
+.role-card {
+    width: 340px;
+    padding: 60px 40px;
+    text-align: center;
+    cursor: pointer;
+    background: var(--glass-l1);
+    border: 1px solid var(--glass-border);
+    border-radius: 32px;
+    backdrop-filter: var(--glass-blur);
+    transition: var(--transition-smooth);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    color: var(--text-main);
+}
+
+.role-card:hover {
+    transform: translateY(-15px) scale(1.02);
+    background: #ffffff;
+    border-color: var(--primary);
+    box-shadow: 0 20px 80px rgba(15, 23, 42, 0.1);
+}
+
+.card-icon {
+    font-size: 5.5rem;
+    margin-bottom: 24px;
+    filter: drop-shadow(0 0 20px rgba(15, 23, 42, 0.1));
+}
+
+.role-card h2 {
+    font-size: 1.75rem;
+    font-weight: 950;
+    margin-bottom: 12px;
+    letter-spacing: -1px;
+    color: var(--text-main);
+}
+
+.card-features {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 24px;
+    flex-wrap: wrap;
+}
+
+.card-features span {
+    font-size: 0.7rem;
+    background: #f1f5f9;
+    padding: 6px 14px;
+    border-radius: 100px;
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+    font-weight: 700;
+}
+
+.logo { font-weight: 900; font-size: 1.4rem; letter-spacing: -1px; }
+.logo span { color: var(--primary); }
+
+.btn-exit {
+    padding: 10px 20px;
+    font-weight: 800;
+    font-size: 0.85rem;
+    cursor: pointer;
+    background: #ffffff;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    color: var(--text-main);
+    transition: var(--transition-smooth);
+}
+
+.btn-exit:hover {
+    background: #f1f5f9;
+    color: var(--error);
+    border-color: var(--error);
+}
+
+.top-nav {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px 40px;
+    margin-top: 60px; /* Leave space for the 48px safety bar */
+    margin-bottom: 20px;
+}
+
+.lobby-container { max-width: 600px; margin: 100px auto; padding: 20px; }
+.settings-card {
+    padding: 48px;
+    border-radius: 32px;
+    background: var(--glass-l1);
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--glass-shadow);
+    backdrop-filter: var(--glass-blur);
+}
+
+.setting-group label { display: block; font-weight: 800; margin-bottom: 16px; font-size: 0.9rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 1px; }
+
+.difficulty-selection { display: flex; gap: 12px; }
+.diff-btn {
+    flex: 1; padding: 18px; border-radius: 16px; border: 1px solid var(--border); background: rgba(255,255,255,0.7);
+    cursor: pointer; font-weight: 900; color: #000000; transition: var(--transition-smooth);
+}
+.diff-btn.active { background: #ffffff; color: #000000; border-color: var(--primary); border-width: 3px; box-shadow: 0 8px 25px rgba(15, 23, 42, 0.1); }
+

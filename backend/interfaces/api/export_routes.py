@@ -146,3 +146,30 @@ def export_csv():
         download_name=f"smart-chess-events-{suffix}.csv",
         mimetype="text/csv",
     )
+
+
+@api_bp.route("/export/diagnostics.zip", methods=["GET"])
+def export_diagnostics_bundle():
+    """Export redacted logs/config/runtime status for operator support."""
+    from backend.observability.diagnostic_bundle import build_diagnostic_bundle
+
+    try:
+        path, filename = build_diagnostic_bundle()
+    except Exception as exc:
+        return error_response("diagnostics_export_failed", str(exc), 500, recoverable=False)
+
+    @after_this_request
+    def cleanup(resp):
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+        except Exception:
+            current_app.logger.debug("Temporary diagnostics bundle cleanup failed: %s", path, exc_info=True)
+        return resp
+
+    return send_file(
+        path,
+        as_attachment=True,
+        download_name=filename,
+        mimetype="application/zip",
+    )

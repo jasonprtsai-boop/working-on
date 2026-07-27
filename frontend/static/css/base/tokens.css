@@ -1,0 +1,50 @@
+:root {
+    --bg-main: #f1f5f9; /* Soft slate grey-white */
+    --card-bg: #ffffff;
+    /* Blue roles: action, information/data, and signal/glow are kept distinct. */
+    --color-action-blue: #2563eb;
+    --color-info-blue: #0284c7;
+    --color-signal-blue: #3b82f6;
+    --color-data-cyan: #0ea5e9;
+    --primary: var(--color-action-blue);
+    --primary-light: #eff6ff;
+    --secondary: #7c3aed;
+    --data-accent: var(--color-data-cyan);
+    --status-info: var(--color-info-blue);
+    --accent: var(--data-accent);
+    --error: #ef4444;
+    --warning: #f59e0b;
+    --success: #10b981;
+    --text-main: #0f172a; /* Deep navy */
+    --text-secondary: #64748b;
+    --border: #cbd5e1; /* Clear grey border */
+    --shadow-soft: 0 4px 20px rgba(15, 23, 42, 0.05);
+    --shadow-heavy: 0 12px 60px rgba(15, 23, 42, 0.12);
+    --font-sans: 'Inter', 'Outfit', -apple-system, system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+    --industrial-orange: #f97316;
+    --neon-blue: var(--color-signal-blue);
+    --terminal-bg: #0f172a;
+
+    /* CONSOLE GLASS UI TOKENS - Light Mode Refraction */
+    --glass-l1: rgba(255, 255, 255, 0.8);
+    --glass-l2: rgba(255, 255, 255, 0.5);
+    --glass-l3: rgba(255, 255, 255, 0.2);
+
+    --glass-border: #cbd5e1;
+    --glass-blur: blur(12px);
+    --glass-shadow: 0 8px 32px rgba(15, 23, 42, 0.08);
+
+    --accent-blue: var(--status-info);
+    --accent-green: #059669;
+    --accent-yellow: #fbbf24;
+    --accent-purple: #7c3aed;
+    --console-bg: #f8fafc;
+    --bg-dark: #020617;
+
+    /* ANIMATION SPEEDS */
+    --transition-smooth: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    --piece-move-speed: cubic-bezier(0.68, -0.55, 0.265, 1.55);
+    --focus-ring-color: #1d4ed8;
+    --focus-ring-shadow: 0 0 0 5px rgba(37, 99, 235, 0.18);
+}

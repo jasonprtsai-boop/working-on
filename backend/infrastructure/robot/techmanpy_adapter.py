@@ -1,4 +1,5 @@
 import asyncio
+import concurrent.futures
 import socket
 import threading
 import time
@@ -35,6 +36,12 @@ class TechmanPyAdapter:
         self.last_listen_node_active = None
         self.last_checked_at = None
         self._queue_tag = 0
+        self._loop = None
+        self._loop_thread = None
+        self._loop_ready = threading.Event()
+        self._loop_lock = threading.Lock()
+        self._last_async_timeout_at = None
+        self._cancelled_operations = 0
 
     def connect(self) -> bool:
         self.last_checked_at = time.time()
@@ -177,7 +184,10 @@ class TechmanPyAdapter:
             logger.warning("[TechmanPy] HALT requested but techmanpy is unavailable.")
             return
         try:
-            self._run_async(self._halt_script())
+            self._run_async(
+                self._halt_script(),
+                timeout=float(getattr(config, "ROBOT_HALT_TIMEOUT_SEC", 1.5)),
+            )
         except Exception as exc:
             logger.warning("[TechmanPy] HALT failed: %s", exc, exc_info=True)
 
@@ -195,17 +205,27 @@ class TechmanPyAdapter:
             "listen_node_active": self.last_listen_node_active,
             "external_script_port": int(self.port),
             "last_checked_at": self.last_checked_at,
+            "async_loop_running": self._loop_is_running(),
+            "cancelled_operations": self._cancelled_operations,
+            "last_async_timeout_at": self._last_async_timeout_at,
         }
 
     def read_telemetry(self) -> dict[str, Any]:
+        status = self.read_status_registers()
         return {
             "enabled": False,
             "source": "techmanpy",
-            "message": "TechmanPy telemetry streaming is not configured in this build.",
+            "connected": bool(self.connected),
+            "status": status,
+            "message": (
+                "TechmanPy telemetry streaming is not configured in this build; "
+                "status is limited to connection, Listen Node, and async runtime health."
+            ),
         }
 
     def disconnect(self):
         self.connected = False
+        self._stop_loop()
 
     def _next_queue_tag(self) -> int:
         self._queue_tag = (self._queue_tag % 32767) + 1
@@ -225,24 +245,66 @@ class TechmanPyAdapter:
         return max(150, int(round(float(value))))
 
     def _run_async(self, coro, timeout=None):
+        operation_timeout = float(timeout if timeout is not None else getattr(config, "ROBOT_MOTION_TIMEOUT_SEC", 10.0))
+        loop = self._ensure_loop()
+        future = asyncio.run_coroutine_threadsafe(coro, loop)
         try:
-            asyncio.get_running_loop()
-        except RuntimeError:
-            return asyncio.run(coro)
+            return future.result(timeout=max(0.05, operation_timeout))
+        except concurrent.futures.TimeoutError as exc:
+            self._cancelled_operations += 1
+            self._last_async_timeout_at = time.time()
+            future.cancel()
+            self._observe_cancelled_future(future)
+            raise TimeoutError("TechmanPy async operation timed out and was cancelled.") from exc
 
-        result: dict[str, Any] = {}
+    def _ensure_loop(self):
+        with self._loop_lock:
+            if self._loop_is_running():
+                return self._loop
+            self._loop_ready.clear()
+            self._loop_thread = threading.Thread(target=self._run_loop, name="TechmanPyAsyncLoop", daemon=True)
+            self._loop_thread.start()
+            if not self._loop_ready.wait(timeout=float(getattr(config, "ROBOT_CONNECT_TIMEOUT_SEC", 3.0))):
+                raise TimeoutError("TechmanPy async loop failed to start.")
+            return self._loop
 
-        def _runner():
+    def _run_loop(self):
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        self._loop = loop
+        self._loop_ready.set()
+        try:
+            loop.run_forever()
+        finally:
+            pending = [task for task in asyncio.all_tasks(loop) if not task.done()]
+            for task in pending:
+                task.cancel()
+            if pending:
+                loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+            loop.close()
+
+    def _loop_is_running(self) -> bool:
+        loop = self._loop
+        thread = self._loop_thread
+        return bool(loop and loop.is_running() and thread and thread.is_alive())
+
+    def _stop_loop(self):
+        with self._loop_lock:
+            loop = self._loop
+            thread = self._loop_thread
+            if loop and loop.is_running():
+                loop.call_soon_threadsafe(loop.stop)
+            if thread and thread.is_alive() and thread is not threading.current_thread():
+                thread.join(timeout=1.0)
+            self._loop = None
+            self._loop_thread = None
+            self._loop_ready.clear()
+
+    def _observe_cancelled_future(self, future):
+        def _consume_result(done):
             try:
-                result["value"] = asyncio.run(coro)
-            except Exception as exc:
-                result["error"] = exc
+                done.result()
+            except Exception:
+                pass
 
-        thread = threading.Thread(target=_runner, daemon=True)
-        thread.start()
-        thread.join(timeout=float(timeout or getattr(config, "ROBOT_MOTION_TIMEOUT_SEC", 10.0)) + 1.0)
-        if thread.is_alive():
-            raise TimeoutError("TechmanPy async operation timed out.")
-        if "error" in result:
-            raise result["error"]
-        return result.get("value")
+        future.add_done_callback(_consume_result)

@@ -1,0 +1,16 @@
+/* REFINED GLASS - Light Mode Support */
+.glass {
+    background: rgba(255, 255, 255, 0.7);
+    border: 1px solid var(--border);
+    box-shadow: var(--glass-shadow);
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
+    border-radius: 20px;
+    transition: var(--transition-smooth);
+}
+
+.glass:hover {
+    border-color: var(--primary);
+    background: rgba(255, 255, 255, 0.9);
+}
+

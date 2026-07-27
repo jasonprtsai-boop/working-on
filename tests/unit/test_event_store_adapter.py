@@ -35,7 +35,7 @@ class TestEventStoreAdapter(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = os.path.join(tmpdir, "events.db")
             store = SqliteEventStore(db_path=db_path)
-            self.assertEqual(store.get_schema_version(), 4)
+            self.assertEqual(store.get_schema_version(), 5)
 
             store.save_event({"session_id": "s1", "trace_id": "t1", "type": "A", "payload": {"v": 1}, "timestamp": 1.0})
             store.save_event({"session_id": "s1", "trace_id": "t2", "type": "B", "payload": {"v": 2}, "timestamp": 2.0})
@@ -72,6 +72,30 @@ class TestEventStoreAdapter(unittest.TestCase):
             self.assertEqual([event["sequence_id"] for event in history], [1, 2, 3, 4])
             self.assertEqual([event["type"] for event in history], ["A", "B", "META", "LEGACY_SEQUENCE_IGNORED"])
 
+    def test_sqlite_store_extracts_analysis_columns_without_payload_parsing(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = os.path.join(tmpdir, "events.db")
+            store = SqliteEventStore(db_path=db_path)
+
+            store.save_event({
+                "session_id": "s1",
+                "trace_id": "trace-analysis",
+                "type": "ENGINE_ANALYSIS_COMPLETED",
+                "payload": {
+                    "duration_ms": 12.5,
+                    "move_number": 7,
+                    "best_move": "b2b5",
+                    "status": "complete",
+                },
+                "timestamp": 1.0,
+            })
+
+            event = store.query_events(trace_id="trace-analysis")[0]
+            self.assertEqual(event["duration_ms"], 12.5)
+            self.assertEqual(event["move_number"], 7)
+            self.assertEqual(event["move"], "b2b5")
+            self.assertEqual(event["status"], "complete")
+
     def test_sqlite_store_creates_query_performance_indexes(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = os.path.join(tmpdir, "events.db")
@@ -87,6 +111,22 @@ class TestEventStoreAdapter(unittest.TestCase):
             self.assertIn("idx_events_session_timestamp", names)
             self.assertIn("idx_events_type_timestamp", names)
             self.assertIn("idx_events_timestamp", names)
+            self.assertNotIn("idx_events_source_sequence", names)
+
+    def test_sqlite_store_can_purge_old_events_for_retention(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = os.path.join(tmpdir, "events.db")
+            store = SqliteEventStore(db_path=db_path)
+            store.save_events([
+                {"session_id": "s1", "trace_id": "old", "type": "STATE_UPDATE", "payload": {}, "timestamp": 1.0},
+                {"session_id": "s1", "trace_id": "new", "type": "STATE_UPDATE", "payload": {}, "timestamp": 10.0},
+            ])
+
+            deleted = store.purge_events_before(5.0)
+
+            self.assertEqual(deleted, 1)
+            events = store.query_events(session_id="s1")
+            self.assertEqual([event["trace_id"] for event in events], ["new"])
 
     def test_query_events_filters_by_trace_session_and_type(self):
         with tempfile.TemporaryDirectory() as tmpdir:

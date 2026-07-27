@@ -1,0 +1,20 @@
+/* --- 🏛️ VIEW CONTAINER SYSTEM --- */
+.view-landing, .view-player, .view-console, .view-setup {
+    min-height: 100vh;
+    width: 100%;
+    padding-top: 48px; /* Offset for Safety Bar */
+    display: none;
+    flex-direction: column;
+}
+
+.view-landing {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: radial-gradient(circle at center, #ffffff 0%, var(--bg-main) 100%);
+}
+
+.view-player.active, .view-console.active, .view-setup.active {
+    display: flex;
+}
+

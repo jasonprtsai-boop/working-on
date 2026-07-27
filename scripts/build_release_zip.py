@@ -33,10 +33,33 @@ EXCLUDED_DIR_PREFIXES = (
 )
 
 EXCLUDED_PATH_PREFIXES = {
+    (".github",),
     ("analysis_artifacts",),
     ("backend", "data"),
     ("data",),
+    ("frontend", "tests"),
     ("reports",),
+    ("scripts", "maintenance"),
+    ("scripts", "test"),
+    ("tests",),
+}
+
+EXCLUDED_FILE_PATHS = {
+    ("docs", "CHANGESET_TRIAGE.md"),
+    ("scripts", "audit_dependencies.py"),
+    ("scripts", "audit_project.py"),
+    ("scripts", "check_artifact_hygiene.py"),
+    ("scripts", "check_css_integrity.mjs"),
+    ("scripts", "check_legacy_events.py"),
+    ("scripts", "consistency_audit.py"),
+    ("scripts", "html_function_check.mjs"),
+    ("scripts", "playwright_smoke.mjs"),
+    ("scripts", "quality_gate.py"),
+    ("scripts", "test_camera.py"),
+    ("scripts", "test_export.py"),
+    ("scripts", "test_vision_pipeline.py"),
+    ("PLANS.md",),
+    ("jest.config.cjs",),
 }
 
 EXCLUDED_FILE_NAMES = {
@@ -44,6 +67,7 @@ EXCLUDED_FILE_NAMES = {
     ".env.development",
     ".env.local",
     ".env.production",
+    "SMART-Chess-Robot-Setup-v1.0.1.exe",
     "test_output.txt",
 }
 
@@ -98,6 +122,9 @@ def exclusion_reason(path: Path, root: Path = ROOT, is_dir: bool | None = None) 
     for prefix in EXCLUDED_PATH_PREFIXES:
         if parts[: len(prefix)] == prefix:
             return f"excluded path: {'/'.join(prefix)}"
+
+    if parts in EXCLUDED_FILE_PATHS:
+        return f"excluded file: {'/'.join(parts)}"
 
     name = rel.name
     if is_dir is True:

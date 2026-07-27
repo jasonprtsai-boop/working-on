@@ -1,4 +1,5 @@
 import asyncio
+import threading
 import time
 import unittest
 from unittest.mock import patch
@@ -327,6 +328,41 @@ class TestRobotMotionFailClosed(unittest.TestCase):
             self.assertTrue(adapter.connect())
             self.assertTrue(adapter.connected)
             self.assertTrue(adapter.send_motion([1, 2, 3, 0, 0, 0]))
+
+    def test_techmanpy_run_async_cancels_timed_out_operation(self):
+        adapter = TechmanPyAdapter(host="192.168.10.10", port=5890)
+        cancelled = threading.Event()
+
+        async def hanging_operation():
+            try:
+                await asyncio.sleep(5.0)
+            except asyncio.CancelledError:
+                cancelled.set()
+                raise
+
+        try:
+            with self.assertRaises(TimeoutError):
+                adapter._run_async(hanging_operation(), timeout=0.05)
+            self.assertTrue(cancelled.wait(timeout=1.0))
+            self.assertEqual(adapter.read_status_registers()["cancelled_operations"], 1)
+        finally:
+            adapter.disconnect()
+
+    def test_techmanpy_halt_uses_short_halt_timeout(self):
+        adapter = TechmanPyAdapter(host="192.168.10.10", port=5890)
+        captured = {}
+
+        def fake_run(coro, timeout=None):
+            captured["timeout"] = timeout
+
+        with patch.object(techmanpy_adapter, "TECHMANPY_AVAILABLE", True), patch.object(
+            techmanpy_adapter.config,
+            "ROBOT_HALT_TIMEOUT_SEC",
+            1.25,
+        ), patch.object(adapter, "_halt_script", new=lambda: object()), patch.object(adapter, "_run_async", side_effect=fake_run):
+            adapter.halt()
+
+        self.assertEqual(captured["timeout"], 1.25)
 
     def test_techmanpy_rejects_non_external_script_port(self):
         with patch.object(techmanpy_adapter.config, "FAKE_ROBOT", False):

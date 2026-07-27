@@ -50,10 +50,18 @@ class TMflowJsonClient:
     def read_message(self, *, timeout: float | None = None) -> dict[str, Any]:
         if not self.sock:
             raise ConnectionError("TMflow JSON client is not connected.")
-        self.sock.settimeout(float(timeout if timeout is not None else self.timeout))
+        read_timeout = float(timeout if timeout is not None else self.timeout)
+        deadline = time.monotonic() + read_timeout
         buffer = bytearray()
         while True:
-            chunk = self.sock.recv(1)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("Timed out reading TMflow JSON response.")
+            self.sock.settimeout(max(0.001, remaining))
+            try:
+                chunk = self.sock.recv(1)
+            except socket.timeout as exc:
+                raise TimeoutError("Timed out reading TMflow JSON response.") from exc
             if not chunk:
                 raise ConnectionError("TMflow socket closed.")
             if chunk == b"\n":

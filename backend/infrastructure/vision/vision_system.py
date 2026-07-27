@@ -23,9 +23,11 @@ class SimulationVisionSystem:
     [Simulation Layer] Interactive Vision System.
     Emits simulated vision events triggered by UI actions.
     """
-    def __init__(self):
+    def __init__(self, *, fallback_reason: Optional[str] = None):
         self.validator = _SimulationValidator()
         self.fen_gen = _SimulationFENGen()
+        self._fallback_reason = str(fallback_reason or "").strip() or None
+        self._fallback_from_real_vision = bool(self._fallback_reason)
         self._jpg_bytes = base64.b64decode(
             "/9j/4AAQSkZJRgABAQAAZABkAAD/2wCEABQQEBkSGScXFycyJh8mMi4mJiYmLj41NTU1NT5EQUFBQUFBREREREREREREREREREREREREREREREREREREQBFRkZIBwgJhgYJjYmICY2RDYrKzZERERCNUJERERERERERERERERERERERERERERERERERERERERERERERERERP/AABEIAAEAAQMBIgACEQEDEQH/xABMAAEBAAAAAAAAAAAAAAAAAAAABQEBAQAAAAAAAAAAAAAAAAAABQYQAQAAAAAAAAAAAAAAAAAAAAARAQAAAAAAAAAAAAAAAAAAAAD/2gALAwEAAhEDEQA/AJQA9Yv/2Q=="
         )
@@ -50,7 +52,10 @@ class SimulationVisionSystem:
             logger.info(f"[SimulationVision] Simulated move detected: {self._pending_fen}")
 
     def start(self) -> bool:
-        logger.info("[VisionSystem] Running in explicit simulation mode.")
+        if self._fallback_from_real_vision:
+            logger.warning("[VisionSystem] Running fallback simulation mode after real vision startup failure.")
+        else:
+            logger.info("[VisionSystem] Running in explicit simulation mode.")
         return True
 
     def stop(self): pass
@@ -75,6 +80,9 @@ class SimulationVisionSystem:
     def get_calibration_status(self) -> dict:
         return {
             "calibrated": self.board_corners is not None,
+            "simulation": True,
+            "fallback": self._fallback_from_real_vision,
+            "fallback_reason": self._fallback_reason,
             "board_corners": self.board_corners,
             "path": self.calibration_path,
             "path_exists": os.path.exists(self.calibration_path),
@@ -102,7 +110,12 @@ class SimulationVisionSystem:
     def get_status(self) -> dict:
         return {
             "system": "SimulationVisionSystem",
+            "mode": "fallback" if self._fallback_from_real_vision else "simulation",
+            "owner": getattr(config, "VISION_RUNTIME_OWNER", "vision_system"),
             "simulation": True,
+            "fallback": self._fallback_from_real_vision,
+            "fallback_reason": self._fallback_reason,
+            "configured_fake_vision": bool(getattr(config, "FAKE_VISION", False)),
             "running": True,
             "camera": {"running": True, "opened": True, "index": -1},
             "detector": {"name": "MockDetector", "loaded": True},
@@ -141,6 +154,10 @@ def _build_real_vision_system():
             self._lock = threading.Lock()
             self._thread: Optional[threading.Thread] = None
             self._stop = threading.Event()
+            self.failure_count = 0
+            self.consecutive_failures = 0
+            self.last_error = None
+            self.last_error_at = None
 
         def start(self):
             if self._thread and self._thread.is_alive():
@@ -224,8 +241,13 @@ def _build_real_vision_system():
                             },
                         )
                     )
+                    self.consecutive_failures = 0
                 except Exception as exc:
-                    logger.debug(f"[VisionSystem] inference loop failed: {exc}", exc_info=True)
+                    self.failure_count += 1
+                    self.consecutive_failures += 1
+                    self.last_error = str(exc)
+                    self.last_error_at = time.time()
+                    logger.warning(f"[VisionSystem] inference loop failed: {exc}", exc_info=True)
                     time.sleep(0.2)
 
         def _serialize_detections(self, detections, *, work_frame, coordinate_space: str, calibrated: bool):
@@ -465,6 +487,7 @@ def _build_real_vision_system():
 
             return {
                 "system": self.__class__.__name__,
+                "owner": getattr(config, "VISION_RUNTIME_OWNER", "vision_system"),
                 "simulation": False,
                 "running": bool(getattr(self.camera, "running", False)),
                 "camera": camera_status,
@@ -487,6 +510,13 @@ def _build_real_vision_system():
                     "stability_threshold": getattr(config, "STABILITY_THRESHOLD", 3),
                 },
                 "calibration": self.get_calibration_status(),
+                "worker": {
+                    "running": bool(self.worker._thread and self.worker._thread.is_alive()),
+                    "failure_count": int(getattr(self.worker, "failure_count", 0)),
+                    "consecutive_failures": int(getattr(self.worker, "consecutive_failures", 0)),
+                    "last_error": getattr(self.worker, "last_error", None),
+                    "last_error_at": getattr(self.worker, "last_error_at", None),
+                },
                 "last_frame_processed": self.last_frame_processed,
             }
 
@@ -575,5 +605,4 @@ else:
         vision_system = _build_real_vision_system()
     except Exception as e:
         logger.error(f"[VisionSystem] Startup failed: {e}. Falling back to SimulationVisionSystem.", exc_info=True)
-        vision_system = SimulationVisionSystem()
-        vision_system._fallback_reason = str(e)
+        vision_system = SimulationVisionSystem(fallback_reason=str(e))
