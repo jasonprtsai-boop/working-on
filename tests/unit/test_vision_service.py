@@ -31,6 +31,10 @@ class FakeValidator:
         return board_state
 
 
+class EmptyValidator:
+    last_stable_state = None
+
+
 class FakeFenGenerator:
     def __init__(self):
         self.last_turn = None
@@ -48,11 +52,15 @@ FakeDetector.__name__ = "YOLODetector"
 
 
 class FakeVisionSystem:
-    def __init__(self):
+    def __init__(self, *, validator=None, status=None):
         self.mapper = FakeMapper()
-        self.validator = FakeValidator()
+        self.validator = validator or FakeValidator()
         self.fen_gen = FakeFenGenerator()
         self.detector = FakeDetector()
+        self._status = status or {"mode": "real", "simulation": False, "available": True}
+
+    def get_status(self):
+        return dict(self._status)
 
 
 class FakeBus:
@@ -138,6 +146,25 @@ class TestVisionService(unittest.TestCase):
             service.on_board_detected(event)
 
         self.assertEqual(service._vision.fen_gen.last_turn, "b")
+
+    def test_real_vision_without_stable_state_does_not_emit_default_fen(self):
+        service = object.__new__(VisionService)
+        service._vision = FakeVisionSystem(validator=EmptyValidator())
+
+        with self.assertRaisesRegex(RuntimeError, "No stable real vision state"):
+            service.get_current_fen()
+
+    def test_simulation_without_stable_state_can_emit_default_fen(self):
+        service = object.__new__(VisionService)
+        service._vision = FakeVisionSystem(
+            validator=EmptyValidator(),
+            status={"mode": "simulation", "simulation": True},
+        )
+
+        fen, confidence = service.get_current_fen()
+
+        self.assertIn("RNBAKABNR", fen)
+        self.assertEqual(confidence, 0.95)
 
 
 if __name__ == "__main__":

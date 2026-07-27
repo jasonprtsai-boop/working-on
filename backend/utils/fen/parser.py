@@ -72,8 +72,30 @@ def board_to_fen(board: Iterable[Iterable[Optional[str]]] | Mapping[str, Optiona
 def validate_fen(fen: str) -> bool:
     try:
         _board_part, turn = _split_fen(fen)
-        fen_to_board(fen)
+        board = fen_to_board(fen)
         normalize_turn(turn)
+        
+        from collections import Counter
+        counts = Counter()
+        for row in board:
+            for piece in row:
+                if piece:
+                    counts[piece] += 1
+                    
+        # 1. 將帥必須存在且只有一個
+        if counts["K"] != 1 or counts["k"] != 1:
+            return False
+            
+        # 3. 數量合理性
+        max_counts = {
+            "A": 2, "B": 2, "R": 2, "N": 2, "C": 2, "P": 5,
+            "a": 2, "b": 2, "r": 2, "n": 2, "c": 2, "p": 5,
+            "K": 1, "k": 1
+        }
+        for piece, count in counts.items():
+            if count > max_counts.get(piece, 0):
+                return False
+                
         return True
     except Exception:
         return False

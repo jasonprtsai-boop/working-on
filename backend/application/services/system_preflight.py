@@ -425,6 +425,10 @@ def _vision_readiness_status(*, fake_robot: bool | None = None) -> Dict[str, Any
         details.update({
             "system": runtime_status.get("system") or vision_system.__class__.__name__,
             "mode": runtime_status.get("mode"),
+            "available": runtime_status.get("available"),
+            "startup_failure": bool(runtime_status.get("startup_failure")),
+            "startup_error": runtime_status.get("startup_error"),
+            "degraded": bool(runtime_status.get("degraded")),
             "simulation": simulation,
             "fallback": fallback,
             "fallback_reason": str(fallback_reason) if fallback_reason else None,
@@ -443,6 +447,12 @@ def _vision_readiness_status(*, fake_robot: bool | None = None) -> Dict[str, Any
             return {
                 "ok": False,
                 "message": "Vision is running in simulation while FAKE_VISION is false.",
+                "details": details,
+            }
+        if details["startup_failure"] or details["available"] is False or runtime_status.get("mode") == "unavailable":
+            return {
+                "ok": False,
+                "message": "Real vision is unavailable and simulation fallback is disabled.",
                 "details": details,
             }
         if calibrated:

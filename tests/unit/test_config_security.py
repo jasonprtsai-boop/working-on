@@ -141,6 +141,7 @@ class TestConfigSecurity(unittest.TestCase):
             "FAKE_VISION": "1",
             "FAKE_ROBOT": "1",
             "FAKE_AI": "1",
+            "VISION_ALLOW_SIMULATION_FALLBACK": "1",
             "SYSTEM_MODE": "simulation",
         })
 
@@ -152,6 +153,7 @@ class TestConfigSecurity(unittest.TestCase):
         self.assertIn("FAKE_VISION", output)
         self.assertIn("FAKE_ROBOT", output)
         self.assertIn("FAKE_AI", output)
+        self.assertIn("VISION_ALLOW_SIMULATION_FALLBACK", output)
         self.assertIn("SYSTEM_MODE", output)
 
     def test_production_rejects_memory_or_relative_db_path(self):
@@ -247,6 +249,22 @@ class TestConfigSecurity(unittest.TestCase):
 
         self.assertNotEqual(missing.returncode, 0)
         self.assertIn("VISION_TMFLOW_INGEST_KEY", missing.stderr + missing.stdout)
+        self.assertEqual(configured.returncode, 0, configured.stderr + configured.stdout)
+
+    def test_production_tmflow_socket_ingest_requires_key_when_enabled(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            env = self._production_env(tmpdir)
+            env.update({
+                "TMFLOW_INGEST_SERVER_ENABLED": "1",
+                "TMFLOW_INGEST_KEY": "",
+            })
+            missing = self._import_config(env)
+
+            env["TMFLOW_INGEST_KEY"] = "configured-secret"
+            configured = self._import_config(env)
+
+        self.assertNotEqual(missing.returncode, 0)
+        self.assertIn("TMFLOW_INGEST_KEY", missing.stderr + missing.stdout)
         self.assertEqual(configured.returncode, 0, configured.stderr + configured.stdout)
 
     def _import_config(self, env: dict):

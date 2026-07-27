@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import patch
 
 from backend.application.services import system_preflight
+from backend.interfaces.api import shared
 from backend.utils import config
 
 
@@ -163,6 +164,41 @@ class TestSystemPreflightNetworkConfig(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertTrue(result["details"]["simulation"])
         self.assertIn("real robot", result["message"])
+
+    def test_unavailable_real_vision_does_not_count_as_simulation_fallback(self):
+        config.FAKE_VISION = False
+
+        class UnavailableVision:
+            def get_calibration_status(self):
+                return {
+                    "calibrated": False,
+                    "loaded_from_file": False,
+                    "simulation": False,
+                    "fallback": False,
+                    "startup_failure": True,
+                    "startup_error": "camera offline",
+                }
+
+        with patch.object(
+            shared,
+            "runtime_vision_status",
+            return_value={
+                "system": "UnavailableVisionSystem",
+                "mode": "unavailable",
+                "available": False,
+                "simulation": False,
+                "fallback": False,
+                "startup_failure": True,
+                "startup_error": "camera offline",
+            },
+        ), patch.object(shared, "vision_system", UnavailableVision()):
+            result = system_preflight._vision_readiness_status(fake_robot=False)
+
+        self.assertFalse(result["ok"])
+        self.assertFalse(result["details"]["simulation"])
+        self.assertFalse(result["details"]["fallback"])
+        self.assertEqual(result["details"]["startup_error"], "camera offline")
+        self.assertIn("unavailable", result["message"])
 
 
 if __name__ == "__main__":

@@ -3,6 +3,19 @@ import os
 
 
 class TestHttpSmoke(unittest.TestCase):
+    def _force_local_simulation(self):
+        os.environ["FAKE_VISION"] = "1"
+        os.environ["FAKE_ROBOT"] = "1"
+        os.environ["AUTO_EXECUTE_ROBOT"] = "0"
+        try:
+            from backend.utils import config
+
+            config.FAKE_VISION = True
+            config.FAKE_ROBOT = True
+            config.AUTO_EXECUTE_ROBOT = False
+        except Exception:
+            pass
+
     def _auth_headers(self, client):
         from backend.utils import config
 
@@ -162,7 +175,7 @@ class TestHttpSmoke(unittest.TestCase):
         self.assertEqual((second.get_json() or {}).get("code"), "rate_limited")
 
     def test_player_endpoints_do_not_require_auth(self):
-        os.environ.setdefault("FAKE_VISION", "1")
+        self._force_local_simulation()
         from backend.events.event_types import EventType
         from backend.events.models.base_event import BaseEvent
         from backend.main import create_app
@@ -209,7 +222,7 @@ class TestHttpSmoke(unittest.TestCase):
             estop.reset()
 
     def test_player_start_redacts_runtime_snapshot_and_ignores_depth_override(self):
-        os.environ.setdefault("FAKE_VISION", "1")
+        self._force_local_simulation()
         from backend.application.services.estop import estop
         from backend.main import create_app
         from backend.runtime.workers.engine_worker import engine_worker

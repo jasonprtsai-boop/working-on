@@ -24,6 +24,27 @@ class VisionService:
         bus.subscribe(EventType.VISION_BOARD_DETECTED, self.on_board_detected)
         bus.subscribe(EventType.UI_ACTION, self.on_ui_action)
 
+    def _vision_status(self) -> dict:
+        if hasattr(self._vision, "get_status"):
+            try:
+                status = self._vision.get_status()
+                return dict(status) if isinstance(status, dict) else {}
+            except Exception:
+                logger.debug("[VisionService] vision status unavailable", exc_info=True)
+        return {}
+
+    def _ensure_vision_available(self) -> dict:
+        status = self._vision_status()
+        unavailable = (
+            status.get("mode") == "unavailable"
+            or bool(status.get("startup_failure"))
+            or status.get("available") is False
+        )
+        if unavailable:
+            reason = status.get("startup_error") or status.get("last_error") or "real vision is unavailable"
+            raise RuntimeError(f"Vision system unavailable: {reason}")
+        return status
+
     def on_ui_action(self, event: BaseEvent):
         """Handles manual UI triggers like vision sync."""
         payload = event.payload or {}
@@ -249,9 +270,12 @@ class VisionService:
 
     def get_current_fen(self) -> tuple[str, float]:
         """Returns the last validated stable FEN string and confidence."""
+        status = self._ensure_vision_available()
         state = self._vision.validator.last_stable_state
         confidence = getattr(self._vision.validator, "last_confidence", 0.95)
         if not state:
+            if not bool(status.get("simulation")):
+                raise RuntimeError("No stable real vision state is available yet.")
             turn = self._turn_from_payload(allow_state_fallback=True)
             return f"rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR {turn} - - 0 1", confidence
         return self._generate_fen(state, turn=self._turn_from_payload(allow_state_fallback=True)), confidence

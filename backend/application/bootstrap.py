@@ -17,7 +17,7 @@ from backend.infrastructure.robot.queue.robot_queue import robot_queue
 from backend.core.exceptions import FatalBootstrapError, ComponentDegradedError
 
 
-def _register_shutdown_hooks(runtime, vision_system):
+def _register_shutdown_hooks(runtime, vision_system, tmflow_ingest_server=None):
     """Register exactly one best-effort process teardown hook."""
     if getattr(_register_shutdown_hooks, "_registered", False):
         return
@@ -46,6 +46,11 @@ def _register_shutdown_hooks(runtime, vision_system):
                 vision_system.stop()
         except Exception as exc:
             logger.warning(f"[Bootstrap] vision shutdown degraded: {exc}", exc_info=True)
+        try:
+            if tmflow_ingest_server and hasattr(tmflow_ingest_server, "stop"):
+                tmflow_ingest_server.stop()
+        except Exception as exc:
+            logger.warning(f"[Bootstrap] TMflow ingest shutdown degraded: {exc}", exc_info=True)
         try:
             runtime.stop()
         except Exception as exc:
@@ -128,11 +133,13 @@ def bootstrap_system():
         "workers_started": False,
         "workflow_started": False,
         "telemetry_started": False,
+        "tmflow_ingest_started": False,
         "persistence_started": False,
         "vision_started": False,
         "vision_fallback": False,
         "vision_fallback_reason": None,
         "vision_mode": "unknown",
+        "vision_unavailable": False,
         "vision_runtime_owner": getattr(config, "VISION_RUNTIME_OWNER", "vision_system"),
         "vision_start_error": None,
     }
@@ -238,14 +245,51 @@ def bootstrap_system():
     # 6. Initialize and Start Workers
     # Start old VisionSystem (legacy MJPEG stream)
     from backend.infrastructure.vision.vision_system import vision_system
-    _register_shutdown_hooks(runtime, vision_system)
-    fallback_reason = getattr(vision_system, "_fallback_reason", None)
-    bootstrap_status["vision_fallback"] = bool(getattr(vision_system, "_fallback_from_real_vision", False) or fallback_reason)
+    tmflow_ingest_server = None
+    if getattr(config, "TMFLOW_INGEST_SERVER_ENABLED", False):
+        try:
+            from backend.infrastructure.robot.tmflow_socket_ingest_server import tmflow_socket_ingest_server
+
+            tmflow_ingest_server = tmflow_socket_ingest_server
+            bootstrap_status["tmflow_ingest_started"] = bool(tmflow_ingest_server.start())
+            container.register("tmflow_ingest_server", tmflow_ingest_server)
+            if not bootstrap_status["tmflow_ingest_started"]:
+                record_bootstrap_error(
+                    "tmflow_ingest.start",
+                    ComponentDegradedError("TMflow socket ingest server did not start."),
+                    level="error",
+                )
+        except Exception as exc:
+            record_bootstrap_error("tmflow_ingest.start", exc, level="error")
+    _register_shutdown_hooks(runtime, vision_system, tmflow_ingest_server)
+    vision_runtime_status = {}
+    if hasattr(vision_system, "get_status"):
+        try:
+            vision_runtime_status = dict(vision_system.get_status() or {})
+        except Exception as exc:
+            vision_runtime_status = {"error": str(exc)}
+    fallback_reason = (
+        vision_runtime_status.get("fallback_reason")
+        or getattr(vision_system, "_fallback_reason", None)
+    )
+    bootstrap_status["vision_fallback"] = bool(
+        vision_runtime_status.get("fallback")
+        or getattr(vision_system, "_fallback_from_real_vision", False)
+        or fallback_reason
+    )
     bootstrap_status["vision_fallback_reason"] = str(fallback_reason) if fallback_reason else None
-    bootstrap_status["vision_mode"] = (
-        "fallback"
-        if bootstrap_status["vision_fallback"]
-        else ("simulation" if getattr(config, "FAKE_VISION", False) else "real")
+    bootstrap_status["vision_unavailable"] = bool(
+        vision_runtime_status.get("mode") == "unavailable"
+        or vision_runtime_status.get("startup_failure")
+        or vision_runtime_status.get("available") is False
+    )
+    bootstrap_status["vision_mode"] = str(
+        vision_runtime_status.get("mode")
+        or (
+            "fallback"
+            if bootstrap_status["vision_fallback"]
+            else ("simulation" if getattr(config, "FAKE_VISION", False) else "real")
+        )
     )
     try:
         bootstrap_status["vision_started"] = bool(vision_system.start())
@@ -253,6 +297,8 @@ def bootstrap_system():
         bootstrap_status["vision_started"] = False
         bootstrap_status["vision_start_error"] = str(e)
         record_bootstrap_error("vision.start", e, level="error")
+    if bootstrap_status["vision_unavailable"] and not bootstrap_status["vision_start_error"]:
+        bootstrap_status["vision_start_error"] = str(vision_runtime_status.get("startup_error") or "vision unavailable")
     bus.publish(BaseEvent.create(
         event_type=EventType.DIAGNOSTICS_UPDATED,
         source="bootstrap",
@@ -261,7 +307,13 @@ def bootstrap_system():
                 "mode": bootstrap_status["vision_mode"],
                 "owner": bootstrap_status["vision_runtime_owner"],
                 "fallback": bootstrap_status["vision_fallback"],
-                "status": "FALLBACK" if bootstrap_status["vision_fallback"] else "READY",
+                "simulation": bool(vision_runtime_status.get("simulation") or getattr(config, "FAKE_VISION", False)),
+                "available": not bootstrap_status["vision_unavailable"],
+                "status": (
+                    "UNAVAILABLE"
+                    if bootstrap_status["vision_unavailable"] or not bootstrap_status["vision_started"]
+                    else ("FALLBACK" if bootstrap_status["vision_fallback"] else "READY")
+                ),
                 "fallback_reason": bootstrap_status["vision_fallback_reason"],
                 "start_error": bootstrap_status["vision_start_error"],
             }
@@ -317,10 +369,14 @@ def bootstrap_system():
         # Persistence is critical for research data integrity
         raise FatalBootstrapError(f"Failed to start PersistenceWorker: {exc}") from exc
 
-    vision_uses_simulation = bool(getattr(config, "FAKE_VISION", False) or bootstrap_status["vision_fallback"])
+    vision_uses_simulation = bool(
+        getattr(config, "FAKE_VISION", False)
+        or bootstrap_status["vision_fallback"]
+        or bootstrap_status["vision_mode"] == "simulation"
+    )
     vision_ready = bool(bootstrap_status["vision_started"]) and (
         not vision_uses_simulation or bool(getattr(config, "FAKE_ROBOT", False))
-    )
+    ) and not bool(bootstrap_status["vision_unavailable"])
     bootstrap_status["ready"] = all(
         [
             bootstrap_status["runtime_started"],

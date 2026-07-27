@@ -274,6 +274,10 @@ FAKE_ROBOT = _as_bool(
     default=True,
 )
 FAKE_VISION = _as_bool(os.environ.get('FAKE_VISION', get_cfg('system.simulation.fake_vision', False)), default=False)
+VISION_ALLOW_SIMULATION_FALLBACK = _as_bool(
+    _env_or_cfg("VISION_ALLOW_SIMULATION_FALLBACK", "vision.allow_simulation_fallback", False),
+    default=False,
+)
 FAKE_AI = _as_bool(os.environ.get('FAKE_AI', get_cfg('system.simulation.fake_ai', True)), default=True)
 AUTO_EXECUTE_ROBOT = _as_bool(
     _setup_or_env_or_cfg("AUTO_EXECUTE_ROBOT", "system.auto_execute_robot", "robot.runtime.auto_execute_robot", False),
@@ -402,6 +406,8 @@ if IS_PRODUCTION:
         _security_errors.append("FAKE_ROBOT must be false in production.")
     if FAKE_AI:
         _security_errors.append("FAKE_AI must be false in production.")
+    if VISION_ALLOW_SIMULATION_FALLBACK:
+        _security_errors.append("VISION_ALLOW_SIMULATION_FALLBACK must be false in production.")
     if MAX_REQUEST_BYTES <= 0 or MAX_SOCKET_PAYLOAD_BYTES <= 0:
         _security_errors.append("Payload size limits must be positive in production.")
     if not SOCKET_ACTION_ALLOWLIST:
@@ -499,6 +505,12 @@ VISION_WORKER_PIPELINE_ENABLED = _as_bool(
 VISION_RUNTIME_OWNER = str(_env_or_cfg("VISION_RUNTIME_OWNER", "vision.runtime_owner", "vision_system")).strip().lower()
 if VISION_RUNTIME_OWNER not in {"vision_system", "vision_pipeline"}:
     raise RuntimeError("VISION_RUNTIME_OWNER must be 'vision_system' or 'vision_pipeline'.")
+VISION_DEGRADED_CONSECUTIVE_FAILURES = int(
+    _env_or_cfg("VISION_DEGRADED_CONSECUTIVE_FAILURES", "vision.degraded_consecutive_failures", 30)
+)
+VISION_DEGRADED_FAILURE_SECONDS = float(
+    _env_or_cfg("VISION_DEGRADED_FAILURE_SECONDS", "vision.degraded_failure_seconds", 20.0)
+)
 WARP_WIDTH = int(_env_or_cfg('WARP_WIDTH', 'vision.warp_width', 1000))
 WARP_HEIGHT = int(_env_or_cfg('WARP_HEIGHT', 'vision.warp_height', 1000))
 VISION_CALIBRATION_MAX_DIM = int(_env_or_cfg("VISION_CALIBRATION_MAX_DIM", "vision.calibration_max_dim", 960))
@@ -569,6 +581,85 @@ ROBOT_PC_IP = str(_setup_or_env_or_cfg("ROBOT_PC_IP", "robot.pc_ip", "robot.conn
 ROBOT_SUBNET_MASK = str(
     _setup_or_env_or_cfg("ROBOT_SUBNET_MASK", "robot.subnet_mask", "robot.connection.subnet_mask", DEFAULT_ROBOT_SUBNET_MASK)
 )
+TMFLOW_INGEST_SERVER_ENABLED = _as_bool(
+    _setup_or_env_or_cfg(
+        "TMFLOW_INGEST_SERVER_ENABLED",
+        "robot.tmflow_ingest.enabled",
+        "robot.tmflow_ingest.enabled",
+        False,
+    ),
+    default=False,
+)
+TMFLOW_INGEST_SERVER_HOST = str(
+    _setup_or_env_or_cfg(
+        "TMFLOW_INGEST_SERVER_HOST",
+        "robot.tmflow_ingest.host",
+        "robot.tmflow_ingest.host",
+        ROBOT_PC_IP,
+    )
+).strip()
+TMFLOW_INGEST_SERVER_PORT = int(
+    _setup_or_env_or_cfg(
+        "TMFLOW_INGEST_SERVER_PORT",
+        "robot.tmflow_ingest.port",
+        "robot.tmflow_ingest.port",
+        5892,
+    )
+)
+TMFLOW_INGEST_MAX_MESSAGE_BYTES = int(
+    _setup_or_env_or_cfg(
+        "TMFLOW_INGEST_MAX_MESSAGE_BYTES",
+        "robot.tmflow_ingest.max_message_bytes",
+        "robot.tmflow_ingest.max_message_bytes",
+        max(VISION_TMFLOW_IMAGE_MAX_MESSAGE_BYTES, 1_048_576),
+    )
+)
+TMFLOW_INGEST_SEND_ACK = _as_bool(
+    _setup_or_env_or_cfg(
+        "TMFLOW_INGEST_SEND_ACK",
+        "robot.tmflow_ingest.send_ack",
+        "robot.tmflow_ingest.send_ack",
+        True,
+    ),
+    default=True,
+)
+TMFLOW_INGEST_KEY = str(
+    _setup_or_env_or_cfg(
+        "TMFLOW_INGEST_KEY",
+        "robot.tmflow_ingest.ingest_key",
+        "robot.tmflow_ingest.ingest_key",
+        VISION_TMFLOW_INGEST_KEY,
+    )
+).strip()
+TMFLOW_INGEST_ALLOW_TRUSTED_LAB_IPS = _as_bool(
+    _setup_or_env_or_cfg(
+        "TMFLOW_INGEST_ALLOW_TRUSTED_LAB_IPS",
+        "robot.tmflow_ingest.allow_trusted_lab_ips",
+        "robot.tmflow_ingest.allow_trusted_lab_ips",
+        not IS_PRODUCTION,
+    ),
+    default=not IS_PRODUCTION,
+)
+TMFLOW_INGEST_TELEMETRY_MAX_AGE_SEC = float(
+    _setup_or_env_or_cfg(
+        "TMFLOW_INGEST_TELEMETRY_MAX_AGE_SEC",
+        "robot.tmflow_ingest.telemetry_max_age_sec",
+        "robot.tmflow_ingest.telemetry_max_age_sec",
+        3.0,
+    )
+)
+if TMFLOW_INGEST_SERVER_ENABLED:
+    if not (1 <= TMFLOW_INGEST_SERVER_PORT <= 65535):
+        raise RuntimeError("TMFLOW_INGEST_SERVER_PORT must be between 1 and 65535.")
+    if TMFLOW_INGEST_MAX_MESSAGE_BYTES < 256:
+        raise RuntimeError("TMFLOW_INGEST_MAX_MESSAGE_BYTES must be at least 256.")
+    if TMFLOW_INGEST_TELEMETRY_MAX_AGE_SEC <= 0:
+        raise RuntimeError("TMFLOW_INGEST_TELEMETRY_MAX_AGE_SEC must be positive.")
+    if IS_PRODUCTION and not TMFLOW_INGEST_KEY:
+        raise RuntimeError(
+            "Unsafe TMflow socket ingest configuration: TMFLOW_INGEST_KEY must be set "
+            "when TMFLOW_INGEST_SERVER_ENABLED is true in production."
+        )
 TMFLOW_VERSION = str(
     _setup_or_env_or_cfg("TMFLOW_VERSION", "robot.tmflow_version", "robot.connection.tmflow_version", "1.82")
 )

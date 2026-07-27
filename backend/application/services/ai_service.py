@@ -38,8 +38,22 @@ class AiService:
 
             result = await self.engine.compute(fen, depth=self.depth)
             if result:
+                best_move = result["best_move"]
+                
+                # Validation: 確保 AI move 能夠轉成實體座標
+                if best_move and best_move != "none":
+                    try:
+                        from backend.utils.kinematics import kinematics
+                        if len(best_move) >= 4:
+                            src, dst = best_move[:2], best_move[2:4]
+                            if kinematics.square_to_robot(src) is None or kinematics.square_to_robot(dst) is None:
+                                logger.warning(f"AI returned invalid coordinate move: {best_move}")
+                                return None
+                    except Exception as e:
+                        logger.error(f"Error validating AI move coords: {e}", exc_info=True)
+
                 return {
-                    "move": result["best_move"],
+                    "move": best_move,
                     "score": result["score"] / 100.0,
                     "depth": result["depth"],
                     "pv": [m["move"] for m in result["multi_pv"]] if "multi_pv" in result else []

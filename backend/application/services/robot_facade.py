@@ -211,6 +211,15 @@ class RobotFacade(RobotInterface):
                 ):
                     if key in raw:
                         status[key] = raw.get(key)
+                try:
+                    from backend.infrastructure.robot.tmflow_ingest_state import tmflow_ingest_state
+
+                    status = tmflow_ingest_state.merge_status(
+                        status,
+                        max_age_sec=float(getattr(config, "TMFLOW_INGEST_TELEMETRY_MAX_AGE_SEC", 3.0)),
+                    )
+                except Exception:
+                    logger.debug("[RobotFacade] TMflow ingest telemetry merge skipped", exc_info=True)
                 return status
         except Exception as exc:
             logger.warning("[RobotFacade] get_status failed", exc_info=True)

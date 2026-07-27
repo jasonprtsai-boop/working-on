@@ -32,6 +32,17 @@ class TemporalValidator:
 
         # Consensus reached
         if first != self.last_stable_state:
+            if self.last_stable_state is not None:
+                diff_count = 0
+                all_keys = set(first.keys()).union(set(self.last_stable_state.keys()))
+                for k in all_keys:
+                    if first.get(k) != self.last_stable_state.get(k):
+                        diff_count += 1
+                
+                if diff_count > 6:
+                    logger.warning(f"Board state differs too much from previous stable frame: {diff_count} pieces changed.")
+                    # Optional: Could add logic to reject or require longer stability here
+
             self.last_stable_state = first
             return first
 

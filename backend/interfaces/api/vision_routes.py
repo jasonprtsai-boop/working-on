@@ -227,6 +227,14 @@ def vision_source_status():
                 "max_message_bytes": int(getattr(config, "VISION_TMFLOW_IMAGE_MAX_MESSAGE_BYTES", 1_048_576)),
                 "fps_limit": float(getattr(config, "VISION_TMFLOW_IMAGE_FPS_LIMIT", 2.0)),
             },
+            "tmflow_socket_ingest": {
+                "enabled": bool(getattr(config, "TMFLOW_INGEST_SERVER_ENABLED", False)),
+                "host": str(getattr(config, "TMFLOW_INGEST_SERVER_HOST", "")),
+                "port": int(getattr(config, "TMFLOW_INGEST_SERVER_PORT", 5892)),
+                "max_message_bytes": int(getattr(config, "TMFLOW_INGEST_MAX_MESSAGE_BYTES", 1_048_576)),
+                "telemetry_max_age_sec": float(getattr(config, "TMFLOW_INGEST_TELEMETRY_MAX_AGE_SEC", 3.0)),
+                "key_configured": bool(str(getattr(config, "TMFLOW_INGEST_KEY", "") or "").strip()),
+            },
         },
         "vision": status,
     })
@@ -369,8 +377,49 @@ def _vision_source_diagnostics(camera: dict, source: str) -> dict:
             "fps_limit": float(camera.get("fps_limit") or getattr(config, "VISION_TMFLOW_IMAGE_FPS_LIMIT", 2.0)),
             "last_error": camera.get("last_error"),
         },
+        "socket_ingest_channel": _tmflow_socket_ingest_status(),
         "ingest_key": key_status,
     }
+
+
+def _tmflow_socket_ingest_status() -> dict:
+    max_age = float(getattr(config, "TMFLOW_INGEST_TELEMETRY_MAX_AGE_SEC", 3.0))
+    status = {
+        "label": "5892 TMflow push",
+        "enabled": bool(getattr(config, "TMFLOW_INGEST_SERVER_ENABLED", False)),
+        "host": str(getattr(config, "TMFLOW_INGEST_SERVER_HOST", "")),
+        "port": int(getattr(config, "TMFLOW_INGEST_SERVER_PORT", 5892)),
+        "endpoint": f"{getattr(config, 'TMFLOW_INGEST_SERVER_HOST', '')}:{getattr(config, 'TMFLOW_INGEST_SERVER_PORT', 5892)}",
+        "key_configured": bool(str(getattr(config, "TMFLOW_INGEST_KEY", "") or "").strip()),
+    }
+    if not status["enabled"]:
+        try:
+            from backend.infrastructure.robot.tmflow_ingest_state import tmflow_ingest_state
+
+            status["running"] = False
+            status["telemetry"] = tmflow_ingest_state.status(max_age_sec=max_age)
+        except Exception:
+            status["running"] = False
+        status["status"] = "disabled"
+        return status
+    try:
+        from backend.application.container import container
+        from backend.infrastructure.robot.tmflow_ingest_state import tmflow_ingest_state
+
+        server = container.get("tmflow_ingest_server")
+        if server and hasattr(server, "get_status"):
+            status.update(dict(server.get_status()))
+        else:
+            status["running"] = False
+            status["telemetry"] = tmflow_ingest_state.status(max_age_sec=max_age)
+    except Exception as exc:
+        status.update({"running": False, "last_error": str(exc)})
+    status["status"] = (
+        "connected"
+        if (status.get("running") and (status.get("telemetry") or {}).get("connected"))
+        else ("listening" if status.get("running") else ("disabled" if not status.get("enabled") else "offline"))
+    )
+    return status
 
 
 def _robot_control_status() -> dict:

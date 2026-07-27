@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import base64
 import os
 import time
@@ -123,6 +125,108 @@ class SimulationVisionSystem:
         }
 
 
+class UnavailableVisionSystem:
+    """Real vision failed to initialize; do not emit simulated detections."""
+
+    def __init__(self, *, startup_error: str):
+        self._startup_error = str(startup_error or "vision startup failed")
+        self._startup_error_at = time.time()
+        self._fallback_reason = None
+        self._fallback_from_real_vision = False
+        self.validator = _SimulationValidator()
+        self.fen_gen = _SimulationFENGen()
+        self.board_corners = None
+        self.calibration_path = os.path.abspath(getattr(config, "VISION_CALIBRATION_FILE", "data/vision_calibration.json"))
+        self._jpg_bytes = base64.b64decode(
+            "/9j/4AAQSkZJRgABAQAAZABkAAD/2wCEABQQEBkSGScXFycyJh8mMi4mJiYmLj41NTU1NT5EQUFBQUFBREREREREREREREREREREREREREREREREREQBFRkZIBwgJjYmICY2RDYrKzZERERCNUJERERERERERERERERERERERERERERERERERERERERERERERERERP/AABEIAAEAAQMBIgACEQEDEQH/xABMAAEBAAAAAAAAAAAAAAAAAAAABQEBAQAAAAAAAAAAAAAAAAAABQYQAQAAAAAAAAAAAAAAAAAAAAARAQAAAAAAAAAAAAAAAAAAAAD/2gALAwEAAhEDEQA/AJQA9Yv/2Q=="
+        )
+
+    def start(self) -> bool:
+        logger.error("[VisionSystem] Real vision is unavailable: %s", self._startup_error)
+        return False
+
+    def stop(self):
+        pass
+
+    def update_corners(self, corners, persist=True):
+        return {
+            "ok": False,
+            "calibrated": False,
+            "simulation": False,
+            "reason": "real vision is unavailable",
+            "startup_error": self._startup_error,
+            "persisted": False,
+        }
+
+    def calibrate_from_frame(self, frame=None, persist=True):
+        return {
+            "ok": False,
+            "calibrated": False,
+            "simulation": False,
+            "reason": "real vision is unavailable",
+            "startup_error": self._startup_error,
+        }
+
+    def get_calibration_status(self) -> dict:
+        return {
+            "calibrated": False,
+            "loaded_from_file": False,
+            "simulation": False,
+            "fallback": False,
+            "startup_failure": True,
+            "startup_error": self._startup_error,
+            "board_corners": None,
+            "path": self.calibration_path,
+            "path_exists": os.path.exists(self.calibration_path),
+            "output_size": [getattr(config, "WARP_WIDTH", 1000), getattr(config, "WARP_HEIGHT", 1000)],
+        }
+
+    def step(self) -> Optional[str]:
+        return None
+
+    def get_video_stream(self):
+        boundary = b"frame"
+        header_prefix = b"--" + boundary + b"\r\nContent-Type: image/jpeg\r\nContent-Length: "
+        try:
+            while True:
+                jpg = self._jpg_bytes
+                yield header_prefix + str(len(jpg)).encode("ascii") + b"\r\n\r\n" + jpg + b"\r\n"
+                time.sleep(1.0)
+        except GeneratorExit:
+            raise
+
+    def get_status(self) -> dict:
+        model_path = os.path.abspath(getattr(config, "YOLO_MODEL_PATH", "") or "")
+        return {
+            "system": "UnavailableVisionSystem",
+            "mode": "unavailable",
+            "owner": getattr(config, "VISION_RUNTIME_OWNER", "vision_system"),
+            "available": False,
+            "simulation": False,
+            "fallback": False,
+            "fallback_allowed": bool(getattr(config, "VISION_ALLOW_SIMULATION_FALLBACK", False)),
+            "startup_failure": True,
+            "startup_error": self._startup_error,
+            "startup_error_at": self._startup_error_at,
+            "configured_fake_vision": bool(getattr(config, "FAKE_VISION", False)),
+            "running": False,
+            "camera": {
+                "running": False,
+                "opened": False,
+                "source": getattr(config, "VISION_SOURCE", "opencv"),
+                "last_error": self._startup_error,
+            },
+            "detector": {"name": None, "loaded": False, "last_error": self._startup_error},
+            "model": {
+                "path": model_path,
+                "exists": bool(model_path and os.path.exists(model_path)),
+                "type": getattr(config, "YOLO_MODEL_TYPE", "yolo26"),
+                "device": getattr(config, "VISION_DEVICE", "cpu"),
+            },
+            "calibration": self.get_calibration_status(),
+        }
+
+
 def _build_real_vision_system():
     # Local imports so the module can still be imported without numpy/opencv installed.
     import numpy as np  # noqa: F401
@@ -156,6 +260,7 @@ def _build_real_vision_system():
             self._stop = threading.Event()
             self.failure_count = 0
             self.consecutive_failures = 0
+            self.first_failure_at = None
             self.last_error = None
             self.last_error_at = None
 
@@ -242,11 +347,15 @@ def _build_real_vision_system():
                         )
                     )
                     self.consecutive_failures = 0
+                    self.first_failure_at = None
                 except Exception as exc:
+                    now = time.time()
+                    if self.consecutive_failures == 0:
+                        self.first_failure_at = now
                     self.failure_count += 1
                     self.consecutive_failures += 1
                     self.last_error = str(exc)
-                    self.last_error_at = time.time()
+                    self.last_error_at = now
                     logger.warning(f"[VisionSystem] inference loop failed: {exc}", exc_info=True)
                     time.sleep(0.2)
 
@@ -484,11 +593,21 @@ def _build_real_vision_system():
                     camera_status = self.camera.get_status()
                 except Exception as exc:
                     camera_status = {"last_error": str(exc)}
+            consecutive_failures = int(getattr(self.worker, "consecutive_failures", 0))
+            first_failure_at = getattr(self.worker, "first_failure_at", None)
+            failure_duration_sec = round(max(0.0, time.time() - float(first_failure_at)), 3) if first_failure_at else 0.0
+            degraded_failure_count = max(1, int(getattr(config, "VISION_DEGRADED_CONSECUTIVE_FAILURES", 30)))
+            degraded_failure_seconds = max(0.0, float(getattr(config, "VISION_DEGRADED_FAILURE_SECONDS", 20.0)))
+            degraded = consecutive_failures >= degraded_failure_count and failure_duration_sec >= degraded_failure_seconds
 
             return {
                 "system": self.__class__.__name__,
                 "owner": getattr(config, "VISION_RUNTIME_OWNER", "vision_system"),
                 "simulation": False,
+                "fallback": False,
+                "mode": "real",
+                "available": True,
+                "degraded": degraded,
                 "running": bool(getattr(self.camera, "running", False)),
                 "camera": camera_status,
                 "detector": {
@@ -513,7 +632,12 @@ def _build_real_vision_system():
                 "worker": {
                     "running": bool(self.worker._thread and self.worker._thread.is_alive()),
                     "failure_count": int(getattr(self.worker, "failure_count", 0)),
-                    "consecutive_failures": int(getattr(self.worker, "consecutive_failures", 0)),
+                    "consecutive_failures": consecutive_failures,
+                    "first_failure_at": first_failure_at,
+                    "failure_duration_sec": failure_duration_sec,
+                    "degraded": degraded,
+                    "degraded_after_failures": degraded_failure_count,
+                    "degraded_after_seconds": degraded_failure_seconds,
                     "last_error": getattr(self.worker, "last_error", None),
                     "last_error_at": getattr(self.worker, "last_error_at", None),
                 },
@@ -597,12 +721,28 @@ def _build_real_vision_system():
     return VisionSystem()
 
 
-# Global Instance
-if getattr(config, "FAKE_VISION", False):
-    vision_system = SimulationVisionSystem()
-else:
+def _create_vision_system():
+    if getattr(config, "FAKE_VISION", False):
+        return SimulationVisionSystem()
+
     try:
-        vision_system = _build_real_vision_system()
-    except Exception as e:
-        logger.error(f"[VisionSystem] Startup failed: {e}. Falling back to SimulationVisionSystem.", exc_info=True)
-        vision_system = SimulationVisionSystem(fallback_reason=str(e))
+        return _build_real_vision_system()
+    except Exception as exc:
+        if getattr(config, "VISION_ALLOW_SIMULATION_FALLBACK", False):
+            logger.error(
+                "[VisionSystem] Startup failed: %s. Explicit fallback is enabled; using SimulationVisionSystem.",
+                exc,
+                exc_info=True,
+            )
+            return SimulationVisionSystem(fallback_reason=str(exc))
+
+        logger.error(
+            "[VisionSystem] Startup failed: %s. Real vision remains unavailable; simulation fallback is disabled.",
+            exc,
+            exc_info=True,
+        )
+        return UnavailableVisionSystem(startup_error=str(exc))
+
+
+# Global Instance
+vision_system = _create_vision_system()

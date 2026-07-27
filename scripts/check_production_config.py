@@ -40,6 +40,8 @@ def _safe_production_env(tmpdir: str) -> dict[str, str]:
             "FAKE_AI": "0",
             "VISION_SOURCE": "opencv",
             "VISION_TMFLOW_INGEST_KEY": "",
+            "TMFLOW_INGEST_SERVER_ENABLED": "0",
+            "TMFLOW_INGEST_KEY": "",
             "DB_PATH": str(Path(tmpdir, "prod.db").resolve()),
             "SMART_CHESS_HOST": "127.0.0.1",
             "SMART_CHESS_BIND_ALL": "0",
@@ -167,12 +169,13 @@ def _run_self_test() -> int:
                 "FAKE_VISION": "1",
                 "FAKE_ROBOT": "1",
                 "FAKE_AI": "1",
+                "VISION_ALLOW_SIMULATION_FALLBACK": "1",
             }
         )
         passed &= _expect_fail(
             "reject fake hardware modes in production",
             fake_modes,
-            ("SYSTEM_MODE", "FAKE_VISION", "FAKE_ROBOT", "FAKE_AI"),
+            ("SYSTEM_MODE", "FAKE_VISION", "FAKE_ROBOT", "FAKE_AI", "VISION_ALLOW_SIMULATION_FALLBACK"),
         )
 
         tmflow_vision_without_key = dict(safe)
@@ -186,6 +189,18 @@ def _run_self_test() -> int:
         tmflow_vision_with_key = dict(tmflow_vision_without_key)
         tmflow_vision_with_key["VISION_TMFLOW_INGEST_KEY"] = "configured-secret"
         passed &= _expect_pass("accept tmflow vision with ingest key", tmflow_vision_with_key)
+
+        tmflow_socket_without_key = dict(safe)
+        tmflow_socket_without_key.update({"TMFLOW_INGEST_SERVER_ENABLED": "1", "TMFLOW_INGEST_KEY": ""})
+        passed &= _expect_fail(
+            "reject tmflow socket ingest without key",
+            tmflow_socket_without_key,
+            ("TMFLOW_INGEST_KEY",),
+        )
+
+        tmflow_socket_with_key = dict(tmflow_socket_without_key)
+        tmflow_socket_with_key["TMFLOW_INGEST_KEY"] = "configured-secret"
+        passed &= _expect_pass("accept tmflow socket ingest with key", tmflow_socket_with_key)
 
         bad_db = dict(safe)
         bad_db["DB_PATH"] = "data/runtime/prod.db"
