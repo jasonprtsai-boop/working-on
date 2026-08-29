@@ -1,0 +1,224 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1680" viewBox="0 0 1800 1680" role="img" aria-labelledby="title desc">
+  <title id="title">TMflow and Python data exchange flowchart</title>
+  <desc id="desc">A flowchart showing how TMvision, Python backend code, Modbus registers, and TMflow nodes exchange data during the Set-only commissioning test.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#334155"/>
+    </marker>
+    <marker id="arrow-blue" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#2563eb"/>
+    </marker>
+    <marker id="arrow-green" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#059669"/>
+    </marker>
+    <style>
+      .page { fill: #f8fafc; }
+      .title { font-family: "Microsoft JhengHei", "Noto Sans CJK TC", Arial, sans-serif; font-size: 42px; font-weight: 700; fill: #0f172a; }
+      .subtitle { font-family: "Microsoft JhengHei", "Noto Sans CJK TC", Arial, sans-serif; font-size: 22px; fill: #475569; }
+      .lane-title { font-family: "Microsoft JhengHei", "Noto Sans CJK TC", Arial, sans-serif; font-size: 20px; font-weight: 700; fill: #0f172a; }
+      .box-title { font-family: "Microsoft JhengHei", "Noto Sans CJK TC", Arial, sans-serif; font-size: 18px; font-weight: 700; fill: #0f172a; }
+      .body { font-family: "Microsoft JhengHei", "Noto Sans CJK TC", Arial, sans-serif; font-size: 16px; fill: #334155; }
+      .small { font-family: "Microsoft JhengHei", "Noto Sans CJK TC", Arial, sans-serif; font-size: 14px; fill: #475569; }
+      .tiny { font-family: "Microsoft JhengHei", "Noto Sans CJK TC", Arial, sans-serif; font-size: 12px; fill: #64748b; }
+      .lane { fill: #ffffff; stroke: #cbd5e1; stroke-width: 2; rx: 10; }
+      .tmvision { fill: #eff6ff; stroke: #2563eb; stroke-width: 2; rx: 10; }
+      .python { fill: #f8fafc; stroke: #64748b; stroke-width: 2; rx: 10; }
+      .vision { fill: #f5f3ff; stroke: #7c3aed; stroke-width: 2; rx: 10; }
+      .modbus { fill: #ecfdf5; stroke: #059669; stroke-width: 2; rx: 10; }
+      .tmflow { fill: #fff7ed; stroke: #ea580c; stroke-width: 2; rx: 10; }
+      .register { fill: #fefce8; stroke: #ca8a04; stroke-width: 2; rx: 10; }
+      .arrow { stroke: #334155; stroke-width: 3; fill: none; marker-end: url(#arrow); }
+      .http { stroke: #2563eb; stroke-width: 3; fill: none; marker-end: url(#arrow-blue); }
+      .mbread { stroke: #059669; stroke-width: 3; fill: none; marker-end: url(#arrow-green); }
+      .dash { stroke-dasharray: 8 8; }
+      .divider { stroke: #cbd5e1; stroke-width: 2; stroke-dasharray: 8 8; }
+      .step { fill: #0f172a; }
+      .step-text { font-family: Arial, sans-serif; font-size: 14px; font-weight: 700; fill: #ffffff; }
+    </style>
+  </defs>
+
+  <rect class="page" x="0" y="0" width="1800" height="1680"/>
+  <text class="title" x="60" y="72">TMflow 節點與 Python 程式碼資料流</text>
+  <text class="subtitle" x="60" y="112">包含 TMvision HTTP 影像、Python vision code、ModbusAdapter、Register、TMflow Set-only 節點的方向與順序。</text>
+
+  <rect class="lane" x="50" y="155" width="310" height="1450"/>
+  <rect class="lane" x="390" y="155" width="310" height="1450"/>
+  <rect class="lane" x="730" y="155" width="310" height="1450"/>
+  <rect class="lane" x="1070" y="155" width="310" height="1450"/>
+  <rect class="lane" x="1410" y="155" width="340" height="1450"/>
+
+  <text class="lane-title" x="75" y="195">TMvision / EIH</text>
+  <text class="lane-title" x="415" y="195">Python HTTP API</text>
+  <text class="lane-title" x="755" y="195">Python Runtime Code</text>
+  <text class="lane-title" x="1095" y="195">Modbus Registers</text>
+  <text class="lane-title" x="1435" y="195">TMflow 1.82.51 Nodes</text>
+
+  <line class="divider" x1="60" y1="545" x2="1740" y2="545"/>
+  <text class="small" x="70" y="525">A. TMvision 影像鏈路</text>
+  <text class="small" x="70" y="570">B. Modbus Set-only 命令握手</text>
+
+  <g id="vision-flow">
+    <circle class="step" cx="85" cy="255" r="16"/><text class="step-text" x="80" y="260">1</text>
+    <rect class="tmvision" x="95" y="225" width="240" height="85"/>
+    <text class="box-title" x="115" y="255">External Classification</text>
+    <text class="small" x="115" y="282">POST jpg image</text>
+    <text class="tiny" x="115" y="302">/classify?key=...</text>
+
+    <path class="http" d="M335 268 H390"/>
+    <rect class="python" x="410" y="225" width="270" height="85"/>
+    <text class="box-title" x="430" y="255">vision_routes.py</text>
+    <text class="small" x="430" y="282">ingest_tmvision_classification_frame()</text>
+    <text class="tiny" x="430" y="302">先驗證 key，失敗回 401</text>
+
+    <path class="arrow" d="M680 268 H730"/>
+    <rect class="vision" x="750" y="225" width="270" height="85"/>
+    <text class="box-title" x="770" y="255">vision_frame_io.py</text>
+    <text class="small" x="770" y="282">ingest_tmvision_image_request()</text>
+    <text class="tiny" x="770" y="302">decode image -> frame_buffer.put_raw()</text>
+
+    <path class="http dash" d="M750 330 C540 370 310 370 220 312"/>
+    <text class="small" x="430" y="358">回應：message=success, result=frame_received, score=1.0</text>
+
+    <circle class="step" cx="85" cy="420" r="16"/><text class="step-text" x="80" y="425">2</text>
+    <rect class="tmvision" x="95" y="390" width="240" height="95"/>
+    <text class="box-title" x="115" y="420">External Detection</text>
+    <text class="small" x="115" y="447">第一輪用 probe_box=1</text>
+    <text class="tiny" x="115" y="467">/detect?probe_box=1&amp;key=...</text>
+
+    <path class="http" d="M335 438 H390"/>
+    <rect class="python" x="410" y="390" width="270" height="95"/>
+    <text class="box-title" x="430" y="420">vision_routes.py</text>
+    <text class="small" x="430" y="447">ingest_tmvision_detection_frame()</text>
+    <text class="tiny" x="430" y="467">probe 不進 YOLO，直接產生測試框</text>
+
+    <path class="arrow" d="M680 438 H730"/>
+    <rect class="vision" x="750" y="390" width="270" height="95"/>
+    <text class="box-title" x="770" y="420">vision_frame_io.py</text>
+    <text class="small" x="770" y="447">tmvision_detection_probe_annotations()</text>
+    <text class="tiny" x="770" y="467">回 annotations_count=1</text>
+
+    <path class="http dash" d="M750 500 C530 530 305 530 220 485"/>
+    <text class="small" x="430" y="520">通過後移除 probe_box=1，改走 vision_system.detect_frame() -> YOLO annotations</text>
+  </g>
+
+  <g id="modbus-flow">
+    <circle class="step" cx="765" cy="650" r="16"/><text class="step-text" x="760" y="655">1</text>
+    <rect class="python" x="750" y="620" width="270" height="100"/>
+    <text class="box-title" x="770" y="650">測試入口</text>
+    <text class="small" x="770" y="677">scripts/start_modbus_square_server.py</text>
+    <text class="tiny" x="770" y="697">--watch --test-move a0b1</text>
+
+    <path class="arrow" d="M1020 670 H1070"/>
+    <rect class="register" x="1090" y="620" width="270" height="100"/>
+    <text class="box-title" x="1110" y="650">Python starts server</text>
+    <text class="small" x="1110" y="677">Modbus TCP 192.168.10.50:1502</text>
+    <text class="tiny" x="1110" y="697">initialize 40005..40010 = 0</text>
+
+    <path class="arrow" d="M1360 670 H1410"/>
+    <rect class="tmflow" x="1430" y="620" width="290" height="100"/>
+    <text class="box-title" x="1450" y="650">PC_MODBUS_1502</text>
+    <text class="small" x="1450" y="677">Modbus Device connects to PC</text>
+    <text class="tiny" x="1450" y="697">Client/Master, Holding Register</text>
+
+    <circle class="step" cx="765" cy="815" r="16"/><text class="step-text" x="760" y="820">2</text>
+    <rect class="python" x="750" y="785" width="270" height="105"/>
+    <text class="box-title" x="770" y="815">ModbusAdapter.send_chess_move()</text>
+    <text class="small" x="770" y="842">move a0b1 -> from=0, to=10</text>
+    <text class="tiny" x="770" y="862">action=0, command_id=1</text>
+
+    <path class="mbread" d="M1020 838 H1070"/>
+    <rect class="register" x="1090" y="785" width="270" height="105"/>
+    <text class="box-title" x="1110" y="815">Python writes command</text>
+    <text class="small" x="1110" y="842">40001=from, 40002=to</text>
+    <text class="small" x="1110" y="864">40003=action, 40004=cmd_id</text>
+    <text class="tiny" x="1110" y="884">then 40005 trigger=1</text>
+
+    <path class="mbread" d="M1410 838 H1360" marker-end="url(#arrow-green)"/>
+    <rect class="tmflow" x="1430" y="785" width="290" height="105"/>
+    <text class="box-title" x="1450" y="815">MB_READ_COMMAND</text>
+    <text class="small" x="1450" y="842">讀 offset 0..4</text>
+    <text class="small" x="1450" y="864">IF_NEW_COMMAND</text>
+    <text class="tiny" x="1450" y="884">trigger==1 AND cmd_id!=last_cmd_id</text>
+
+    <circle class="step" cx="1445" cy="990" r="16"/><text class="step-text" x="1440" y="995">3</text>
+    <rect class="tmflow" x="1430" y="960" width="290" height="105"/>
+    <text class="box-title" x="1450" y="990">SET_BUSY + MB_WRITE_BUSY</text>
+    <text class="small" x="1450" y="1017">status=1, error_code=0</text>
+    <text class="tiny" x="1450" y="1037">robot_state=1, last_cmd_id=cmd_id</text>
+
+    <path class="mbread" d="M1430 1012 H1360"/>
+    <rect class="register" x="1090" y="960" width="270" height="105"/>
+    <text class="box-title" x="1110" y="990">TMflow writes Busy</text>
+    <text class="small" x="1110" y="1017">40006 status=1</text>
+    <text class="small" x="1110" y="1039">40007 error_code=0</text>
+    <text class="tiny" x="1110" y="1059">40010 robot_state=1</text>
+
+    <path class="mbread dash" d="M1090 1012 H1020"/>
+    <rect class="python" x="750" y="960" width="270" height="105"/>
+    <text class="box-title" x="770" y="990">Python waits start</text>
+    <text class="small" x="770" y="1017">_wait_for_square_motion_start()</text>
+    <text class="tiny" x="770" y="1037">2 秒內讀到 status=1 才算開始</text>
+
+    <circle class="step" cx="1445" cy="1165" r="16"/><text class="step-text" x="1440" y="1170">4</text>
+    <rect class="tmflow" x="1430" y="1135" width="290" height="110"/>
+    <text class="box-title" x="1450" y="1165">WAIT_SIM_DONE + SET_DONE</text>
+    <text class="small" x="1450" y="1192">Wait 500 ms</text>
+    <text class="small" x="1450" y="1214">status=2, completed_cmd_id=cmd_id</text>
+    <text class="tiny" x="1450" y="1234">robot_state=0</text>
+
+    <path class="mbread" d="M1430 1190 H1360"/>
+    <rect class="register" x="1090" y="1135" width="270" height="110"/>
+    <text class="box-title" x="1110" y="1165">TMflow writes Done</text>
+    <text class="small" x="1110" y="1192">40006 status=2</text>
+    <text class="small" x="1110" y="1214">40008 completed_cmd_id=cmd_id</text>
+    <text class="tiny" x="1110" y="1234">40009 heartbeat, 40010 robot_state=0</text>
+
+    <path class="mbread dash" d="M1090 1190 H1020"/>
+    <rect class="python" x="750" y="1135" width="270" height="110"/>
+    <text class="box-title" x="770" y="1165">Python waits completion</text>
+    <text class="small" x="770" y="1192">_wait_for_square_completion()</text>
+    <text class="small" x="770" y="1214">status=2 且 completed_cmd_id 相同</text>
+    <text class="tiny" x="770" y="1234">return True</text>
+
+    <circle class="step" cx="765" cy="1340" r="16"/><text class="step-text" x="760" y="1345">5</text>
+    <rect class="python" x="750" y="1310" width="270" height="105"/>
+    <text class="box-title" x="770" y="1340">Python clears trigger</text>
+    <text class="small" x="770" y="1367">finally block</text>
+    <text class="tiny" x="770" y="1387">write 40005 trigger=0</text>
+
+    <path class="mbread" d="M1020 1363 H1070"/>
+    <rect class="register" x="1090" y="1310" width="270" height="105"/>
+    <text class="box-title" x="1110" y="1340">Register clear</text>
+    <text class="small" x="1110" y="1367">40005 trigger=0</text>
+    <text class="tiny" x="1110" y="1387">command lifecycle finished</text>
+
+    <path class="mbread" d="M1410 1363 H1360" marker-end="url(#arrow-green)"/>
+    <rect class="tmflow" x="1430" y="1310" width="290" height="105"/>
+    <text class="box-title" x="1450" y="1340">MB_READ_TRIGGER</text>
+    <text class="small" x="1450" y="1367">IF_TRIGGER_CLEAR：trigger==0</text>
+    <text class="tiny" x="1450" y="1387">true -> SET_IDLE + MB_WRITE_IDLE</text>
+
+    <circle class="step" cx="1445" cy="1515" r="16"/><text class="step-text" x="1440" y="1520">6</text>
+    <rect class="tmflow" x="1430" y="1485" width="290" height="95"/>
+    <text class="box-title" x="1450" y="1515">SET_IDLE + loop</text>
+    <text class="small" x="1450" y="1542">status=0, robot_state=0</text>
+    <text class="tiny" x="1450" y="1562">回 WAIT_LOOP 等下一筆 cmd_id</text>
+
+    <path class="mbread" d="M1430 1532 H1360"/>
+    <rect class="register" x="1090" y="1485" width="270" height="95"/>
+    <text class="box-title" x="1110" y="1515">TMflow writes Idle</text>
+    <text class="small" x="1110" y="1542">40006 status=0</text>
+    <text class="tiny" x="1110" y="1562">40010 robot_state=0</text>
+  </g>
+
+  <g id="legend">
+    <rect class="lane" x="50" y="1618" width="1700" height="42"/>
+    <line class="http" x1="80" y1="1639" x2="150" y2="1639"/>
+    <text class="small" x="165" y="1644">HTTP POST / response</text>
+    <line class="mbread" x1="370" y1="1639" x2="440" y2="1639"/>
+    <text class="small" x="455" y="1644">Modbus read/write</text>
+    <line class="arrow dash" x1="650" y1="1639" x2="720" y2="1639"/>
+    <text class="small" x="735" y="1644">polling / wait / response observation</text>
+    <text class="small" x="1130" y="1644">灰色完整網站入口：AUTO_EXECUTE_ROBOT=false 時不會送真機命令；Set-only 測試建議先用獨立 Modbus helper。</text>
+  </g>
+</svg>

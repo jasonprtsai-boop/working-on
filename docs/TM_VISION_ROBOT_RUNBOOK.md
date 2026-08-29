@@ -2,6 +2,14 @@
 
 本文件是現場測 TMvision/EIH 與 TMflow/TM5-700 的主線。這一版的 TMflow 1.82.51 設計只驗證通訊與狀態握手：TMvision 把影像送到 Python，TMflow 透過 Modbus 讀到棋格命令，再用 Set 寫回 Busy/Done。暫時不做真實 Move、不做吸盤、不做安全檢查節點，也盡量不使用副流程或子流程。
 
+## 圖片
+
+![TMflow 1.82.51 Set-only node design](tmflow_1_82_51_node_design.png)
+
+![TMflow and Python exchange flowchart](tmflow_python_exchange_flowchart.png)
+
+同資料夾保留 SVG 版本，方便之後放大檢查或匯入其他文件。
+
 ## 0. 現場前提
 
 目前你表示 Ethernet 可以連接到，文件因此不再保留「網路不通」作為現況結論。仍需在每次測試前確認：
@@ -167,6 +175,21 @@ Timeout: 1000 ms
 Retry: 1 or 2
 ```
 
+如果 TMflow 的 Modbus Device 設定畫面要先建立訊號或 channel，照下面命名；不同 TMflow build 的欄位名稱可能略有差異，但方向與 address 不要改：
+
+| Channel name | Direction in TMflow | Function | Address | Type | Bind variable |
+| --- | --- | --- | ---: | --- | --- |
+| `CMD_FROM` | Read | Read Holding Register / FC03 | 0 | int16 | `from_square` |
+| `CMD_TO` | Read | Read Holding Register / FC03 | 1 | int16 | `to_square` |
+| `CMD_ACTION` | Read | Read Holding Register / FC03 | 2 | int16 | `action_type` |
+| `CMD_ID` | Read | Read Holding Register / FC03 | 3 | int16 | `cmd_id` |
+| `CMD_TRIGGER` | Read | Read Holding Register / FC03 | 4 | int16 | `trigger` |
+| `FB_STATUS` | Write | Write Holding Register / FC06 or FC16 | 5 | int16 | `status` |
+| `FB_ERROR` | Write | Write Holding Register / FC06 or FC16 | 6 | int16 | `error_code` |
+| `FB_COMPLETED` | Write | Write Holding Register / FC06 or FC16 | 7 | int16 | `completed_cmd_id` |
+| `FB_HEARTBEAT` | Write | Write Holding Register / FC06 or FC16 | 8 | int16 | `heartbeat` |
+| `FB_ROBOT_STATE` | Write | Write Holding Register / FC06 or FC16 | 9 | int16 | `robot_state` |
+
 位址要特別注意：目前 Python 設定是 `ROBOT_MODBUS_REGISTER_ADDRESSING=holding_40001`，也就是 Python 文件用 `40001`，但 Modbus protocol offset 是 `0`。Techman 官方 Modbus 範例也採用這個對應：40001 在 TMflow 端是 address 0。若 TMflow 畫面問的是 protocol address，請填 `0..9`；如果畫面問的是 holding register number，才填 `40001..40010`。不要兩種表示法混用。
 
 Register map：
@@ -244,6 +267,34 @@ SMART_CHESS_SET_ONLY_HANDSHAKE
 | 16 | `IF_TRIGGER_CLEAR` | If | 條件：`trigger==0` |
 | 17 | `SET_IDLE` | Set | `status=0`, `robot_state=0` |
 | 18 | `MB_WRITE_IDLE` | Modbus Write | 寫 offset `5`=`status`, offset `9`=`robot_state` |
+
+Modbus 節點內部欄位請照下列方式填：
+
+| 節點 | Device | Operation | Start address | Quantity | Variable order |
+| --- | --- | --- | ---: | ---: | --- |
+| `MB_WRITE_INIT` | `PC_MODBUS_1502` | Write Multiple Holding Registers, or repeated single Write | 5 | 5 | `status`, `error_code`, `completed_cmd_id`, `heartbeat`, `robot_state` |
+| `MB_WRITE_HEARTBEAT` | `PC_MODBUS_1502` | Write Single / Multiple Holding Register | 8 | 2 | `heartbeat`, `robot_state` |
+| `MB_READ_COMMAND` | `PC_MODBUS_1502` | Read Holding Registers | 0 | 5 | `from_square`, `to_square`, `action_type`, `cmd_id`, `trigger` |
+| `MB_WRITE_BUSY` | `PC_MODBUS_1502` | Write Single / Multiple Holding Register | 5 | 2 or split | `status`, `error_code`, plus `robot_state` at address 9 |
+| `MB_WRITE_DONE` | `PC_MODBUS_1502` | Write Single / Multiple Holding Register | 5 and 7 | split if needed | `status`, `completed_cmd_id`, `heartbeat`, `robot_state` |
+| `MB_READ_TRIGGER` | `PC_MODBUS_1502` | Read Holding Registers | 4 | 1 | `trigger` |
+| `MB_WRITE_IDLE` | `PC_MODBUS_1502` | Write Single / Multiple Holding Register | 5 and 9 | split if needed | `status`, `robot_state` |
+
+若 TMflow 1.82.51 畫面沒有「連續多筆寫入」或變數順序不好設，直接拆成多個單筆 Modbus Write node。這會增加節點數，但仍然在同一個主流程內，不需要副流程或子流程。拆法：
+
+```text
+MB_WRITE_BUSY_STATUS: address 5 = status
+MB_WRITE_BUSY_ERROR: address 6 = error_code
+MB_WRITE_BUSY_ROBOT_STATE: address 9 = robot_state
+
+MB_WRITE_DONE_STATUS: address 5 = status
+MB_WRITE_DONE_COMPLETED: address 7 = completed_cmd_id
+MB_WRITE_DONE_HEARTBEAT: address 8 = heartbeat
+MB_WRITE_DONE_ROBOT_STATE: address 9 = robot_state
+
+MB_WRITE_IDLE_STATUS: address 5 = status
+MB_WRITE_IDLE_ROBOT_STATE: address 9 = robot_state
+```
 
 流程線：
 

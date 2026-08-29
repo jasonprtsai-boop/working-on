@@ -1,0 +1,220 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="2620" viewBox="0 0 1600 2620" role="img" aria-labelledby="title desc">
+  <title id="title">TMflow 1.82.51 Set-only node design</title>
+  <desc id="desc">A complete TMflow Set-only Modbus handshake node design for the SMART Chess Robot project.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#334155"/>
+    </marker>
+    <style>
+      .page { fill: #f8fafc; }
+      .title { font-family: "Microsoft JhengHei", "Noto Sans CJK TC", Arial, sans-serif; font-size: 42px; font-weight: 700; fill: #0f172a; }
+      .subtitle { font-family: "Microsoft JhengHei", "Noto Sans CJK TC", Arial, sans-serif; font-size: 22px; fill: #475569; }
+      .section-title { font-family: "Microsoft JhengHei", "Noto Sans CJK TC", Arial, sans-serif; font-size: 24px; font-weight: 700; fill: #0f172a; }
+      .box-title { font-family: "Microsoft JhengHei", "Noto Sans CJK TC", Arial, sans-serif; font-size: 20px; font-weight: 700; fill: #0f172a; }
+      .body { font-family: "Microsoft JhengHei", "Noto Sans CJK TC", Arial, sans-serif; font-size: 17px; fill: #334155; }
+      .small { font-family: "Microsoft JhengHei", "Noto Sans CJK TC", Arial, sans-serif; font-size: 15px; fill: #475569; }
+      .tiny { font-family: "Microsoft JhengHei", "Noto Sans CJK TC", Arial, sans-serif; font-size: 13px; fill: #64748b; }
+      .panel { fill: #ffffff; stroke: #cbd5e1; stroke-width: 2; rx: 12; }
+      .node { fill: #eff6ff; stroke: #2563eb; stroke-width: 2; rx: 12; }
+      .set { fill: #fff7ed; stroke: #ea580c; }
+      .modbus { fill: #ecfdf5; stroke: #059669; }
+      .wait { fill: #f5f3ff; stroke: #7c3aed; }
+      .if { fill: #fefce8; stroke: #ca8a04; }
+      .stop { fill: #f1f5f9; stroke: #475569; }
+      .no { fill: #fee2e2; stroke: #dc2626; }
+      .arrow { stroke: #334155; stroke-width: 3; fill: none; marker-end: url(#arrow); }
+      .dash { stroke-dasharray: 8 8; }
+      .thin { stroke-width: 2; }
+      .table-line { stroke: #cbd5e1; stroke-width: 1; }
+      .badge { fill: #e0f2fe; stroke: #0284c7; stroke-width: 1.5; rx: 9; }
+    </style>
+  </defs>
+
+  <rect class="page" x="0" y="0" width="1600" height="2620"/>
+  <text class="title" x="60" y="72">TMflow 1.82.51 Set-only 節點設計</text>
+  <text class="subtitle" x="60" y="112">目標：只驗證 TMvision 影像進 Python、Modbus 命令握手、Set 狀態回寫；不做 Move、吸盤、安全檢查、子流程。</text>
+
+  <rect class="panel" x="50" y="145" width="1500" height="255"/>
+  <text class="section-title" x="80" y="190">專案設定總覽</text>
+
+  <rect class="badge" x="80" y="220" width="430" height="140"/>
+  <text class="box-title" x="105" y="252">HTTP 影像通道</text>
+  <text class="body" x="105" y="282">TMvision External Classification / Detection</text>
+  <text class="body" x="105" y="310">POST 到 Flask：192.168.10.50:5000</text>
+  <text class="small" x="105" y="338">URL 帶 ?key=&lt;VISION_TMFLOW_INGEST_KEY&gt;</text>
+
+  <rect class="badge" x="585" y="220" width="430" height="140"/>
+  <text class="box-title" x="610" y="252">Modbus 命令通道</text>
+  <text class="body" x="610" y="282">Python PC = Modbus TCP server</text>
+  <text class="body" x="610" y="310">TMflow = Modbus client / master</text>
+  <text class="small" x="610" y="338">PC_MODBUS_1502：192.168.10.50:1502</text>
+
+  <rect class="badge" x="1090" y="220" width="430" height="140"/>
+  <text class="box-title" x="1115" y="252">本階段排除</text>
+  <text class="body" x="1115" y="282">Move / PTP / Line / 吸盤 DO</text>
+  <text class="body" x="1115" y="310">安全高度 / dead zone / 棋規 / AI</text>
+  <text class="small" x="1115" y="338">只用 Set 寫 Busy、Done、Idle</text>
+
+  <text class="section-title" x="90" y="455">主流程節點</text>
+  <text class="section-title" x="970" y="455">Register 與變數</text>
+
+  <g id="main-flow">
+    <rect class="node stop" x="90" y="485" width="720" height="62"/>
+    <text class="box-title" x="125" y="523">1. START</text>
+    <text class="small" x="300" y="523">空白專案啟動點，Project：SMART_CHESS_SET_ONLY_HANDSHAKE</text>
+
+    <line class="arrow" x1="450" y1="547" x2="450" y2="585"/>
+    <rect class="node set" x="90" y="585" width="720" height="98"/>
+    <text class="box-title" x="125" y="620">2. SET_INIT</text>
+    <text class="body" x="125" y="650">全部變數設 0；sim_delay_ms=500；last_cmd_id=0。</text>
+    <text class="small" x="125" y="674">目的：啟動時讓 Python 看到乾淨 Idle 狀態。</text>
+
+    <line class="arrow" x1="450" y1="683" x2="450" y2="720"/>
+    <rect class="node modbus" x="90" y="720" width="720" height="90"/>
+    <text class="box-title" x="125" y="754">3. MB_WRITE_INIT</text>
+    <text class="body" x="125" y="784">Write Holding Registers offset 5..9：status、error_code、completed_cmd_id、heartbeat、robot_state。</text>
+
+    <line class="arrow" x1="450" y1="810" x2="450" y2="848"/>
+    <rect class="node wait" x="90" y="848" width="720" height="70"/>
+    <text class="box-title" x="125" y="892">4. WAIT_LOOP</text>
+    <text class="body" x="330" y="892">Wait 100 ms，降低輪詢頻率。</text>
+
+    <line class="arrow" x1="450" y1="918" x2="450" y2="956"/>
+    <rect class="node set" x="90" y="956" width="720" height="82"/>
+    <text class="box-title" x="125" y="990">5. SET_HEARTBEAT</text>
+    <text class="body" x="125" y="1020">heartbeat = heartbeat + 1；robot_state 保持目前狀態。</text>
+
+    <line class="arrow" x1="450" y1="1038" x2="450" y2="1076"/>
+    <rect class="node modbus" x="90" y="1076" width="720" height="82"/>
+    <text class="box-title" x="125" y="1110">6. MB_WRITE_HEARTBEAT</text>
+    <text class="body" x="125" y="1140">寫 offset 8=heartbeat，offset 9=robot_state。</text>
+
+    <line class="arrow" x1="450" y1="1158" x2="450" y2="1196"/>
+    <rect class="node modbus" x="90" y="1196" width="720" height="90"/>
+    <text class="box-title" x="125" y="1230">7. MB_READ_COMMAND</text>
+    <text class="body" x="125" y="1260">讀 offset 0..4 到 from_square、to_square、action_type、cmd_id、trigger。</text>
+
+    <line class="arrow" x1="450" y1="1286" x2="450" y2="1330"/>
+    <path class="if" d="M450 1330 L780 1395 L450 1460 L120 1395 Z"/>
+    <text class="box-title" x="345" y="1388">8. IF_NEW_COMMAND</text>
+    <text class="body" x="300" y="1418">trigger==1 AND cmd_id!=last_cmd_id</text>
+
+    <path class="arrow dash" d="M120 1395 C30 1395 30 885 90 885"/>
+    <text class="small" x="34" y="1325">false：回 WAIT_LOOP</text>
+
+    <line class="arrow" x1="450" y1="1460" x2="450" y2="1500"/>
+    <rect class="node set" x="90" y="1500" width="720" height="90"/>
+    <text class="box-title" x="125" y="1534">9. SET_BUSY</text>
+    <text class="body" x="125" y="1564">status=1；error_code=0；robot_state=1；last_cmd_id=cmd_id。</text>
+
+    <line class="arrow" x1="450" y1="1590" x2="450" y2="1628"/>
+    <rect class="node modbus" x="90" y="1628" width="720" height="82"/>
+    <text class="box-title" x="125" y="1662">10. MB_WRITE_BUSY</text>
+    <text class="body" x="125" y="1692">寫 offset 5=status，offset 6=error_code，offset 9=robot_state。</text>
+
+    <line class="arrow" x1="450" y1="1710" x2="450" y2="1748"/>
+    <rect class="node wait" x="90" y="1748" width="720" height="70"/>
+    <text class="box-title" x="125" y="1792">11. WAIT_SIM_DONE</text>
+    <text class="body" x="365" y="1792">Wait 500 ms，讓 Python 有時間看到 Busy。</text>
+
+    <line class="arrow" x1="450" y1="1818" x2="450" y2="1856"/>
+    <rect class="node set" x="90" y="1856" width="720" height="82"/>
+    <text class="box-title" x="125" y="1890">12. SET_DONE</text>
+    <text class="body" x="125" y="1920">status=2；completed_cmd_id=cmd_id；robot_state=0。</text>
+
+    <line class="arrow" x1="450" y1="1938" x2="450" y2="1976"/>
+    <rect class="node modbus" x="90" y="1976" width="720" height="82"/>
+    <text class="box-title" x="125" y="2010">13. MB_WRITE_DONE</text>
+    <text class="body" x="125" y="2040">寫 offset 5=status，7=completed_cmd_id，8=heartbeat，9=robot_state。</text>
+
+    <line class="arrow" x1="450" y1="2058" x2="450" y2="2096"/>
+    <rect class="node wait" x="90" y="2096" width="720" height="70"/>
+    <text class="box-title" x="125" y="2140">14. WAIT_CLEAR</text>
+    <text class="body" x="335" y="2140">Wait 100 ms，等 Python 清 trigger。</text>
+
+    <line class="arrow" x1="450" y1="2166" x2="450" y2="2204"/>
+    <rect class="node modbus" x="90" y="2204" width="720" height="70"/>
+    <text class="box-title" x="125" y="2248">15. MB_READ_TRIGGER</text>
+    <text class="body" x="360" y="2248">只讀 offset 4 到 trigger。</text>
+
+    <line class="arrow" x1="450" y1="2274" x2="450" y2="2308"/>
+    <path class="if" d="M450 2308 L780 2368 L450 2428 L120 2368 Z"/>
+    <text class="box-title" x="340" y="2362">16. IF_TRIGGER_CLEAR</text>
+    <text class="body" x="392" y="2392">trigger==0</text>
+
+    <path class="arrow dash" d="M780 2368 C880 2368 880 2130 810 2130"/>
+    <text class="small" x="832" y="2260">false：繼續等</text>
+
+    <line class="arrow" x1="450" y1="2428" x2="450" y2="2460"/>
+    <rect class="node set" x="90" y="2460" width="720" height="90"/>
+    <text class="box-title" x="125" y="2494">17. SET_IDLE + 18. MB_WRITE_IDLE</text>
+    <text class="body" x="125" y="2524">status=0；robot_state=0；寫 offset 5 與 9。</text>
+    <text class="small" x="125" y="2546">完成後回 WAIT_LOOP 等下一筆 cmd_id。</text>
+
+    <path class="arrow dash" d="M90 2505 C20 2505 20 885 90 885"/>
+  </g>
+
+  <g id="register-panel">
+    <rect class="panel" x="940" y="485" width="610" height="715"/>
+    <text class="box-title" x="970" y="525">PC_MODBUS_1502 device 設定</text>
+    <text class="body" x="970" y="560">Protocol：Modbus TCP</text>
+    <text class="body" x="970" y="590">Role：Client / Master</text>
+    <text class="body" x="970" y="620">Server：192.168.10.50:1502</text>
+    <text class="body" x="970" y="650">Unit ID：1</text>
+    <text class="body" x="970" y="680">Type：Holding Register, int16 / word</text>
+    <text class="body" x="970" y="710">Poll：100 ms；Timeout：1000 ms；Retry：1-2</text>
+
+    <line class="table-line" x1="970" y1="745" x2="1520" y2="745"/>
+    <text class="box-title" x="970" y="785">Register map</text>
+    <text class="small" x="970" y="820">Python 文件 40001 等於 TMflow protocol address 0。</text>
+    <text class="tiny" x="970" y="850">若 UI 顯示 holding register number 才填 40001..40010。</text>
+
+    <text class="body" x="970" y="895">0 / 40001  Read   from_square</text>
+    <text class="body" x="970" y="925">1 / 40002  Read   to_square</text>
+    <text class="body" x="970" y="955">2 / 40003  Read   action_type</text>
+    <text class="body" x="970" y="985">3 / 40004  Read   cmd_id</text>
+    <text class="body" x="970" y="1015">4 / 40005  Read   trigger</text>
+    <text class="body" x="970" y="1060">5 / 40006  Write  status</text>
+    <text class="body" x="970" y="1090">6 / 40007  Write  error_code</text>
+    <text class="body" x="970" y="1120">7 / 40008  Write  completed_cmd_id</text>
+    <text class="body" x="970" y="1150">8 / 40009  Write  heartbeat</text>
+    <text class="body" x="970" y="1180">9 / 40010  Write  robot_state</text>
+  </g>
+
+  <g id="success-panel">
+    <rect class="panel" x="940" y="1240" width="610" height="410"/>
+    <text class="box-title" x="970" y="1280">狀態碼與成功條件</text>
+    <text class="body" x="970" y="1320">status=0：Idle</text>
+    <text class="body" x="970" y="1350">status=1：Busy，Python 必須在 2 秒內看到</text>
+    <text class="body" x="970" y="1380">status=2：Done，completed_cmd_id 必須等於 cmd_id</text>
+    <text class="body" x="970" y="1410">status=3/4：保留給錯誤，本階段不主動使用</text>
+    <line class="table-line" x1="970" y1="1440" x2="1520" y2="1440"/>
+    <text class="body" x="970" y="1480">Python watch 看到 trigger 1 -> 0</text>
+    <text class="body" x="970" y="1510">TMflow 可連續處理不同 cmd_id</text>
+    <text class="body" x="970" y="1540">無 Move、無吸盤，仍能完成命令生命週期</text>
+    <text class="small" x="970" y="1585">測試指令：scripts/start_modbus_square_server.py --watch --test-move a0b1</text>
+  </g>
+
+  <g id="vision-panel">
+    <rect class="panel" x="940" y="1695" width="610" height="410"/>
+    <text class="box-title" x="970" y="1735">TMvision 測試節點</text>
+    <text class="body" x="970" y="1775">External Classification：</text>
+    <text class="small" x="970" y="1805">/api/vision/tmvision/classify?key=&lt;VISION_TMFLOW_INGEST_KEY&gt;</text>
+    <text class="body" x="970" y="1850">External Detection parser：</text>
+    <text class="small" x="970" y="1880">/api/vision/tmvision/detect?probe_box=1&amp;key=&lt;VISION_TMFLOW_INGEST_KEY&gt;</text>
+    <text class="body" x="970" y="1925">External Detection YOLO：</text>
+    <text class="small" x="970" y="1955">/api/vision/tmvision/detect?key=&lt;VISION_TMFLOW_INGEST_KEY&gt;</text>
+    <line class="table-line" x1="970" y1="1990" x2="1520" y2="1990"/>
+    <text class="body" x="970" y="2030">Method：POST；Image field：file，必要時 image</text>
+    <text class="body" x="970" y="2060">Timeout：3000-5000 ms；Format：jpg</text>
+  </g>
+
+  <g id="do-not-panel">
+    <rect class="panel no" x="940" y="2145" width="610" height="250"/>
+    <text class="box-title" x="970" y="2185">本階段不要加進主流程</text>
+    <text class="body" x="970" y="2225">Move / PTP / Line / 吸盤 DO / 安全高度</text>
+    <text class="body" x="970" y="2255">from-to 範圍驗證 / dead zone / 棋規 / FEN / AI</text>
+    <text class="body" x="970" y="2285">Listen Node 5890 / 高頻影像串流 / 9001 必測</text>
+    <text class="small" x="970" y="2330">原因：先把失敗邊界固定在 Modbus 命令與狀態握手。</text>
+  </g>
+</svg>
