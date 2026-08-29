@@ -1,17 +1,15 @@
 import threading
 import asyncio
-import json
 from flask import request
 from pydantic import ValidationError
 from backend.events.bus.event_bus import bus
 from backend.application.container import container
 from backend.state.store.state_store import state_store
-from backend.runtime.contract import CONTRACT_VERSION, is_contract_event
-from backend.runtime.contract_schema import validate_contract_payload, normalize_diagnostics_payload
+from backend.runtime.contract import CONTRACT_VERSION
+from backend.interfaces.websocket.event_forwarder import SocketEventForwarder
 from backend.interfaces.websocket.request_models import SocketAction, SocketPlayerMove, SocketVisionUpdate, normalize_socket_action_payload
+from backend.interfaces.websocket.socket_context import SocketSessionContext, viewer_claims
 from backend.utils.auth import verify_socket_token
-from backend.utils.error_response import build_error
-from backend.utils.rate_limit import RateLimitExceeded, rate_limiter
 from backend.utils.logger import logger
 from backend.utils import config
 
@@ -27,138 +25,20 @@ def register_socketio(socketio):
             "contract_version": CONTRACT_VERSION,
         }, room=room)
 
-    socket_claims = {}
-    socket_claims_lock = threading.RLock()
-
-    def _viewer_claims():
-        return {"role": "viewer", "sub": "anonymous", "authenticated": False}
-
-    def _set_socket_claims(claims: dict):
-        sid = getattr(request, "sid", None)
-        if sid:
-            with socket_claims_lock:
-                socket_claims[sid] = dict(claims or {})
-
-    def _drop_socket_claims():
-        sid = getattr(request, "sid", None)
-        if sid:
-            with socket_claims_lock:
-                socket_claims.pop(sid, None)
-
-    def _get_socket_claims():
-        if not getattr(config, "CONTROL_AUTH_REQUIRED", True):
-            return {"role": "admin"}
-        sid = getattr(request, "sid", None)
-        if not sid:
-            return None
-        with socket_claims_lock:
-            return socket_claims.get(sid)
-
-    def _socket_error(error: str, message: str, *, trace_id=None, recoverable=True, details=None):
-        payload = build_error(error, message, trace_id=trace_id, recoverable=recoverable, details=details)
-        try:
-            socketio.emit("AUTH_ERROR", payload, room=getattr(request, "sid", None))
-        except Exception:
-            logger.debug("[Socket] failed to emit AUTH_ERROR", exc_info=True)
-        return payload
-
-    def _require_admin():
-        claims = _get_socket_claims()
-        if not claims or claims.get("authenticated") is False:
-            return None, _socket_error("unauthorized", "Valid bearer token required.")
-        if claims.get("role") != "admin":
-            return None, _socket_error("forbidden", "Admin role required.")
-        return claims, None
-
-    def _validation_error(exc: ValidationError):
-        return _socket_error("invalid_payload", "Invalid socket payload.", details=exc.errors())
-
-    def _payload_too_large_error():
-        return _socket_error(
-            "payload_too_large",
-            "Socket payload exceeds the configured size limit.",
-            recoverable=False,
-            details={"max_bytes": int(getattr(config, "MAX_SOCKET_PAYLOAD_BYTES", 65536))},
-        )
-
-    def _payload_size_ok(data) -> bool:
-        try:
-            encoded = json.dumps(data or {}, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-        except Exception:
-            encoded = str(data).encode("utf-8", errors="ignore")
-        return len(encoded) <= int(getattr(config, "MAX_SOCKET_PAYLOAD_BYTES", 65536))
-
-    def _rate_limit_socket(event_name: str):
-        if not getattr(config, "RATE_LIMITS_ENABLED", True):
-            return None
-        sid = getattr(request, "sid", None) or "unknown"
-        try:
-            rate_limiter.check(f"socket:{sid}:{event_name}", int(getattr(config, "SOCKET_RATE_LIMIT_PER_MINUTE", 120)), 60.0)
-        except RateLimitExceeded as exc:
-            return _socket_error(
-                "rate_limited",
-                "Too many socket events. Please retry later.",
-                details={"retry_after_seconds": exc.retry_after_seconds},
-            )
-        return None
-
-    try:
-        from backend.application.services.estop import estop
-        estop.register_socketio(socketio)
-    except Exception:
-        logger.debug("[Socket] failed to register E-Stop SocketIO reference", exc_info=True)
+    socket_context = SocketSessionContext(socketio)
+    _set_socket_claims = socket_context.set_claims
+    _drop_socket_claims = socket_context.drop_claims
+    _get_socket_claims = socket_context.get_claims
+    _socket_error = socket_context.socket_error
+    _require_admin = socket_context.require_admin
+    _validation_error = socket_context.validation_error
+    _payload_too_large_error = socket_context.payload_too_large_error
+    _payload_size_ok = socket_context.payload_size_ok
+    _rate_limit_socket = socket_context.rate_limit_socket
+    _viewer_claims = viewer_claims
 
     # Outbound: forward EventBus events to frontend adapter
-    def _forward_event(event):
-        from backend.interfaces.websocket.serializers import StateSerializer, EngineInfoSerializer
-
-        def _emit_contract(event_type: str, payload: dict):
-            # Only emit known contract events to keep the frontend stable.
-            if is_contract_event(event_type):
-                if getattr(config, "CONTRACT_VALIDATE", False):
-                    try:
-                        validate_contract_payload(event_type, payload or {})
-                    except Exception as e:
-                        logger.error(f"[Contract] Payload validation failed for {event_type}: {e}", exc_info=True)
-                        # Emit diagnostics so UI can surface the mismatch without crashing.
-                        try:
-                            _emit("DIAGNOSTICS.UPDATED", {"ui": {"contract_error": f"{event_type}: {e}"}})
-                        except Exception:
-                            logger.debug("[Contract] failed to emit DIAGNOSTICS.UPDATED", exc_info=True)
-                        return
-                _emit(event_type, payload)
-
-        # BaseEvent (dataclass)
-        if hasattr(event, "event_type"):
-            et = event.event_type.value if hasattr(event.event_type, "value") else event.event_type
-            payload = getattr(event, "payload", {}) or {}
-
-            if et == "STATE_UPDATED" or et == "STATE_UPDATE":
-                _emit_contract("STATE_UPDATE", StateSerializer.serialize(payload))
-            elif et == "ENGINE_ANALYSIS_COMPLETED":
-                _emit_contract("ENGINE.INFO_UPDATED", EngineInfoSerializer.serialize(payload))
-            elif et == "DIAGNOSTICS_UPDATED" or et == "DIAGNOSTICS.UPDATED":
-                _emit_contract("DIAGNOSTICS.UPDATED", normalize_diagnostics_payload(payload))
-            elif et == "ROBOT.STATUS_UPDATED":
-                _emit_contract("ROBOT.STATUS_UPDATED", payload)
-            elif et == "UI_TOAST":
-                _emit_contract("UI_TOAST", payload)
-            elif is_contract_event(et):
-                _emit_contract(et, payload)
-            return
-
-        # dict events (legacy support)
-        if isinstance(event, dict):
-            et = event.get("type") or event.get("event_type") or "unknown"
-            payload = event.get("payload", {}) if isinstance(event.get("payload", {}), dict) else {}
-
-            if et == "STATE_UPDATED" or et == "STATE_UPDATE":
-                _emit_contract("STATE_UPDATE", StateSerializer.serialize(payload))
-            elif et == "DIAGNOSTICS.UPDATED" or et == "DIAGNOSTICS_UPDATED":
-                _emit_contract("DIAGNOSTICS.UPDATED", normalize_diagnostics_payload(payload))
-            else:
-                _emit_contract(et, payload)
-            return
+    _forward_event = SocketEventForwarder(_emit).forward
 
     bus.subscribe_all(_forward_event, key="socketio.forward_event", replace=True, is_async=True)
 

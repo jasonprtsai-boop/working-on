@@ -132,7 +132,6 @@ def _normalize_module(value: str) -> str:
         "eventbus": "event_bus",
         "storage": "persistence",
         "runtime": "async_runtime",
-        "estop": "control",
     }
     return aliases.get(text, text or "health")
 

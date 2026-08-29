@@ -15,6 +15,7 @@ from backend.interfaces.api.shared import (
     error_response,
     idempotency_key,
     json_object_payload,
+    optional_json_object_payload,
     publish_base_event,
     remember_idempotent_response,
     replay_idempotent_response,
@@ -184,6 +185,22 @@ def control_action(action: str):
         return error_response("validation_failed", str(exc), 400)
 
 
+@api_bp.route("/stop", methods=["POST"])
+def stop_system():
+    """Public website stop request; this pauses software flow only."""
+    payload = optional_json_object_payload()
+    trace_id = publish_base_event(
+        EventType.GAME_PAUSE,
+        payload={
+            "phase": "paused",
+            "reason": _public_text(payload.get("reason"), "website_stop", max_length=128),
+            "source": _public_text(payload.get("source"), "website_stop"),
+        },
+        trace_id=_public_trace_id(payload),
+    )
+    return accepted("stop", trace_id=trace_id)
+
+
 @api_bp.route("/player/start", methods=["POST"])
 def player_start():
     """Start player-mode analysis without requiring console access."""
@@ -192,14 +209,6 @@ def player_start():
     except ValueError as exc:
         return error_response("validation_failed", str(exc), 400)
     preflight = build_preflight_report(require_auto_execute=False)
-    if not preflight.get("ready"):
-        return error_response(
-            "preflight_failed",
-            "System preflight failed. Please complete setup before starting player mode.",
-            409,
-            details=_public_preflight_report(preflight),
-            recoverable=True,
-        )
     trace_id = publish_base_event(
         EventType.ENGINE_ANALYSIS_REQUESTED,
         payload=_public_player_start_payload(payload),
@@ -207,6 +216,7 @@ def player_start():
     )
     body = accepted_payload("player_start", trace_id=trace_id)
     body["runtime_control"] = _public_runtime_control_snapshot(runtime_control.snapshot())
+    body["preflight"] = _public_preflight_report(preflight)
     return jsonify(body)
 
 

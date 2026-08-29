@@ -106,7 +106,7 @@ Invoke-Step "Git diff hygiene" {
 }
 
 Invoke-Step "Git tracked-file safety" {
-  $blockedPattern = '(^|/)(\.env|\.venv|node_modules|logs|data|reports|analysis_artifacts)(/|$)|\.db$|\.log$|\.xlsx$|\.nnue$|\.pt$|\.onnx$|\.exe$|backend/infrastructure/vision/models/'
+  $blockedPattern = '(^|/)(\.env|\.venv|node_modules|logs|data|reports|analysis_artifacts|docx_work)(/|$)|\.db$|\.log$|\.xlsx$|\.nnue$|\.pt$|\.onnx$|\.exe$|backend/infrastructure/vision/models/'
   $protectedAssetPattern = '^backend/infrastructure/protected_assets/'
   $blocked = Invoke-Git ls-files | Where-Object {
     ($_ -match $blockedPattern) -and ($_ -notmatch $protectedAssetPattern)

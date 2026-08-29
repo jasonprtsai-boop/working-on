@@ -1,3 +1,5 @@
+# Python baseline for real robot deployment: 3.10.x.
+# Avoid 3.12/3.13 for the camera/ML/robot driver stack unless every wheel is revalidated.
 # Minimal runtime dependencies for: web + websocket + engine analysis + vision stream (fallback).
 Flask>=3.0.0
 Flask-SocketIO>=5.3.6

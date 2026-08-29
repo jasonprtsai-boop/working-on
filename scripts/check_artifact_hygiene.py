@@ -20,6 +20,7 @@ REQUIRED_GITIGNORE_PATTERNS = (
     "test_output.txt",
     "reports/",
     "analysis_artifacts/",
+    "docx_work/",
     "logs/",
     "data/",
     "backend/data/",
@@ -45,6 +46,7 @@ REQUIRED_EXPORT_IGNORE_PATTERNS = (
     "data/ export-ignore",
     "reports/ export-ignore",
     "analysis_artifacts/ export-ignore",
+    "docx_work/ export-ignore",
     "*.db export-ignore",
     "*.xlsx export-ignore",
     "*.nnue export-ignore",
@@ -62,6 +64,7 @@ RUNTIME_PATH_PREFIXES = (
     ("backend", "data"),
     ("reports",),
     ("analysis_artifacts",),
+    ("docx_work",),
     ("snapshots",),
 )
 

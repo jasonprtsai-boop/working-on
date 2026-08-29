@@ -9,12 +9,17 @@ from backend.state.store.state_store import state_store
 from backend.application.container import container
 from backend.runtime.workers import initialize_workers
 from backend.runtime.workers.worker_manager import worker_manager
-from backend.runtime.workers.engine_worker import engine_worker
 from backend.utils import config
 from backend.utils.logger import logger
-from backend.app.task_queue import task_queue
-from backend.infrastructure.robot.queue.robot_queue import robot_queue
 from backend.core.exceptions import FatalBootstrapError, ComponentDegradedError
+from backend.application.bootstrap_reducers import register_bootstrap_reducers
+from backend.application.bootstrap_status import (
+    is_bootstrap_ready,
+    new_bootstrap_status,
+    record_bootstrap_error as append_bootstrap_error,
+    update_vision_bootstrap_status,
+    vision_diagnostics_payload,
+)
 
 
 def _register_shutdown_hooks(runtime, vision_system, tmflow_ingest_server=None):
@@ -121,37 +126,11 @@ def bootstrap_system():
             logger.error(f"[Bootstrap] {msg}")
             raise FatalBootstrapError(msg)
 
-    bootstrap_status = {
-        "booted": False,
-        "ready": False,
-        "errors": [],
-        "runtime_started": False,
-        "engine_registered": False,
-        "vision_registered": False,
-        "robot_registered": False,
-        "robot_connected": False,
-        "workers_started": False,
-        "workflow_started": False,
-        "telemetry_started": False,
-        "tmflow_ingest_started": False,
-        "persistence_started": False,
-        "vision_started": False,
-        "vision_fallback": False,
-        "vision_fallback_reason": None,
-        "vision_mode": "unknown",
-        "vision_unavailable": False,
-        "vision_runtime_owner": getattr(config, "VISION_RUNTIME_OWNER", "vision_system"),
-        "vision_start_error": None,
-    }
+    bootstrap_status = new_bootstrap_status(config)
     container.register("bootstrap_status", bootstrap_status)
 
     def record_bootstrap_error(component: str, exc: Exception, level: str = "warning"):
-        entry = {"component": component, "error": str(exc), "level": level}
-        bootstrap_status["errors"].append(entry)
-        if level == "error":
-            logger.error(f"[Bootstrap] {component} failed: {exc}", exc_info=True)
-        else:
-            logger.warning(f"[Bootstrap] {component} degraded: {exc}", exc_info=True)
+        append_bootstrap_error(bootstrap_status, component, exc, logger, level=level)
 
     # 1. Start Async Runtime (The foundation for all async tasks)
     try:
@@ -205,22 +184,7 @@ def bootstrap_system():
             record_bootstrap_error("engine.probe", exc)
 
     # 4. Wire Reducers (DIP)
-    from backend.state.store.manager.reducer_registry import reducer_registry
-    from backend.state.reducers.move_reducer import MoveReducer
-    from backend.state.reducers.engine_reducer import EngineReducer
-    from backend.state.reducers.robot_reducer import RobotReducer
-    from backend.state.reducers.system_reducer import SystemReducer
-
-    reducer_registry.register(EventType.VISION_MOVE_DETECTED, MoveReducer)
-    reducer_registry.register(EventType.MOVE_APPLIED, MoveReducer)
-    reducer_registry.register(EventType.GAME_PLAYER_MOVE, MoveReducer)
-    reducer_registry.register(EventType.ENGINE_ANALYSIS_COMPLETED, EngineReducer)
-    reducer_registry.register(EventType.ROBOT_MOVE_STARTED, RobotReducer)
-    reducer_registry.register(EventType.ROBOT_MOVE_COMPLETED, RobotReducer)
-    reducer_registry.register(EventType.ROBOT_STATUS_UPDATED, RobotReducer)
-    reducer_registry.register(EventType.SYSTEM_RESET, SystemReducer)
-    reducer_registry.register(EventType.SYSTEM_ERROR, SystemReducer)
-    reducer_registry.register(EventType.DIAGNOSTICS_UPDATED, SystemReducer)
+    register_bootstrap_reducers()
     logger.info("[Bootstrap] Reducers registered in Global Registry.")
 
     # 5. Wire StateManager to EventBus (SSOT)
@@ -262,73 +226,18 @@ def bootstrap_system():
         except Exception as exc:
             record_bootstrap_error("tmflow_ingest.start", exc, level="error")
     _register_shutdown_hooks(runtime, vision_system, tmflow_ingest_server)
-    vision_runtime_status = {}
-    if hasattr(vision_system, "get_status"):
-        try:
-            vision_runtime_status = dict(vision_system.get_status() or {})
-        except Exception as exc:
-            vision_runtime_status = {"error": str(exc)}
-    fallback_reason = (
-        vision_runtime_status.get("fallback_reason")
-        or getattr(vision_system, "_fallback_reason", None)
+    vision_runtime_status, vision_start_error = update_vision_bootstrap_status(
+        bootstrap_status,
+        vision_system,
+        config,
     )
-    bootstrap_status["vision_fallback"] = bool(
-        vision_runtime_status.get("fallback")
-        or getattr(vision_system, "_fallback_from_real_vision", False)
-        or fallback_reason
-    )
-    bootstrap_status["vision_fallback_reason"] = str(fallback_reason) if fallback_reason else None
-    bootstrap_status["vision_unavailable"] = bool(
-        vision_runtime_status.get("mode") == "unavailable"
-        or vision_runtime_status.get("startup_failure")
-        or vision_runtime_status.get("available") is False
-    )
-    bootstrap_status["vision_mode"] = str(
-        vision_runtime_status.get("mode")
-        or (
-            "fallback"
-            if bootstrap_status["vision_fallback"]
-            else ("simulation" if getattr(config, "FAKE_VISION", False) else "real")
-        )
-    )
-    try:
-        bootstrap_status["vision_started"] = bool(vision_system.start())
-    except Exception as e:
-        bootstrap_status["vision_started"] = False
-        bootstrap_status["vision_start_error"] = str(e)
-        record_bootstrap_error("vision.start", e, level="error")
-    if bootstrap_status["vision_unavailable"] and not bootstrap_status["vision_start_error"]:
-        bootstrap_status["vision_start_error"] = str(vision_runtime_status.get("startup_error") or "vision unavailable")
+    if vision_start_error is not None:
+        record_bootstrap_error("vision.start", vision_start_error, level="error")
     bus.publish(BaseEvent.create(
         event_type=EventType.DIAGNOSTICS_UPDATED,
         source="bootstrap",
-        payload={
-            "vision": {
-                "mode": bootstrap_status["vision_mode"],
-                "owner": bootstrap_status["vision_runtime_owner"],
-                "fallback": bootstrap_status["vision_fallback"],
-                "simulation": bool(vision_runtime_status.get("simulation") or getattr(config, "FAKE_VISION", False)),
-                "available": not bootstrap_status["vision_unavailable"],
-                "status": (
-                    "UNAVAILABLE"
-                    if bootstrap_status["vision_unavailable"] or not bootstrap_status["vision_started"]
-                    else ("FALLBACK" if bootstrap_status["vision_fallback"] else "READY")
-                ),
-                "fallback_reason": bootstrap_status["vision_fallback_reason"],
-                "start_error": bootstrap_status["vision_start_error"],
-            }
-        },
+        payload=vision_diagnostics_payload(bootstrap_status, config, vision_runtime_status),
     ))
-
-    # Register E-Stop clear hooks
-    try:
-        task_queue.register_clear_hook(engine_worker.stop)
-    except Exception as exc:
-        record_bootstrap_error("estop.engine_clear_hook", exc)
-    try:
-        task_queue.register_clear_hook(robot_queue.clear)
-    except Exception as exc:
-        record_bootstrap_error("estop.robot_queue_clear_hook", exc)
 
     worker_start_results = initialize_workers() or {}
     bootstrap_status["worker_start_results"] = worker_start_results
@@ -369,27 +278,7 @@ def bootstrap_system():
         # Persistence is critical for research data integrity
         raise FatalBootstrapError(f"Failed to start PersistenceWorker: {exc}") from exc
 
-    vision_uses_simulation = bool(
-        getattr(config, "FAKE_VISION", False)
-        or bootstrap_status["vision_fallback"]
-        or bootstrap_status["vision_mode"] == "simulation"
-    )
-    vision_ready = bool(bootstrap_status["vision_started"]) and (
-        not vision_uses_simulation or bool(getattr(config, "FAKE_ROBOT", False))
-    ) and not bool(bootstrap_status["vision_unavailable"])
-    bootstrap_status["ready"] = all(
-        [
-            bootstrap_status["runtime_started"],
-            bootstrap_status["engine_registered"],
-            bootstrap_status["vision_registered"],
-            bootstrap_status["robot_registered"],
-            bootstrap_status["robot_connected"] or getattr(config, "FAKE_ROBOT", False),
-            bootstrap_status["workers_started"],
-            bootstrap_status["workflow_started"],
-            bootstrap_status["persistence_started"],
-            vision_ready,
-        ]
-    )
+    bootstrap_status["ready"] = is_bootstrap_ready(bootstrap_status, config)
     bootstrap_status["booted"] = True
     bootstrap_system._booted = True
     logger.info("[Bootstrap] System bootstrap complete.")

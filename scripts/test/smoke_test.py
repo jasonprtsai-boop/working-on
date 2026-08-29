@@ -13,7 +13,7 @@ BASE_URL = os.environ.get("SMART_CHESS_BASE_URL", "http://127.0.0.1:5000")
 ADMIN_PASSWORD = (
     os.environ.get("SMART_CHESS_ADMIN_PASSWORD")
     or os.environ.get("ADMIN_PASSWORD")
-    or getattr(config, "ADMIN_PASSWORD", "888888")
+    or getattr(config, "ADMIN_PASSWORD", "login")
 )
 
 

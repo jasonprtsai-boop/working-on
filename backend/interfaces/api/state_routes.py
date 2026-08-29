@@ -6,6 +6,16 @@ from backend.interfaces.api.shared import api_bp, game_state
 from backend.observability.error_reporter import publish_error_diagnostic
 
 
+def _vision_capture_payload() -> dict:
+    try:
+        from backend.infrastructure.vision.capture_session import vision_capture_session
+
+        return vision_capture_session.vision_payload()
+    except Exception:
+        current_app.logger.debug("vision capture session payload unavailable", exc_info=True)
+        return {}
+
+
 def _authoritative_state_payload():
     payload = game_state.to_dict()
     if isinstance(payload, dict):
@@ -35,6 +45,9 @@ def _authoritative_state_payload():
                 throttle_seconds=15.0,
             )
         payload["ui"] = {**dict(payload.get("ui", {}) or {}), **ui_payload}
+        capture_payload = _vision_capture_payload()
+        if capture_payload:
+            payload["vision"] = {**dict(payload.get("vision", {}) or {}), **capture_payload}
         payload.setdefault("notation", frontend_contract.get("notation"))
         game = payload.get("game", {}) if isinstance(payload.get("game"), dict) else {}
         payload.setdefault("state", game.get("game_status", "UNKNOWN"))
@@ -62,7 +75,6 @@ def _player_state_payload(payload: dict) -> dict:
         "ai_mode_label": ui.get("ai_mode_label"),
         "ai_difficulty": ui.get("ai_difficulty"),
         "engine_depth": ui.get("engine_depth"),
-        "estop_triggered": bool(ui.get("estop_triggered") or robot.get("estop_triggered") or robot.get("global_stop")),
     }
     public_robot = {
         "busy": bool(robot.get("busy", False)),
@@ -75,6 +87,8 @@ def _player_state_payload(payload: dict) -> dict:
         "fen_valid": vision.get("fen_valid"),
         "vision_age_ms": vision.get("vision_age_ms", vision.get("visionAgeMs")),
         "camera_ready": vision.get("camera_ready"),
+        "capture_active": bool(vision.get("capture_active", False)),
+        "capture_session": vision.get("capture_session") if isinstance(vision.get("capture_session"), dict) else {},
     }
     public_engine = {
         "is_thinking": bool(engine.get("is_thinking", False)),

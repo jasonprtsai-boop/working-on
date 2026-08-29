@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from typing import Optional, Tuple
 
-from backend.utils.fen.parser import board_to_fen, fen_to_board
 from backend.utils.kinematics import kinematics
 
 

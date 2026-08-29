@@ -257,42 +257,6 @@ async function runBrowserChecks(token) {
     const sessionOff = await apiJson('/api/runtime/control', token);
     addResult('Experiment', 'Session End', sessionOff.payload.session?.active === false, await text(page, '#dashboard-exp-session-status'));
 
-    await click(page, '#btn-estop-trigger');
-    await page.waitForFunction(
-      () => document.querySelector('#pause-overlay')?.classList.contains('active')
-        || document.querySelector('#dashboard-safety-estop')?.textContent?.trim() === 'Triggered',
-      { timeout: 8000 },
-    ).catch(() => {});
-    const estopOverlayOn = await page.locator('#pause-overlay.active').count() === 1;
-    const estopOn = await apiJson('/api/estop/status', token);
-    addResult(
-      'Safety 控制',
-      'E-Stop trigger 顯示 overlay 並更新後台',
-      estopOn.payload.triggered === true && estopOverlayOn,
-      `backend=${estopOn.payload.triggered}; overlay=${estopOverlayOn}; frontend=${await text(page, '#dashboard-safety-estop')}`,
-    );
-    if (estopOverlayOn) {
-      await click(page, '#btn-resume-overlay');
-    } else {
-      await apiJson('/api/estop/reset', token, {
-        method: 'POST',
-        body: { reason: 'html_check_reset_after_missing_overlay' },
-      });
-      await page.evaluate(() => {
-        const overlay = document.getElementById('pause-overlay');
-        overlay?.classList.add('hidden');
-        overlay?.classList.remove('active');
-      });
-    }
-    await page.waitForFunction(() => document.querySelector('#pause-overlay')?.classList.contains('active') === false, { timeout: 10000 });
-    const estopOff = await apiJson('/api/estop/status', token);
-    const estopOverlayOff = await page.locator('#pause-overlay.active').count() === 0;
-    addResult(
-      'Safety 控制',
-      'E-Stop reset 清除 overlay 與後台',
-      estopOff.payload.triggered === false && estopOverlayOff,
-      `backend=${estopOff.payload.triggered}; overlayActive=${!estopOverlayOff}; frontend=${await text(page, '#dashboard-safety-estop')}`,
-    );
     await waitForLiveControls(page);
 
     await click(page, '.tab-btn[data-tab="export"]');
@@ -327,7 +291,6 @@ async function runBrowserChecks(token) {
       ready: (await apiJson('/api/ready', token)).payload,
       runtime: (await apiJson('/api/runtime/control', token)).payload,
       state: (await apiJson('/api/state', token)).payload,
-      estop: (await apiJson('/api/estop/status', token)).payload,
       metrics: (await apiJson('/api/runtime/metrics', token)).payload,
       csv: await apiBlob('/api/export/csv', token),
     };
@@ -335,7 +298,6 @@ async function runBrowserChecks(token) {
       boardFen: document.querySelector('#dashboard-board-fen')?.textContent?.trim() || '',
       engineDepth: document.querySelector('#dashboard-engine-depth')?.textContent?.trim() || '',
       safeMode: document.querySelector('#dashboard-safety-safe-mode')?.textContent?.trim() || '',
-      estop: document.querySelector('#dashboard-safety-estop')?.textContent?.trim() || '',
       participant: document.querySelector('#dashboard-exp-participant')?.textContent?.trim() || '',
       sessionStatus: document.querySelector('#dashboard-exp-session-status')?.textContent?.trim() || '',
       robotStatus: document.querySelector('#dashboard-robot-status')?.textContent?.trim() || '',
@@ -348,7 +310,6 @@ async function runBrowserChecks(token) {
     addComparison('socket/state freshness', 'online / false', `${frontend.connectionStatus} / ${frontend.stateStale}`, frontend.connectionStatus === 'online' && frontend.stateStale === 'false');
     addComparison('engine_depth', backend.runtime.engine_depth, frontend.engineDepth, Number(frontend.engineDepth) === Number(backend.runtime.engine_depth));
     addComparison('safe_mode', backend.runtime.safe_mode ? '已啟用' : '已停用', frontend.safeMode, frontend.safeMode === (backend.runtime.safe_mode ? '已啟用' : '已停用'));
-    addComparison('estop', backend.estop.triggered ? '已觸發' : '正常', frontend.estop, frontend.estop === (backend.estop.triggered ? '已觸發' : '正常'));
     addComparison('session_active', backend.runtime.session?.active ? '進行中' : '已結束', frontend.sessionStatus, frontend.sessionStatus === (backend.runtime.session?.active ? '進行中' : '已結束'));
     addComparison('participant_id', backend.runtime.session?.participant_id || '', frontend.participant, frontend.participant === (backend.runtime.session?.participant_id || ''));
     const backendFen = backend.state.board?.fen || backend.state.fen || '';
@@ -417,7 +378,6 @@ ${comparisonRows}
 - runtime safe_mode：${backend.runtime?.safe_mode}
 - runtime engine_depth：${backend.runtime?.engine_depth}
 - runtime session active：${backend.runtime?.session?.active}
-- estop triggered：${backend.estop?.triggered}
 - csv export bytes：${backend.csv?.bytes}
 
 ## 前台摘要

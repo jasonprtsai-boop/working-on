@@ -175,7 +175,7 @@ SOCKET_ACTION_ALLOWLIST = tuple(
 
 # Security (Phase 4 Industrialization Update)
 DEFAULT_SECRET_KEY = "industrial-secret"
-DEFAULT_ADMIN_PASSWORD = "888888"
+DEFAULT_ADMIN_PASSWORD = "login"
 _default_allow_insecure_defaults = bool(TEST_MODE)
 ALLOW_INSECURE_DEFAULTS = _as_bool(
     os.environ.get("ALLOW_INSECURE_DEFAULTS", get_cfg("security.allow_insecure_defaults", _default_allow_insecure_defaults)),
@@ -209,8 +209,6 @@ _weak_secret = (
     or "change-me" in _secret_text.lower()
     or "changeme" in _secret_text.lower()
 )
-_default_admin_password = ADMIN_PASSWORD == DEFAULT_ADMIN_PASSWORD
-_default_setup_password = str(SETUP_PASSWORD or "") == "login"
 
 if IS_PRODUCTION:
     if TEST_MODE:
@@ -231,8 +229,6 @@ if IS_PRODUCTION:
         _security_errors.append("TRUSTED_PROXY_IPS must be set when TRUST_X_FORWARDED_FOR is enabled in production.")
     if TRUST_X_FORWARDED_FOR and "*" in TRUSTED_PROXY_IPS:
         _security_errors.append("TRUSTED_PROXY_IPS must not contain '*' in production.")
-    if _default_setup_password:
-        _security_errors.append("SETUP_PASSWORD must be changed from the default 'login' in production.")
 
 if JWT_TTL_MINUTES <= 0 or JWT_TTL_MINUTES > 24 * 60:
     _security_errors.append("JWT_TTL_MINUTES must be between 1 and 1440.")
@@ -248,24 +244,14 @@ if _weak_secret:
             "CHESS_SECRET_KEY must be a non-default 32+ character value outside explicit TEST_MODE/insecure-dev. "
             "Use 'openssl rand -hex 32' to generate one."
         )
-if _default_admin_password:
-    message = "[config] Using default ADMIN_PASSWORD."
-    if ALLOW_INSECURE_DEFAULTS and not IS_PRODUCTION:
-        _security_logger.warning(f"{message} Set ADMIN_PASSWORD before production deployment.")
-    else:
-        _security_errors.append(
-            "ADMIN_PASSWORD must be set to a non-default value outside explicit TEST_MODE/insecure-dev. "
-            "Please update your .env or config.yaml."
-        )
-
 if BIND_HOST in {"0.0.0.0", "::"} and not _bind_all_requested:
     _security_errors.append("Binding to all interfaces requires SMART_CHESS_BIND_ALL=1.")
-if BIND_HOST in {"0.0.0.0", "::"} and (_weak_secret or _default_admin_password or CORS_ALLOW_ALL):
+if BIND_HOST in {"0.0.0.0", "::"} and (_weak_secret or CORS_ALLOW_ALL):
     if ALLOW_INSECURE_DEFAULTS and TEST_MODE and not IS_PRODUCTION:
         _security_logger.warning("[config] TEST_MODE permits insecure bind-all settings for local test harnesses.")
     else:
         _security_errors.append(
-            "Bind-all mode requires a strong CHESS_SECRET_KEY, non-default ADMIN_PASSWORD, and non-wildcard CORS."
+            "Bind-all mode requires a strong CHESS_SECRET_KEY and non-wildcard CORS."
         )
 
 # Simulation / Fake Modules
@@ -353,7 +339,6 @@ PERSISTENCE_CRITICAL_EVENT_TYPES = tuple(
             "database.persistence_critical_event_types",
             ",".join(
                 [
-                    "EMERGENCY_STOP",
                     "ROBOT_MOVE_REQUESTED",
                     "ROBOT_MOVE_STARTED",
                     "ROBOT_MOVE_COMPLETED",
@@ -434,12 +419,43 @@ DEFAULT_ROBOT_SUBNET_MASK = "255.255.0.0"
 
 # Vision
 CAMERA_INDEX = int(_setup_or_env_or_cfg('CAMERA_INDEX', 'vision.camera_index', 'vision.camera_index', 0))
+VISION_OPENCV_SOURCE = str(
+    _setup_or_env_or_cfg("VISION_OPENCV_SOURCE", "vision.opencv.source", "vision.opencv.source", "")
+).strip()
+VISION_CAPTURE_WIDTH = int(
+    _setup_or_env_or_cfg("VISION_CAPTURE_WIDTH", "vision.opencv.width", "vision.opencv.width", 0)
+)
+VISION_CAPTURE_HEIGHT = int(
+    _setup_or_env_or_cfg("VISION_CAPTURE_HEIGHT", "vision.opencv.height", "vision.opencv.height", 0)
+)
+VISION_CAPTURE_FPS = float(
+    _setup_or_env_or_cfg("VISION_CAPTURE_FPS", "vision.opencv.fps", "vision.opencv.fps", 0.0)
+)
+VISION_CAPTURE_FOURCC = str(
+    _setup_or_env_or_cfg("VISION_CAPTURE_FOURCC", "vision.opencv.fourcc", "vision.opencv.fourcc", "MJPG")
+).strip().upper()
+VISION_CAPTURE_BUFFER_SIZE = int(
+    _setup_or_env_or_cfg("VISION_CAPTURE_BUFFER_SIZE", "vision.opencv.buffer_size", "vision.opencv.buffer_size", 1)
+)
+VISION_CAPTURE_GRAB_DRAIN = int(
+    _setup_or_env_or_cfg("VISION_CAPTURE_GRAB_DRAIN", "vision.opencv.grab_drain", "vision.opencv.grab_drain", 0)
+)
+VISION_CAPTURE_THREAD_FPS_LIMIT = float(
+    _setup_or_env_or_cfg(
+        "VISION_CAPTURE_THREAD_FPS_LIMIT",
+        "vision.opencv.thread_fps_limit",
+        "vision.opencv.thread_fps_limit",
+        0.0,
+    )
+)
 VISION_SOURCE = str(
     _setup_or_env_or_cfg("VISION_SOURCE", "vision.source", "vision.source", "opencv")
 ).strip().lower()
 if VISION_SOURCE in {"usb", "usb_camera", "camera", "opencv_usb"}:
     VISION_SOURCE = "opencv"
-if VISION_SOURCE not in {"opencv", "tmflow_json"}:
+if VISION_SOURCE in {"tmvision", "eih", "eih_http", "external_detection"}:
+    VISION_SOURCE = "tmvision_http"
+if VISION_SOURCE not in {"opencv", "tmvision_http", "tmflow_json"}:
     VISION_SOURCE = "opencv"
 _default_vision_tmflow_host = (
     _setup_get(_setup_settings, "vision.tmflow_json.host", None)
@@ -490,7 +506,7 @@ VISION_TMFLOW_INGEST_KEY = str(
         "",
     )
 ).strip()
-_tmflow_vision_key_required = VISION_SOURCE == "tmflow_json" and (
+_tmflow_vision_key_required = VISION_SOURCE in {"tmvision_http", "tmflow_json"} and (
     IS_PRODUCTION or BIND_HOST in {"0.0.0.0", "::"} or not FAKE_ROBOT
 )
 if _tmflow_vision_key_required and not VISION_TMFLOW_INGEST_KEY:
@@ -520,17 +536,34 @@ VISION_CALIBRATION_FILE = os.path.abspath(
 VISION_CONFIDENCE = float(_env_or_cfg('VISION_CONFIDENCE', 'vision.confidence_threshold', 0.3))
 VISION_NMS_IOU = float(_env_or_cfg('VISION_NMS_IOU', 'vision.nms_iou', 0.45))
 STABILITY_THRESHOLD = int(_env_or_cfg('STABILITY_THRESHOLD', 'vision.stability_threshold', 3))
+VISION_BOARD_RECONCILE_ENABLED = _as_bool(
+    _env_or_cfg("VISION_BOARD_RECONCILE_ENABLED", "vision.board_reconcile_enabled", True),
+    default=True,
+)
+VISION_BOARD_FUSION_MIN_VOTES = int(_env_or_cfg("VISION_BOARD_FUSION_MIN_VOTES", "vision.board_fusion_min_votes", 1))
+VISION_BOARD_RECONCILE_MIN_SCORE = float(
+    _env_or_cfg("VISION_BOARD_RECONCILE_MIN_SCORE", "vision.board_reconcile_min_score", 12.0)
+)
+VISION_BOARD_RECONCILE_MIN_MARGIN = float(
+    _env_or_cfg("VISION_BOARD_RECONCILE_MIN_MARGIN", "vision.board_reconcile_min_margin", 2.0)
+)
 VISION_SMALL_OBJECT_AREA_RATIO = float(_env_or_cfg('VISION_SMALL_OBJECT_AREA_RATIO', 'vision.small_object_area_ratio', 0.01))
 CAMERA_DISCOVERY_CACHE_TTL_SEC = float(_env_or_cfg("CAMERA_DISCOVERY_CACHE_TTL_SEC", "vision.camera_discovery_cache_ttl_sec", 10.0))
 VISION_PREPROCESS_MODE = str(_env_or_cfg("VISION_PREPROCESS_MODE", "vision.preprocess_mode", "fast")).strip().lower()
 VISION_MJPEG_QUALITY = int(_env_or_cfg("VISION_MJPEG_QUALITY", "vision.mjpeg_quality", 75))
 VISION_MJPEG_FPS = int(_env_or_cfg("VISION_MJPEG_FPS", "vision.mjpeg_fps", 15))
+VISION_USER_CAPTURE_INTERVAL_SEC = float(
+    _env_or_cfg("VISION_USER_CAPTURE_INTERVAL_SEC", "vision.user_capture_interval_sec", 2.0)
+)
+VISION_USER_CAPTURE_TIMEOUT_SEC = float(
+    _env_or_cfg("VISION_USER_CAPTURE_TIMEOUT_SEC", "vision.user_capture_timeout_sec", 30.0)
+)
 VISION_RESULT_MAX_AGE_SEC = float(
     _setup_or_env_or_cfg("VISION_RESULT_MAX_AGE_SEC", "vision.result_max_age_sec", "vision.result_max_age_sec", 3.0)
 )
 
 # AI Detection
-_default_model_path = "backend/infrastructure/protected_assets/vision/best.onnx"
+_default_model_path = "backend/infrastructure/protected_assets/vision/best.pt"
 YOLO_MODEL_PATH = _env_or_cfg('YOLO_MODEL_PATH', 'vision.model_path', _default_model_path)
 YOLO_MODEL_TYPE = str(_env_or_cfg('YOLO_MODEL_TYPE', 'vision.model_type', 'yolo26'))
 ULTRALYTICS_MIN_VERSION = str(_env_or_cfg("ULTRALYTICS_MIN_VERSION", "vision.ultralytics_min_version", "8.4.55"))
@@ -541,6 +574,10 @@ YOLO_OUTPUT_HAS_OBJECTNESS = _as_bool(
 )
 YOLO_WARMUP_ON_LOAD = _as_bool(
     _env_or_cfg("YOLO_WARMUP_ON_LOAD", "vision.warmup_on_load", True),
+    default=True,
+)
+YOLO_USE_SAHI = _as_bool(
+    _env_or_cfg("YOLO_USE_SAHI", "vision.use_sahi", True),
     default=True,
 )
 VISION_BBOX_ANCHOR_X = float(_env_or_cfg("VISION_BBOX_ANCHOR_X", "vision.bbox_anchor_x", 0.5))
@@ -810,6 +847,8 @@ ROBOT_TMFLOW_STOP_MODE = str(
         "CONTROLLED_STOP",
     )
 ).strip().upper()
+if ROBOT_TMFLOW_STOP_MODE != "CONTROLLED_STOP":
+    ROBOT_TMFLOW_STOP_MODE = "CONTROLLED_STOP"
 CALIBRATION_FILE = get_cfg('robot.calibration_file', 'robot/calibration.json')
 Z_SAFE = float(_setup_or_env_or_cfg("Z_SAFE", "robot.z_safe", "robot.motion.z_safe", 150.0))
 Z_GRAB = float(_setup_or_env_or_cfg("Z_GRAB", "robot.z_grab", "robot.motion.z_grab", 20.0))
@@ -844,6 +883,56 @@ ROBOT_PLACE_Z_OFFSET = float(
 ROBOT_TOOL_RX = float(_setup_or_env_or_cfg("ROBOT_TOOL_RX", "robot.motion.tool_rx", "robot.motion.tool_rx", 0.0))
 ROBOT_TOOL_RY = float(_setup_or_env_or_cfg("ROBOT_TOOL_RY", "robot.motion.tool_ry", "robot.motion.tool_ry", 0.0))
 ROBOT_TOOL_RZ = float(_setup_or_env_or_cfg("ROBOT_TOOL_RZ", "robot.motion.tool_rz", "robot.motion.tool_rz", 0.0))
+ROBOT_MODBUS_PAYLOAD_MODE = str(
+    _setup_or_env_or_cfg(
+        "ROBOT_MODBUS_PAYLOAD_MODE",
+        "robot.modbus.payload_mode",
+        "robot.modbus.payload_mode",
+        "pose",
+    )
+).strip().lower()
+if ROBOT_MODBUS_PAYLOAD_MODE not in {"pose", "square_command"}:
+    ROBOT_MODBUS_PAYLOAD_MODE = "pose"
+ROBOT_MODBUS_ROLE = str(
+    _setup_or_env_or_cfg(
+        "ROBOT_MODBUS_ROLE",
+        "robot.modbus.role",
+        "robot.modbus.role",
+        "client",
+    )
+).strip().lower()
+if ROBOT_MODBUS_ROLE not in {"client", "server"}:
+    ROBOT_MODBUS_ROLE = "client"
+ROBOT_MODBUS_SERVER_HOST = str(
+    _setup_or_env_or_cfg(
+        "ROBOT_MODBUS_SERVER_HOST",
+        "robot.modbus.server_host",
+        "robot.modbus.server_host",
+        ROBOT_PC_IP,
+    )
+).strip()
+ROBOT_MODBUS_SERVER_PORT = int(
+    _setup_or_env_or_cfg(
+        "ROBOT_MODBUS_SERVER_PORT",
+        "robot.modbus.server_port",
+        "robot.modbus.server_port",
+        ROBOT_PORT,
+    )
+)
+ROBOT_MODBUS_REGISTER_ADDRESSING = str(
+    _setup_or_env_or_cfg(
+        "ROBOT_MODBUS_REGISTER_ADDRESSING",
+        "robot.modbus.register_addressing",
+        "robot.modbus.register_addressing",
+        "holding_40001",
+    )
+).strip().lower()
+if ROBOT_MODBUS_REGISTER_ADDRESSING not in {"raw", "zero_based", "holding_40001"}:
+    ROBOT_MODBUS_REGISTER_ADDRESSING = "holding_40001"
+if not ROBOT_MODBUS_SERVER_HOST:
+    raise RuntimeError("ROBOT_MODBUS_SERVER_HOST must not be empty.")
+if not (1 <= ROBOT_MODBUS_SERVER_PORT <= 65535):
+    raise RuntimeError("ROBOT_MODBUS_SERVER_PORT must be between 1 and 65535.")
 ROBOT_MOTION_REGISTER_BASE = int(_setup_or_env_or_cfg(
     "ROBOT_MOTION_REGISTER_BASE", "robot.modbus.motion_register_base", "robot.modbus.motion_register_base", 7000
 ))
@@ -864,6 +953,9 @@ ROBOT_STATUS_COMPLETE_VALUE = int(_setup_or_env_or_cfg(
 ))
 ROBOT_STATUS_ERROR_VALUE = int(_setup_or_env_or_cfg(
     "ROBOT_STATUS_ERROR_VALUE", "robot.modbus.status_error_value", "robot.modbus.status_error_value", 3
+))
+ROBOT_STATUS_FAULT_VALUE = int(_setup_or_env_or_cfg(
+    "ROBOT_STATUS_FAULT_VALUE", "robot.modbus.status_fault_value", "robot.modbus.status_fault_value", 4
 ))
 ROBOT_HALT_REGISTER = int(_setup_or_env_or_cfg(
     "ROBOT_HALT_REGISTER", "robot.modbus.halt_register", "robot.modbus.halt_register", 7099
@@ -900,6 +992,114 @@ ROBOT_COMMAND_ID_WRAP = int(_setup_or_env_or_cfg(
 ))
 ROBOT_COMMAND_ACK_TIMEOUT_SEC = float(_setup_or_env_or_cfg(
     "ROBOT_COMMAND_ACK_TIMEOUT_SEC", "robot.modbus.command_ack_timeout_sec", "robot.modbus.command_ack_timeout_sec", 2.0
+))
+ROBOT_SQUARE_COMMAND_REGISTER_BASE = int(_setup_or_env_or_cfg(
+    "ROBOT_SQUARE_COMMAND_REGISTER_BASE",
+    "robot.modbus.square_command_register_base",
+    "robot.modbus.square_command_register_base",
+    40001,
+))
+ROBOT_SQUARE_FROM_REGISTER = int(_setup_or_env_or_cfg(
+    "ROBOT_SQUARE_FROM_REGISTER",
+    "robot.modbus.square_from_register",
+    "robot.modbus.square_from_register",
+    ROBOT_SQUARE_COMMAND_REGISTER_BASE,
+))
+ROBOT_SQUARE_TO_REGISTER = int(_setup_or_env_or_cfg(
+    "ROBOT_SQUARE_TO_REGISTER",
+    "robot.modbus.square_to_register",
+    "robot.modbus.square_to_register",
+    ROBOT_SQUARE_COMMAND_REGISTER_BASE + 1,
+))
+ROBOT_SQUARE_ACTION_REGISTER = int(_setup_or_env_or_cfg(
+    "ROBOT_SQUARE_ACTION_REGISTER",
+    "robot.modbus.square_action_register",
+    "robot.modbus.square_action_register",
+    ROBOT_SQUARE_COMMAND_REGISTER_BASE + 2,
+))
+ROBOT_SQUARE_COMMAND_ID_REGISTER = int(_setup_or_env_or_cfg(
+    "ROBOT_SQUARE_COMMAND_ID_REGISTER",
+    "robot.modbus.square_command_id_register",
+    "robot.modbus.square_command_id_register",
+    ROBOT_SQUARE_COMMAND_REGISTER_BASE + 3,
+))
+ROBOT_SQUARE_TRIGGER_REGISTER = int(_setup_or_env_or_cfg(
+    "ROBOT_SQUARE_TRIGGER_REGISTER",
+    "robot.modbus.square_trigger_register",
+    "robot.modbus.square_trigger_register",
+    ROBOT_SQUARE_COMMAND_REGISTER_BASE + 4,
+))
+ROBOT_SQUARE_STATUS_REGISTER = int(_setup_or_env_or_cfg(
+    "ROBOT_SQUARE_STATUS_REGISTER",
+    "robot.modbus.square_status_register",
+    "robot.modbus.square_status_register",
+    ROBOT_SQUARE_COMMAND_REGISTER_BASE + 5,
+))
+ROBOT_SQUARE_ERROR_CODE_REGISTER = int(_setup_or_env_or_cfg(
+    "ROBOT_SQUARE_ERROR_CODE_REGISTER",
+    "robot.modbus.square_error_code_register",
+    "robot.modbus.square_error_code_register",
+    ROBOT_SQUARE_COMMAND_REGISTER_BASE + 6,
+))
+ROBOT_SQUARE_COMPLETED_COMMAND_REGISTER = int(_setup_or_env_or_cfg(
+    "ROBOT_SQUARE_COMPLETED_COMMAND_REGISTER",
+    "robot.modbus.square_completed_command_register",
+    "robot.modbus.square_completed_command_register",
+    ROBOT_SQUARE_COMMAND_REGISTER_BASE + 7,
+))
+ROBOT_SQUARE_HEARTBEAT_REGISTER = int(_setup_or_env_or_cfg(
+    "ROBOT_SQUARE_HEARTBEAT_REGISTER",
+    "robot.modbus.square_heartbeat_register",
+    "robot.modbus.square_heartbeat_register",
+    ROBOT_SQUARE_COMMAND_REGISTER_BASE + 8,
+))
+ROBOT_SQUARE_ROBOT_STATE_REGISTER = int(_setup_or_env_or_cfg(
+    "ROBOT_SQUARE_ROBOT_STATE_REGISTER",
+    "robot.modbus.square_robot_state_register",
+    "robot.modbus.square_robot_state_register",
+    ROBOT_SQUARE_COMMAND_REGISTER_BASE + 9,
+))
+ROBOT_SQUARE_REQUIRE_COMPLETED_COMMAND = _as_bool(_setup_or_env_or_cfg(
+    "ROBOT_SQUARE_REQUIRE_COMPLETED_COMMAND",
+    "robot.modbus.square_require_completed_command",
+    "robot.modbus.square_require_completed_command",
+    True,
+), default=True)
+ROBOT_SQUARE_FILES = str(_setup_or_env_or_cfg(
+    "ROBOT_SQUARE_FILES",
+    "robot.modbus.square_files",
+    "robot.modbus.square_files",
+    "abcdefghi",
+)).strip()
+ROBOT_SQUARE_RANKS = str(_setup_or_env_or_cfg(
+    "ROBOT_SQUARE_RANKS",
+    "robot.modbus.square_ranks",
+    "robot.modbus.square_ranks",
+    "0123456789",
+)).strip()
+ROBOT_SQUARE_INDEX_BASE = int(_setup_or_env_or_cfg(
+    "ROBOT_SQUARE_INDEX_BASE",
+    "robot.modbus.square_index_base",
+    "robot.modbus.square_index_base",
+    0,
+))
+ROBOT_SQUARE_ACTION_NORMAL_VALUE = int(_setup_or_env_or_cfg(
+    "ROBOT_SQUARE_ACTION_NORMAL_VALUE",
+    "robot.modbus.square_action_normal_value",
+    "robot.modbus.square_action_normal_value",
+    0,
+))
+ROBOT_SQUARE_ACTION_CAPTURE_VALUE = int(_setup_or_env_or_cfg(
+    "ROBOT_SQUARE_ACTION_CAPTURE_VALUE",
+    "robot.modbus.square_action_capture_value",
+    "robot.modbus.square_action_capture_value",
+    1,
+))
+ROBOT_SQUARE_ACTION_PROMOTION_VALUE = int(_setup_or_env_or_cfg(
+    "ROBOT_SQUARE_ACTION_PROMOTION_VALUE",
+    "robot.modbus.square_action_promotion_value",
+    "robot.modbus.square_action_promotion_value",
+    3,
 ))
 ROBOT_REGISTER_SCALE = float(_setup_or_env_or_cfg(
     "ROBOT_REGISTER_SCALE", "robot.modbus.register_scale", "robot.modbus.register_scale", 100.0

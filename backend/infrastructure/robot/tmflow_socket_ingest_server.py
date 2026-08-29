@@ -19,6 +19,19 @@ from backend.utils import config
 from backend.utils.logger import logger
 
 
+_STATUS_TAG_PATTERN = re.compile(r"(READY|HEARTBEAT|ERROR|BUSY|DONE|ERR|RDY|HB)(?=,|$)", re.IGNORECASE)
+_POSE_CSV_PREFIXES = {
+    "COORD_BASE",
+    "COORD_ROBOT",
+    "COORDBASE",
+    "COORDROBOT",
+    "POSE",
+    "TCP",
+    "TCPPOSE",
+    "TCP_POSE",
+}
+
+
 class TMflowSocketIngestServer:
     """
     Accepts TMflow Socket Send messages on the PC side.
@@ -26,6 +39,7 @@ class TMflowSocketIngestServer:
     Supported messages:
     - JSON object per line, with optional tcp/joint/io/image fields.
     - CSV pose per line: x,y,z,rx,ry,rz.
+    - TMflow Network Node status CSV, e.g. HB,1 or DONE,42.
     """
 
     source = "tmflow_socket_ingest"
@@ -67,6 +81,7 @@ class TMflowSocketIngestServer:
         self.last_message_at: float | None = None
         self.last_error: str | None = None
         self.last_remote: str | None = None
+        self.last_bad_message: str | None = None
 
     def start(self) -> bool:
         if self.running:
@@ -119,47 +134,76 @@ class TMflowSocketIngestServer:
         remote: tuple[str, int] | str | None = None,
     ) -> dict[str, Any]:
         try:
-            payload = self._parse_message(message)
+            payloads = self._parse_messages(message)
         except ValueError as exc:
             self.parse_failures += 1
             self.last_error = str(exc)
+            self.last_bad_message = _message_preview(message)
             return {"ok": False, "reason": "parse_failed", "error": str(exc)}
 
-        if not self._authorized(payload, remote=remote):
-            self.auth_failures += 1
-            self.last_error = "unauthorized TMflow ingest message."
-            return {"ok": False, "reason": "unauthorized"}
+        telemetry_updated = False
+        image_result: dict[str, Any] = {}
+        image_updated = False
+        processed = 0
 
-        image_result = self._ingest_image(payload)
-        status_payload = tmflow_ingest_state.update(payload, remote=remote, image_result=image_result)
-        has_telemetry = any(key in status_payload for key in ("position", "orientation", "joint_angles", "speed", "io"))
-        image_ok = bool(image_result.get("ok")) if image_result else False
-        if image_ok:
-            self.frames_received += 1
-        elif image_result:
-            self.decode_failures += 1
+        for payload in payloads:
+            if not self._authorized(payload, remote=remote):
+                self.auth_failures += 1
+                self.last_error = "unauthorized TMflow ingest message."
+                return {"ok": False, "reason": "unauthorized"}
 
-        self.messages_received += 1
-        self.last_message_at = time.time()
-        self.last_remote = _remote_text(remote)
-        self.last_error = None if (has_telemetry or image_ok) else "message did not contain telemetry or image."
+            current_image_result = self._ingest_image(payload)
+            status_payload = tmflow_ingest_state.update(payload, remote=remote, image_result=current_image_result)
+            has_telemetry = any(
+                key in status_payload
+                for key in (
+                    "position",
+                    "orientation",
+                    "joint_angles",
+                    "speed",
+                    "io",
+                    "heartbeat_seen",
+                    "robot_state_code",
+                    "status_code",
+                    "current_command_id",
+                    "completed_command_id",
+                    "error_code",
+                )
+            )
+            image_ok = bool(current_image_result.get("ok")) if current_image_result else False
+            if current_image_result:
+                image_result = current_image_result
+            if image_ok:
+                self.frames_received += 1
+                image_updated = True
+            elif current_image_result:
+                self.decode_failures += 1
 
-        if has_telemetry:
-            bus.publish(BaseEvent.create(
-                event_type=EventType.ROBOT_STATUS_UPDATED,
-                source=self.source,
-                payload=status_payload,
-            ))
+            self.messages_received += 1
+            processed += 1
+            self.last_message_at = time.time()
+            self.last_remote = _remote_text(remote)
+            telemetry_updated = bool(telemetry_updated or has_telemetry)
 
-        ok = bool(has_telemetry or image_ok)
+            if has_telemetry:
+                bus.publish(BaseEvent.create(
+                    event_type=EventType.ROBOT_STATUS_UPDATED,
+                    source=self.source,
+                    payload=status_payload,
+                ))
+
+        ok = bool(telemetry_updated or image_updated)
+        self.last_error = None if ok else "message did not contain telemetry or image."
+
         return {
             "ok": ok,
             "source": self.source,
-            "telemetry_updated": has_telemetry,
+            "telemetry_updated": telemetry_updated,
             "image": image_result or {"ok": False, "reason": "missing_image"},
             "messages_received": int(self.messages_received),
             "frames_received": int(self.frames_received),
             "last_message_at": self.last_message_at,
+            "parsed_messages": int(processed),
             "reason": None if ok else "missing_telemetry_or_image",
         }
 
@@ -187,6 +231,7 @@ class TMflowSocketIngestServer:
             "last_message_age_sec": None if self.last_message_at is None else max(0.0, now - self.last_message_at),
             "last_remote": self.last_remote,
             "last_error": self.last_error,
+            "last_bad_message": self.last_bad_message,
             "telemetry": tmflow_ingest_state.status(max_age_sec=max_age),
         }
 
@@ -214,31 +259,57 @@ class TMflowSocketIngestServer:
         self.running = False
 
     def _handle_client(self, conn: socket.socket, addr: tuple[str, int]) -> None:
+        buffer = b""
         try:
-            conn.settimeout(2.0)
+            conn.settimeout(0.2)
             with conn:
-                with conn.makefile("rb") as stream:
-                    while not self._stop.is_set():
-                        line = stream.readline(self.max_message_bytes + 1)
-                        if not line:
-                            break
-                        if len(line) > self.max_message_bytes:
-                            result = {
-                                "ok": False,
-                                "reason": "message_too_large",
-                                "max_message_bytes": self.max_message_bytes,
-                            }
-                            self.parse_failures += 1
-                            self.last_error = "TMflow ingest message exceeds limit."
-                        else:
-                            result = self.ingest_message(line, remote=addr)
+                while not self._stop.is_set():
+                    try:
+                        chunk = conn.recv(min(4096, self.max_message_bytes + 1))
+                    except socket.timeout:
+                        buffer = self._ingest_ready_socket_buffer(conn, addr, buffer, force=False)
+                        continue
+
+                    if not chunk:
+                        if buffer:
+                            self._ingest_ready_socket_buffer(conn, addr, buffer, force=True)
+                        break
+
+                    buffer += chunk
+                    if len(buffer) > self.max_message_bytes:
+                        result = {
+                            "ok": False,
+                            "reason": "message_too_large",
+                            "max_message_bytes": self.max_message_bytes,
+                        }
+                        self.parse_failures += 1
+                        self.last_error = "TMflow ingest message exceeds limit."
+                        self.last_bad_message = _message_preview(buffer)
                         if self.send_ack:
                             self._send_ack(conn, result)
+                        break
+
+                    buffer = self._ingest_ready_socket_buffer(conn, addr, buffer, force=False)
         except Exception as exc:
             self.last_error = str(exc)
             logger.debug("[TMflowIngest] client handler failed: %s", exc, exc_info=True)
         finally:
             self.active_connections = max(0, self.active_connections - 1)
+
+    def _ingest_ready_socket_buffer(
+        self,
+        conn: socket.socket,
+        addr: tuple[str, int],
+        buffer: bytes,
+        *,
+        force: bool,
+    ) -> bytes:
+        messages, remainder = _ready_socket_messages(buffer, force=force)
+        for message in messages:
+            result = self.ingest_message(message, remote=addr)
+            if self.send_ack:
+                self._send_ack(conn, result)
+        return remainder
 
     def _send_ack(self, conn: socket.socket, result: dict[str, Any]) -> None:
         try:
@@ -256,8 +327,11 @@ class TMflowSocketIngestServer:
             logger.debug("[TMflowIngest] failed to send ack", exc_info=True)
 
     def _parse_message(self, message: bytes | str | dict[str, Any]) -> dict[str, Any]:
+        return self._parse_messages(message)[-1]
+
+    def _parse_messages(self, message: bytes | str | dict[str, Any]) -> list[dict[str, Any]]:
         if isinstance(message, dict):
-            return dict(message)
+            return [dict(message)]
         if isinstance(message, bytes):
             if len(message) > self.max_message_bytes:
                 raise ValueError(f"message exceeds {self.max_message_bytes} bytes")
@@ -266,15 +340,24 @@ class TMflowSocketIngestServer:
             text = str(message or "").strip()
         if not text:
             raise ValueError("empty TMflow ingest message")
+        text = _strip_wrapping_quotes(text)
         if text.startswith("{"):
             payload = json.loads(text)
             if not isinstance(payload, dict):
                 raise ValueError("JSON TMflow ingest message must be an object")
-            return payload
-        numbers = _parse_numeric_csv(text)
+            return [payload]
+        status_payloads = _parse_status_csv_records(text)
+        if status_payloads:
+            return status_payloads
+        try:
+            numbers = _parse_numeric_csv(text)
+        except ValueError as exc:
+            raise ValueError(
+                "TMflow ingest message must be JSON, TMflow status CSV, or x,y,z,rx,ry,rz CSV"
+            ) from exc
         if len(numbers) >= 6:
-            return {"type": "TMFLOW_TELEMETRY", "tcp": numbers[:6], "raw_format": "csv"}
-        raise ValueError("TMflow ingest message must be JSON or x,y,z,rx,ry,rz CSV")
+            return [{"type": "TMFLOW_TELEMETRY", "tcp": numbers[:6], "raw_format": "csv", "raw": text}]
+        raise ValueError("TMflow ingest message must be JSON, TMflow status CSV, or x,y,z,rx,ry,rz CSV")
 
     def _authorized(self, payload: dict[str, Any], *, remote: tuple[str, int] | str | None) -> bool:
         expected_key = self.ingest_key
@@ -303,12 +386,253 @@ class TMflowSocketIngestServer:
 
 
 def _parse_numeric_csv(text: str) -> list[float]:
+    text = _numeric_csv_body(text)
     values = []
     for part in re.split(r"[\s,;]+", text.strip()):
         if not part:
             continue
         values.append(float(part))
     return values
+
+
+def _numeric_csv_body(text: str) -> str:
+    value = _strip_wrapping_quotes(str(text or "").strip())
+    if "=" in value:
+        value = value.split("=", 1)[1].strip()
+    value = _strip_wrapped_numeric_array(value)
+    if "," in value:
+        prefix, body = value.split(",", 1)
+        normalized_prefix = re.sub(r"[^A-Za-z0-9_]", "", prefix).upper()
+        if normalized_prefix in _POSE_CSV_PREFIXES:
+            value = _strip_wrapped_numeric_array(body.strip())
+    return value
+
+
+def _strip_wrapped_numeric_array(value: str) -> str:
+    if len(value) >= 2 and value[0] in "{[" and value[-1] in "}]":
+        value = value[1:-1].strip()
+    return value
+
+
+def _message_preview(message: bytes | str | dict[str, Any], *, max_chars: int = 240) -> str:
+    if isinstance(message, bytes):
+        text = message.decode("utf-8", errors="replace")
+    elif isinstance(message, dict):
+        try:
+            text = json.dumps(message, ensure_ascii=False, separators=(",", ":"))
+        except Exception:
+            text = str(message)
+    else:
+        text = str(message or "")
+    text = text.strip().replace("\r", r"\r").replace("\n", r"\n")
+    if len(text) > max_chars:
+        return text[:max_chars] + "..."
+    return text
+
+
+def _ready_socket_messages(buffer: bytes, *, force: bool = False) -> tuple[list[bytes], bytes]:
+    if not buffer:
+        return [], b""
+
+    text = buffer.decode("utf-8", errors="replace")
+    if _status_text_ready(text):
+        return [buffer], b""
+
+    newline_match = re.search(rb"[\r\n]", buffer)
+    if newline_match:
+        lines = re.split(rb"\r\n|\n|\r", buffer)
+        ends_with_newline = bool(re.search(rb"[\r\n]$", buffer))
+        complete = lines if ends_with_newline else lines[:-1]
+        remainder = b"" if ends_with_newline else lines[-1]
+        return [line for line in complete if line.strip()], remainder
+
+    literal_records, literal_remainder = _split_literal_newline_messages(buffer)
+    if literal_records:
+        return literal_records, literal_remainder
+
+    if force and buffer.strip():
+        return [buffer], b""
+
+    return [], buffer
+
+
+def _split_literal_newline_messages(buffer: bytes) -> tuple[list[bytes], bytes]:
+    text = buffer.decode("utf-8", errors="replace")
+    delimiter_pattern = re.compile(r"\\r\\n|\\n|\\r")
+    if not delimiter_pattern.search(text):
+        return [], buffer
+
+    parts = delimiter_pattern.split(text)
+    ends_with_delimiter = bool(delimiter_pattern.search(text[-4:]))
+    complete = parts if ends_with_delimiter else parts[:-1]
+    remainder = "" if ends_with_delimiter else parts[-1]
+    return [part.encode("utf-8") for part in complete if part.strip()], remainder.encode("utf-8")
+
+
+def _status_text_ready(text: str) -> bool:
+    normalized = _normalize_tmflow_text(text)
+    if not _STATUS_TAG_PATTERN.search(normalized):
+        return False
+    records = _status_csv_records(normalized)
+    if not records:
+        return False
+    return all(_status_record_complete(record) for record in records)
+
+
+def _status_record_complete(record: str) -> bool:
+    parts = [part.strip() for part in re.split(r"\s*,\s*", record.strip()) if part.strip()]
+    if not parts:
+        return False
+    tag = parts[0].upper()
+    if tag in {"READY", "RDY"}:
+        return True
+    if tag in {"HB", "HEARTBEAT"}:
+        return len(parts) >= 2
+    if tag in {"BUSY", "DONE"}:
+        return len(parts) >= 2 and _optional_int(parts[1]) is not None
+    if tag in {"ERR", "ERROR"}:
+        return len(parts) >= 3 and _optional_int(parts[1]) is not None and _optional_int(parts[2]) is not None
+    return False
+
+
+def _parse_status_csv_records(text: str) -> list[dict[str, Any]]:
+    payloads = []
+    for record in _status_csv_records(text):
+        payload = _parse_status_csv(record)
+        if payload is not None:
+            payloads.append(payload)
+    return payloads
+
+
+def _status_csv_records(text: str) -> list[str]:
+    normalized = _normalize_tmflow_text(text)
+    records = []
+    for line in re.split(r"[\r\n]+", normalized):
+        line = _strip_wrapping_quotes(line.strip())
+        if not line:
+            continue
+        matches = list(_STATUS_TAG_PATTERN.finditer(line))
+        if not matches:
+            records.append(line)
+            continue
+        for index, match in enumerate(matches):
+            start = match.start()
+            end = matches[index + 1].start() if index + 1 < len(matches) else len(line)
+            record = line[start:end].strip(" ,;")
+            if record:
+                records.append(record)
+    return records
+
+
+def _normalize_tmflow_text(text: str) -> str:
+    normalized = str(text or "").strip()
+    normalized = _strip_wrapping_quotes(normalized)
+    return (
+        normalized
+        .replace("\\r\\n", "\n")
+        .replace("\\n", "\n")
+        .replace("\\r", "\n")
+    )
+
+
+def _strip_wrapping_quotes(text: str) -> str:
+    value = str(text or "").strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+        return value[1:-1].strip()
+    return value
+
+
+def _parse_status_csv(text: str) -> dict[str, Any] | None:
+    parts = [part.strip() for part in re.split(r"\s*,\s*", text.strip()) if part.strip()]
+    if not parts:
+        return None
+    tag = parts[0].upper()
+    payload: dict[str, Any] = {
+        "raw_format": "tmflow_network_csv",
+        "raw": text.strip(),
+    }
+
+    if tag in {"READY", "RDY"}:
+        payload.update({
+            "type": "TMFLOW_READY",
+            "event": "ready",
+            "heartbeat_seen": True,
+            "robot_state_code": 1,
+        })
+        return payload
+
+    if tag in {"HB", "HEARTBEAT"}:
+        payload.update({
+            "type": "TMFLOW_HEARTBEAT",
+            "event": "heartbeat",
+            "heartbeat_seen": True,
+        })
+        if len(parts) > 1:
+            robot_state = _optional_int(parts[1])
+            if robot_state is not None:
+                payload["robot_state_code"] = robot_state
+            else:
+                payload["robot_state_label"] = parts[1]
+        if len(parts) > 2:
+            completed_id = _optional_int(parts[2])
+            if completed_id is not None:
+                payload["completed_command_id"] = completed_id
+        return payload
+
+    if tag == "BUSY":
+        payload.update({
+            "type": "TMFLOW_COMMAND_STATUS",
+            "event": "busy",
+            "status_code": 1,
+            "status_label": "busy",
+            "robot_state_code": 2,
+        })
+        if len(parts) > 1:
+            command_id = _optional_int(parts[1])
+            if command_id is not None:
+                payload["current_command_id"] = command_id
+        return payload
+
+    if tag == "DONE":
+        payload.update({
+            "type": "TMFLOW_COMMAND_STATUS",
+            "event": "done",
+            "status_code": 2,
+            "status_label": "done",
+            "robot_state_code": 1,
+        })
+        if len(parts) > 1:
+            completed_id = _optional_int(parts[1])
+            if completed_id is not None:
+                payload["completed_command_id"] = completed_id
+        return payload
+
+    if tag in {"ERR", "ERROR"}:
+        payload.update({
+            "type": "TMFLOW_COMMAND_STATUS",
+            "event": "error",
+            "status_code": 3,
+            "status_label": "error",
+            "robot_state_code": 3,
+        })
+        if len(parts) > 1:
+            command_id = _optional_int(parts[1])
+            if command_id is not None:
+                payload["current_command_id"] = command_id
+        if len(parts) > 2:
+            error_code = _optional_int(parts[2])
+            if error_code is not None:
+                payload["error_code"] = error_code
+        return payload
+
+    return None
+
+
+def _optional_int(value: Any) -> int | None:
+    try:
+        return int(float(str(value).strip()))
+    except (TypeError, ValueError):
+        return None
 
 
 def _provided_key(payload: dict[str, Any]) -> str:

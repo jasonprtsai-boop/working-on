@@ -1,0 +1,118 @@
+/* OVERLAYS [Improved] */
+.overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(10, 15, 28, 0.85);
+    backdrop-filter: blur(12px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9000;
+    opacity: 0;
+    pointer-events: none;
+    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.overlay.active {
+    opacity: 1;
+    pointer-events: all;
+    visibility: visible;
+}
+
+.overlay:not(.hidden) {
+    opacity: 1;
+    pointer-events: all;
+    visibility: visible;
+}
+
+.overlay-card {
+    padding: 3rem;
+    text-align: center;
+    max-width: 500px;
+    width: 90%;
+    border-radius: 24px;
+    background: rgba(255, 255, 255, 0.05); /* Support light/dark transition */
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 40px 100px rgba(0,0,0,0.5);
+    transform: translateY(40px) scale(0.95);
+    transition: all 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.overlay.active .overlay-card {
+    transform: translateY(0) scale(1);
+}
+
+.overlay:not(.hidden) .overlay-card {
+    transform: translateY(0) scale(1);
+}
+
+.overlay-card h1 {
+    font-size: 3.5rem;
+    font-weight: 900;
+    margin-bottom: 16px;
+    letter-spacing: -2px;
+    color: var(--text-main);
+}
+
+/* Button Active States for Operational Clarity */
+.action-btn.active, .btn-remote.active {
+    background: var(--accent-yellow) !important;
+    color: var(--bg-dark) !important;
+    box-shadow: 0 0 20px rgba(255, 184, 0, 0.4);
+    transform: translateY(1px);
+    border-color: var(--accent-yellow);
+}
+
+.action-btn.stop.active, .btn-remote.danger.active {
+    background: var(--error) !important;
+    color: white !important;
+    box-shadow: 0 0 25px rgba(239, 68, 68, 0.6);
+    border-color: var(--error);
+}
+
+.modal-btns {
+    display: flex;
+    gap: 12px;
+}
+.modal-btns button {
+    flex: 1;
+}
+
+/* CHESS PIECES */
+/* Removed duplicate .piece block to prevent conflicts with Unified Piece System above at line ~510 */
+.piece span { font-size: 1.5rem; font-family: "Microsoft JhengHei", "PingFang TC", serif; z-index: 2; }
+
+.piece::after {
+    content: "";
+    position: absolute;
+    inset: 2px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, rgba(255,255,255,0.2) 0%, rgba(255,255,255,0) 60%);
+    pointer-events: none;
+    z-index: 3;
+}
+
+.palace-svg {
+    position: absolute;
+    pointer-events: none;
+}
+
+.board-grid-line {
+    position: absolute; inset: 0; pointer-events: none;
+    /* Drawing the 8x9 grid to form 9x10 intersections */
+    background-image:
+        linear-gradient(var(--border) 1px, transparent 1px),
+        linear-gradient(90deg, var(--border) 1px, transparent 1px);
+    background-size: 12.5% 11.11%;
+}
+
+.axis-label {
+    position: absolute;
+    font-size: 0.65rem;
+    font-weight: 800;
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    pointer-events: none;
+}
+.axis-label.x { top: -20px; transform: translateX(-50%); }
+.axis-label.y { left: -25px; transform: translateY(-50%); }

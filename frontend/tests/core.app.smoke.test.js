@@ -33,7 +33,7 @@ jest.unstable_mockModule('../static/js/modules/board/render.js', () => ({
   initRenderer: initRendererMock
 }));
 
-test('core app enters console directly and resets emergency stop via API', async () => {
+test('core app enters console directly and resumes overlay via control API', async () => {
   document.body.innerHTML = `
     <section id="view-landing"></section>
     <section id="view-player" class="hidden"></section>
@@ -87,7 +87,7 @@ test('core app enters console directly and resets emergency stop via API', async
     ${[
       'btn-role-player', 'btn-player-start', 'btn-role-console', 'btn-exit', 'btn-console-exit',
       'btn-toggle-board', 'btn-toggle-video',
-      'btn-estop-trigger', 'btn-resume-overlay', 'btn-export-excel', 'btn-export-csv',
+      'btn-resume-overlay', 'btn-export-excel', 'btn-export-csv',
       'btn-session-start', 'btn-session-end'
     ].map((id) => `<button id="${id}"></button>`).join('')}
   `;
@@ -114,7 +114,6 @@ test('core app enters console directly and resets emergency stop via API', async
   expect(initRendererMock).toHaveBeenCalled();
   expect(document.getElementById('view-landing').classList.contains('active')).toBe(true);
   expect(document.getElementById('btn-export-excel').disabled).toBe(true);
-  expect(document.getElementById('btn-estop-trigger').disabled).toBe(true);
   expect(global.fetch.mock.calls.map(([url]) => url)).toContain('/api/player/state');
   expect(global.fetch.mock.calls.map(([url]) => url)).not.toContain('/api/state');
 
@@ -153,7 +152,6 @@ test('core app enters console directly and resets emergency stop via API', async
   expect(document.getElementById('view-console').classList.contains('active')).toBe(true);
   expect(document.getElementById('vision-live-feed').src).toContain('/api/video_feed?t=');
   expect(document.getElementById('btn-export-excel').disabled).toBe(false);
-  expect(document.getElementById('btn-estop-trigger').disabled).toBe(false);
 
   socketHandlers.disconnect();
   expect(document.body.dataset.connectionStatus).toBe('offline');
@@ -168,14 +166,10 @@ test('core app enters console directly and resets emergency stop via API', async
   global.fetch.mockClear();
   document.getElementById('btn-resume-overlay').click();
   await flushAsync();
-  const resetCall = global.fetch.mock.calls.find(([url]) => url === '/api/estop/reset');
-  expect(resetCall?.[1]).toEqual(expect.objectContaining({ method: 'POST' }));
+  const resumeCall = global.fetch.mock.calls.find(([url]) => url === '/api/control');
+  expect(resumeCall?.[1]).toEqual(expect.objectContaining({ method: 'POST' }));
+  expect(JSON.parse(resumeCall?.[1]?.body || '{}')).toEqual(expect.objectContaining({ action: 'resume' }));
   expect(emitWithAckMock).not.toHaveBeenCalledWith('action', { type: 'RESUME', payload: {} });
-
-  document.getElementById('btn-estop-trigger').click();
-  await flushAsync();
-  const estopCall = global.fetch.mock.calls.find(([url]) => url === '/api/estop/trigger');
-  expect(estopCall?.[1]).toEqual(expect.objectContaining({ method: 'POST' }));
 
   document.getElementById('btn-export-excel').click();
   await Promise.resolve();

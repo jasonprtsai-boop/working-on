@@ -221,7 +221,7 @@ def require_auth(f):
             request.user_role = data.get('role')
         except jwt.ExpiredSignatureError:
             return jsonify({'message': 'Token has expired!'}), 401
-        except Exception as e:
+        except Exception:
             return jsonify({'message': 'Token is invalid!'}), 401
 
         return f(*args, **kwargs)

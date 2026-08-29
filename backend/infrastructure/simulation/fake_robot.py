@@ -65,7 +65,7 @@ class FakeRobot:
             raise ValueError(msg)
 
     def stop_all(self):
-        logger.warning("FakeRobot: EMERGENCY STOP EXECUTED!")
+        logger.warning("FakeRobot: STOP requested.")
         self.busy = False
         return True
 

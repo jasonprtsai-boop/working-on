@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional
+from typing import Dict, List
 from dataclasses import dataclass
 from backend.application.services.engine_service import EngineService
 from backend.events.bus.event_bus import bus

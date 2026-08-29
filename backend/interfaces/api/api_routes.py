@@ -6,7 +6,6 @@ from backend.interfaces.api.shared import api_bp
 from backend.interfaces.api import auth_routes  # noqa: F401
 from backend.interfaces.api import control_routes  # noqa: F401
 from backend.interfaces.api import diagnostics_routes  # noqa: F401
-from backend.interfaces.api import estop_routes  # noqa: F401
 from backend.interfaces.api import export_routes  # noqa: F401
 from backend.interfaces.api import replay_routes  # noqa: F401
 from backend.interfaces.api import runtime_control_routes  # noqa: F401

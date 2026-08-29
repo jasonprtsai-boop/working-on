@@ -170,7 +170,6 @@ class TelemetryService:
 
         with self._lock:
             # Calculate Performance Analytics
-            now_ms = time.time() * 1000
             total_events = len(self._events)
             error_count = len([e for e in self._events if e.status == "error"])
             error_rate = round(error_count / total_events, 4) if total_events > 0 else 0.0

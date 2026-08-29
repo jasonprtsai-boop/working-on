@@ -3,7 +3,6 @@ from __future__ import annotations
 import base64
 import os
 import time
-import threading
 from typing import Optional
 
 from backend.utils.logger import logger
@@ -124,6 +123,20 @@ class SimulationVisionSystem:
             "calibration": self.get_calibration_status(),
         }
 
+    def detect_frame(self, frame, *, publish: bool = True, source: str = "tmvision_http") -> dict:
+        height, width = frame.shape[:2] if frame is not None and hasattr(frame, "shape") else (0, 0)
+        return {
+            "timestamp": time.time(),
+            "frame_size": [int(width), int(height)],
+            "detections": [],
+            "latency_ms": 0.0,
+            "calibrated": False,
+            "board_corners": self.board_corners,
+            "coordinate_space": "camera_frame",
+            "source": str(source or "tmvision_http"),
+            "simulation": True,
+        }
+
 
 class UnavailableVisionSystem:
     """Real vision failed to initialize; do not emit simulated detections."""
@@ -226,6 +239,9 @@ class UnavailableVisionSystem:
             "calibration": self.get_calibration_status(),
         }
 
+    def detect_frame(self, frame, *, publish: bool = True, source: str = "tmvision_http") -> dict:
+        raise RuntimeError(f"real vision is unavailable: {self._startup_error}")
+
 
 def _build_real_vision_system():
     # Local imports so the module can still be imported without numpy/opencv installed.
@@ -243,155 +259,8 @@ def _build_real_vision_system():
     from .overlay.overlay_manager import OverlayManager
     from .stream.mjpeg_stream import MJPEGStreamer
     from .calibration import compute_calibration_quality, load_calibration_payload, save_calibration
+    from .inference_worker import InferenceWorker
     from .calibration.board_calibrator import BoardCalibrator
-    from backend.events.bus.event_bus import bus
-    from backend.events.event_types import EventType
-    from backend.events.models.base_event import BaseEvent
-
-    class InferenceWorker:
-        def __init__(self, detector, preprocessor, corrector, mapper=None):
-            self.detector = detector
-            self.preprocessor = preprocessor
-            self.corrector = corrector
-            self.mapper = mapper
-            self._corners = None
-            self._lock = threading.Lock()
-            self._thread: Optional[threading.Thread] = None
-            self._stop = threading.Event()
-            self.failure_count = 0
-            self.consecutive_failures = 0
-            self.first_failure_at = None
-            self.last_error = None
-            self.last_error_at = None
-
-        def start(self):
-            if self._thread and self._thread.is_alive():
-                return
-            self._stop.clear()
-            self._thread = threading.Thread(target=self._run, daemon=True, name="VisionInferenceLoop")
-            self._thread.start()
-
-        def stop(self):
-            self._stop.set()
-            if self._thread and threading.current_thread() is not self._thread:
-                self._thread.join(timeout=3.0)
-                if self._thread.is_alive():
-                    logger.warning("[VisionSystem] inference worker did not stop within 3s.")
-                else:
-                    self._thread = None
-
-        def set_calibration(self, matrix, corners=None, output_size=None):
-            with self._lock:
-                self.corrector.set_matrix(
-                    matrix,
-                    corners=corners,
-                    output_size=output_size or (config.WARP_WIDTH, config.WARP_HEIGHT),
-                )
-                self._corners = self.corrector.corners.tolist() if self.corrector.corners is not None else corners
-                return self.corrector.matrix
-
-        def update_corners(self, corners):
-            with self._lock:
-                matrix = self.corrector.set_corners(
-                    corners,
-                    output_size=(config.WARP_WIDTH, config.WARP_HEIGHT),
-                )
-                self._corners = self.corrector.corners.tolist()
-                return matrix
-
-        def _run(self):
-            while not self._stop.is_set():
-                frame = frame_buffer.get_raw(timeout=0.1)
-                if frame is None:
-                    time.sleep(0.02)
-                    continue
-
-                try:
-                    start = time.time()
-                    with self._lock:
-                        calibrated = self.corrector.is_calibrated
-                        work_frame = self.corrector.warp(frame) if calibrated else frame
-                        board_corners = list(self._corners) if self._corners is not None else None
-
-                    processed = self.preprocessor.process(work_frame)
-                    detections = self.detector.detect(processed if processed is not None else work_frame)
-                    coordinate_space = "rectified_board" if calibrated else "camera_frame"
-                    detections_payload = self._serialize_detections(
-                        detections,
-                        work_frame=work_frame,
-                        coordinate_space=coordinate_space,
-                        calibrated=calibrated,
-                    )
-                    latency_ms = (time.time() - start) * 1000.0
-                    payload = {
-                        "timestamp": start,
-                        "work_frame": work_frame,
-                        "detections": detections_payload,
-                        "latency_ms": latency_ms,
-                        "calibrated": calibrated,
-                        "board_corners": board_corners,
-                        "coordinate_space": coordinate_space,
-                    }
-                    frame_buffer.put_detection(payload)
-                    bus.publish(
-                        BaseEvent.create(
-                            event_type=EventType.VISION_BOARD_DETECTED,
-                            source="vision_system",
-                            payload={
-                                "timestamp": payload["timestamp"],
-                                "detections": payload["detections"],
-                                "latency_ms": latency_ms,
-                                "calibrated": calibrated,
-                                "board_corners": board_corners,
-                            },
-                        )
-                    )
-                    self.consecutive_failures = 0
-                    self.first_failure_at = None
-                except Exception as exc:
-                    now = time.time()
-                    if self.consecutive_failures == 0:
-                        self.first_failure_at = now
-                    self.failure_count += 1
-                    self.consecutive_failures += 1
-                    self.last_error = str(exc)
-                    self.last_error_at = now
-                    logger.warning(f"[VisionSystem] inference loop failed: {exc}", exc_info=True)
-                    time.sleep(0.2)
-
-        def _serialize_detections(self, detections, *, work_frame, coordinate_space: str, calibrated: bool):
-            height, width = work_frame.shape[:2]
-            frame_size = (int(width), int(height))
-            if self.mapper is not None:
-                payloads = self.mapper.describe_detections(
-                    detections,
-                    coordinate_space=coordinate_space,
-                    frame_size=frame_size,
-                )
-            else:
-                payloads = [
-                    item.to_dict(
-                        coordinate_space=coordinate_space,
-                        frame_size=frame_size,
-                    )
-                    for item in detections
-                ]
-
-            if not calibrated:
-                return payloads
-
-            for payload in payloads:
-                try:
-                    bbox = payload.get("bbox_xyxy") or payload.get("bbox")
-                    anchor = payload.get("anchor_point")
-                    payload["raw_bbox"] = self.corrector.inverse_map_bbox(bbox)
-                    if isinstance(anchor, (list, tuple)) and len(anchor) == 2:
-                        raw_anchor = self.corrector.inverse_map_point(anchor[0], anchor[1])
-                        payload["raw_anchor_point"] = [float(raw_anchor[0]), float(raw_anchor[1])]
-                    payload["raw_coordinate_space"] = "camera_frame"
-                except Exception:
-                    logger.debug("[VisionSystem] failed to inverse-map detection bbox", exc_info=True)
-            return payloads
 
     class VisionSystem:
         """
@@ -419,7 +288,7 @@ def _build_real_vision_system():
             self.fen_gen = FENGenerator(rows=config.BOARD_ROWS, cols=config.BOARD_COLS)
 
             self.renderer = OverlayRenderer(self.coord_system)
-            self.overlay_manager = OverlayManager(self.renderer)
+            self.overlay_manager = OverlayManager(self.renderer, corrector=self.corrector)
             self.streamer = MJPEGStreamer(self.overlay_manager)
             self.board_corners = None
             self.calibrator = BoardCalibrator(
@@ -497,7 +366,7 @@ def _build_real_vision_system():
 
         def detect_board_corners(self, frame=None):
             if frame is None:
-                frame = frame_buffer.get_raw(timeout=0.2)
+                frame = frame_buffer.get_latest_raw(timeout=0.2)
             if frame is None:
                 return None
             corners = self.calibrator.detect_auto(frame)
@@ -577,6 +446,9 @@ def _build_real_vision_system():
 
         def get_video_stream(self):
             return self.streamer.generate()
+
+        def detect_frame(self, frame, *, publish: bool = True, source: str = "tmvision_http") -> dict:
+            return self.worker.process_frame(frame, publish=publish, source=source)
 
         def get_status(self) -> dict:
             model_path = os.path.abspath(getattr(config, "YOLO_MODEL_PATH", "") or "")
@@ -700,10 +572,12 @@ def _build_real_vision_system():
 
             board_state = self.mapper.map_detections(normalized)
             self.last_frame_processed["board_state"] = dict(board_state)
-            stable_state = self.validator.validate(board_state)
+            turn = self._current_turn_for_fen()
+            stable_state = self.validator.validate(board_state, turn=turn)
+            self.last_frame_processed["reconciliation"] = getattr(self.validator, "last_reconciliation", {})
 
             if stable_state:
-                fen = self.fen_gen.generate(stable_state, turn=self._current_turn_for_fen())
+                fen = self.fen_gen.generate(stable_state, turn=turn)
                 return fen
 
             return None

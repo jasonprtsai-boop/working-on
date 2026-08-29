@@ -1,4 +1,5 @@
 import time
+import asyncio
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -22,7 +23,7 @@ class VisionPipeline:
         self.board_mapper = board_mapper
         self._last_result = None
 
-    async def process(self, frame: np.ndarray, turn: str = "w") -> Optional[VisionResultDTO]:
+    async def process(self, frame: np.ndarray, turn: str = "w", expected_pieces: Optional[int] = None) -> Optional[VisionResultDTO]:
         """
         Process one frame:
         frame -> homography transform -> OpenCV preprocess -> YOLO detect -> FEN generate.
@@ -50,7 +51,15 @@ class VisionPipeline:
         if detector_input is None:
             detector_input = enhanced
 
-        raw_detections = self._timed("inference", timings, lambda: list(self.detector.detect(detector_input) or []))
+        try:
+            loop = asyncio.get_running_loop()
+            raw_detections = await loop.run_in_executor(None, lambda: list(self.detector.detect(detector_input, expected_count=expected_pieces) or []))
+            timings["inference"] = round((time.perf_counter() - (total_start + sum(timings.values()) / 1000.0)) * 1000, 3)
+        except Exception as exc:
+            logger.warning("[VisionPipeline] inference stage failed: %s", exc, exc_info=True)
+            raw_detections = []
+            timings["inference"] = 0.0
+
         if raw_detections is None:
             raw_detections = []
 

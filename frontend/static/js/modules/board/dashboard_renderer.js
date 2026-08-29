@@ -108,20 +108,9 @@ function renderSafety(snapshot) {
     const ui = snapshot.ui || {};
     const robot = snapshot.robot || {};
     const vision = snapshot.vision || {};
-    const phase = String(ui.phase || '').toUpperCase();
-    const overlayActive = document.getElementById('pause-overlay')?.classList.contains('active') || false;
-    const explicitStop = firstDefined(
-        ui.estop_triggered,
-        ui.e_stop,
-        ui.emergency_stop,
-        robot.estop_triggered,
-        robot.global_stop,
-    );
-    const isStopped = explicitStop !== undefined ? Boolean(explicitStop) : phase === 'EMERGENCY' || overlayActive;
     const safeMode = firstDefined(ui.safe_mode, ui.safeMode, robot.safe_mode, robot.safeMode, vision.safe_mode, vision.safeMode);
     const camera = classifyCamera(vision);
 
-    setStatus('dashboardSafetyEstop', isStopped ? '已觸發' : '正常', isStopped ? 'status-error' : 'status-ok');
     if (safeMode === undefined) {
         setStatus('dashboardSafetySafeMode', '未提供', 'status-warning');
     } else {
@@ -189,14 +178,23 @@ function updateSessionTime() {
 function setText(key, value) {
     const element = UIRegistry.get(key);
     if (!element) return;
-    element.textContent = String(value ?? '--');
+    const newText = String(value ?? '--');
+    if (element.textContent !== newText) {
+        element.textContent = newText;
+    }
 }
 
 function setStatus(key, value, className) {
     const element = UIRegistry.get(key);
     if (!element) return;
-    element.textContent = String(value ?? '--');
-    element.className = className || '';
+    const newText = String(value ?? '--');
+    if (element.textContent !== newText) {
+        element.textContent = newText;
+    }
+    const newClass = className || '';
+    if (element.className !== newClass) {
+        element.className = newClass;
+    }
 }
 
 function translateTurn(turn) {

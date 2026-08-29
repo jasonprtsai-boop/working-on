@@ -3,7 +3,6 @@ export const uiState = {
     view: "view-landing",
     alerts: [],
     syncLatency: 0,
-    estop_triggered: undefined,
     safe_mode: undefined,
     participant_id: "",
     ai_mode: "",
@@ -20,7 +19,6 @@ export const uiState = {
 
 export function updateUIState(payload) {
     uiState.phase = payload.pipeline?.stage || payload.phase || uiState.phase;
-    uiState.estop_triggered = payload.estop_triggered ?? payload.e_stop ?? payload.emergency_stop ?? uiState.estop_triggered;
     uiState.safe_mode = payload.safe_mode ?? payload.safeMode ?? uiState.safe_mode;
     uiState.participant_id = payload.participant_id ?? payload.participantId ?? uiState.participant_id;
     uiState.ai_mode = payload.ai_mode ?? payload.aiMode ?? uiState.ai_mode;

@@ -37,6 +37,7 @@ EXCLUDED_PATH_PREFIXES = {
     ("analysis_artifacts",),
     ("backend", "data"),
     ("data",),
+    ("docx_work",),
     ("frontend", "tests"),
     ("reports",),
     ("scripts", "maintenance"),
@@ -45,7 +46,6 @@ EXCLUDED_PATH_PREFIXES = {
 }
 
 EXCLUDED_FILE_PATHS = {
-    ("docs", "CHANGESET_TRIAGE.md"),
     ("scripts", "audit_dependencies.py"),
     ("scripts", "audit_project.py"),
     ("scripts", "check_artifact_hygiene.py"),
@@ -58,8 +58,6 @@ EXCLUDED_FILE_PATHS = {
     ("scripts", "test_camera.py"),
     ("scripts", "test_export.py"),
     ("scripts", "test_vision_pipeline.py"),
-    ("PLANS.md",),
-    ("jest.config.cjs",),
 }
 
 EXCLUDED_FILE_NAMES = {

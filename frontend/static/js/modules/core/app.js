@@ -23,7 +23,6 @@ import {
 } from './api_client.js';
 
 const ADMIN_ONLY_CONTROL_IDS = [
-    'btn-estop-trigger',
     'btn-export-excel',
     'btn-export-csv',
     'btn-resume-overlay',
@@ -41,8 +40,8 @@ const setupWizardState = {
     preflight: null,
     commissioning: null,
 };
-const VIDEO_RECONNECT_BASE_MS = 800;
-const VIDEO_RECONNECT_MAX_MS = 6000;
+const VIDEO_RECONNECT_BASE_MS = 5000;
+const VIDEO_RECONNECT_MAX_MS = 30000;
 const VISION_STALE_THRESHOLD_MS = 3000;
 const LAB_ROBOT_DEFAULTS = {
     'robot.connection.adapter': 'tmflow_json',
@@ -66,16 +65,6 @@ document.addEventListener('DOMContentLoaded', () => {
     setupSocketStatus(socketClient, UIRegistry);
     loadInitialStateSnapshot();
 
-    socketClient.on('ui_lock', (data) => {
-        if (data?.locked === false) {
-            hideSystemOverlay();
-            commit('DIAGNOSTICS.UPDATED', { ui: { estop_triggered: false, phase: 'READY' } });
-            window.showAlert?.(data?.reason || '緊急停止已解除。', 'success');
-            return;
-        }
-        showSystemOverlay(data?.reason || '已觸發緊急停止。');
-        commit('DIAGNOSTICS.UPDATED', { ui: { estop_triggered: true, phase: 'EMERGENCY' } });
-    });
     socketClient.on('AUTH_ERROR', (payload) => {
         if (payload?.code === 'unauthorized') clearAdminToken();
         refreshAuthorizationUI();
@@ -126,6 +115,7 @@ function installGlobalHelpers() {
 function setupUI() {
     bindClick('btn-role-player', () => switchView('view-player'));
     bindClick('btn-player-start', startPlayerGame);
+    bindClick('btn-player-vision-capture', submitPlayerDone);
     bindClick('btn-role-console', requestConsoleAccess);
     bindClick('btn-role-setup', requestSetupAccess);
     bindClick('btn-exit', () => switchView('view-landing'));
@@ -136,9 +126,7 @@ function setupUI() {
     bindClick('btn-video-reconnect', () => reconnectVideo({ force: true }));
     bindClick('btn-toggle-setup', requestSetupAccess);
     bindClick('btn-toggle-status', () => switchPane('pane-status-view', 'btn-toggle-status'));
-    bindClick('btn-estop-trigger', triggerEmergencyStop);
-    bindClick('btn-player-estop', triggerPlayerEmergencyStop);
-    bindClick('btn-resume-overlay', clearEmergencyStop);
+    bindClick('btn-resume-overlay', resumeFromOverlay);
     bindClick('btn-export-excel', exportExcelReport);
     bindClick('btn-export-csv', exportCsvReport);
     bindClick('btn-auth-cancel', hideAuthOverlay);
@@ -284,44 +272,17 @@ function setupSidebarTabs() {
     });
 }
 
-async function clearEmergencyStop() {
-    if (!canUseLiveAdminControls()) {
-        window.showAlert?.('控制通道尚未就緒。', 'warning');
-        refreshAuthorizationUI();
-        return;
-    }
+async function resumeFromOverlay() {
+    if (!requireLiveAdminControls()) return;
     try {
-        await apiJson('/api/estop/reset', { method: 'POST', body: JSON.stringify({ reason: 'operator_reset' }) });
+        await apiJson('/api/control', {
+            method: 'POST',
+            body: JSON.stringify({ action: 'resume', payload: { source: 'overlay' } }),
+        });
         hideSystemOverlay();
-        commit('DIAGNOSTICS.UPDATED', { ui: { estop_triggered: false, phase: 'READY' } });
+        commit('DIAGNOSTICS.UPDATED', { ui: { phase: 'READY' } });
     } catch (error) {
-        window.showAlert?.(error?.message || '解除緊急停止失敗。', 'error');
-    }
-}
-
-async function triggerEmergencyStop() {
-    if (!canUseLiveAdminControls()) {
-        window.showAlert?.('控制通道尚未就緒。', 'warning');
-        refreshAuthorizationUI();
-        return;
-    }
-    showSystemOverlay('主控台已觸發緊急停止。');
-    commit('DIAGNOSTICS.UPDATED', { ui: { estop_triggered: true, phase: 'EMERGENCY' } });
-    try {
-        await apiJson('/api/estop/trigger', { method: 'POST', body: JSON.stringify({ reason: 'frontend_console' }) });
-    } catch (error) {
-        window.showAlert?.(error?.message || '觸發緊急停止失敗。', 'error');
-    }
-}
-
-async function triggerPlayerEmergencyStop() {
-    showSystemOverlay('玩家介面已觸發緊急停止。');
-    commit('DIAGNOSTICS.UPDATED', { ui: { estop_triggered: true, phase: 'EMERGENCY' } });
-    try {
-        await apiJson('/api/player/estop', { method: 'POST', body: JSON.stringify({ reason: 'player_view' }) });
-        window.showAlert?.('已觸發緊急停止。', 'warning');
-    } catch (error) {
-        window.showAlert?.(error?.message || '觸發緊急停止失敗。', 'error');
+        window.showAlert?.(error?.message || '恢復監控失敗。', 'error');
     }
 }
 
@@ -406,6 +367,7 @@ function setupSettingsControls() {
     bindClick('btn-setup-lab-defaults', applySetupLabDefaults);
     bindClick('btn-setup-init-test', runSetupInitializationTest);
     bindSubmit('setup-settings-form', saveSetupSettings);
+    setupSetupPaneTabs();
     subscribe('robot', (robot) => renderSetupRobotStatus(robot));
     document.querySelectorAll('[data-setup-test]').forEach((button) => {
         button.addEventListener('click', () => runSetupHardwareTest(button.dataset.setupTest));
@@ -418,6 +380,30 @@ function setupSettingsControls() {
         field.addEventListener('input', markSetupDirty);
         field.addEventListener('change', markSetupDirty);
     });
+}
+
+function setupSetupPaneTabs() {
+    const form = document.getElementById('setup-settings-form');
+    const tabs = Array.from(document.querySelectorAll('[data-setup-pane-target]'));
+    if (!form || tabs.length === 0) return;
+
+    const selectPane = (target) => {
+        const normalized = target === 'live' ? 'live' : 'essential';
+        form.dataset.setupTab = normalized;
+        tabs.forEach((tab) => {
+            const active = tab.dataset.setupPaneTarget === normalized;
+            tab.classList.toggle('active', active);
+            tab.setAttribute('aria-selected', active ? 'true' : 'false');
+        });
+        if (normalized === 'live') {
+            refreshSetupRobotStatus({ quiet: true });
+        }
+    };
+
+    tabs.forEach((tab) => {
+        tab.addEventListener('click', () => selectPane(tab.dataset.setupPaneTarget));
+    });
+    selectPane(form.dataset.setupTab);
 }
 
 async function loadSetupSettings({ quiet = false } = {}) {
@@ -438,11 +424,7 @@ async function loadSetupSettings({ quiet = false } = {}) {
 
 async function saveSetupSettings(event) {
     event?.preventDefault?.();
-    if (!canUseSetupControls()) {
-        window.showAlert?.('系統設定尚未解鎖。', 'warning');
-        refreshAuthorizationUI();
-        return false;
-    }
+    if (!requireSetupControls()) return false;
 
     try {
         const settings = collectSetupSettings();
@@ -483,11 +465,7 @@ async function refreshSetupCameras({ quiet = false } = {}) {
 }
 
 async function autoCalibrateSetupVision() {
-    if (!canUseSetupControls()) {
-        window.showAlert?.('系統設定尚未解鎖。', 'warning');
-        refreshAuthorizationUI();
-        return;
-    }
+    if (!requireSetupControls()) return;
     try {
         const payload = await apiJson('/api/vision/calibration', {
             method: 'POST',
@@ -520,11 +498,7 @@ async function refreshSetupPreflight({ quiet = false } = {}) {
 }
 
 async function runSetupInitializationTest() {
-    if (!canUseSetupControls()) {
-        window.showAlert?.('系統設定尚未解鎖。', 'warning');
-        refreshAuthorizationUI();
-        return false;
-    }
+    if (!requireSetupControls()) return false;
     setTextById('setup-init-result', '正在儲存設定');
     const saved = await saveSetupSettings();
     if (!saved) return false;
@@ -533,11 +507,7 @@ async function runSetupInitializationTest() {
 }
 
 async function runSetupHardwareTest(action) {
-    if (!canUseSetupControls()) {
-        window.showAlert?.('系統設定尚未解鎖。', 'warning');
-        refreshAuthorizationUI();
-        return false;
-    }
+    if (!requireSetupControls()) return false;
     if (!action) return false;
     setTextById('setup-hardware-test-status', '測試中');
     if (action === 'connect') setTextById('setup-init-result', '測試中');
@@ -641,11 +611,7 @@ function setupFormatEndpoint(robot = {}, connection = {}) {
 }
 
 function applySetupLabDefaults() {
-    if (!canUseSetupControls()) {
-        window.showAlert?.('系統設定尚未解鎖。', 'warning');
-        refreshAuthorizationUI();
-        return;
-    }
+    if (!requireSetupControls()) return;
     Object.entries(LAB_ROBOT_DEFAULTS).forEach(([path, value]) => setSetupFieldValue(path, value));
     markSetupDirty();
     renderSetupInitializationSummary({}, '尚未儲存');
@@ -774,11 +740,7 @@ async function refreshSetupVisionSourceStatus({ quiet = false } = {}) {
 }
 
 async function testSetupVisionSource() {
-    if (!canUseSetupControls()) {
-        window.showAlert?.('設定權限尚未通過。', 'warning');
-        refreshAuthorizationUI();
-        return false;
-    }
+    if (!requireSetupControls('設定權限尚未通過。')) return false;
     setTextById('setup-vision-source-test-status', '儲存設定中');
     const saved = await saveSetupSettings();
     if (!saved) return false;
@@ -945,11 +907,7 @@ function numericSetupField(field, path) {
 }
 
 function selectSetupVisionSource(source) {
-    if (!canUseSetupControls()) {
-        window.showAlert?.('設定權限尚未通過。', 'warning');
-        refreshAuthorizationUI();
-        return;
-    }
+    if (!requireSetupControls('設定權限尚未通過。')) return;
     const normalized = normalizeSetupVisionSource(source);
     setSetupFieldValue('vision.source', normalized);
     renderVisionSourceControls(normalized);
@@ -959,6 +917,7 @@ function selectSetupVisionSource(source) {
 function normalizeSetupVisionSource(source) {
     const value = String(source || 'opencv').trim().toLowerCase();
     if (['usb', 'usb_camera', 'camera', 'opencv_usb'].includes(value)) return 'opencv';
+    if (['tmvision', 'tmvision_http', 'eih', 'eih_http', 'external_detection'].includes(value)) return 'tmvision_http';
     if (['tmflow', 'tmflow_camera', 'tmflow_json_camera'].includes(value)) return 'tmflow_json';
     return value === 'tmflow_json' ? 'tmflow_json' : 'opencv';
 }
@@ -974,7 +933,10 @@ function renderVisionSourceControls(source) {
     });
     const tmflowSettings = document.getElementById('setup-tmflow-vision-settings');
     if (tmflowSettings) tmflowSettings.classList.toggle('hidden', normalized !== 'tmflow_json');
-    setTextById('setup-vision-source-status', normalized === 'tmflow_json' ? 'TMflow JSON' : 'USB / OpenCV');
+    const sourceLabel = normalized === 'tmvision_http'
+        ? 'TMvision HTTP'
+        : (normalized === 'tmflow_json' ? 'TMflow JSON' : 'USB / OpenCV');
+    setTextById('setup-vision-source-status', sourceLabel);
 }
 
 function renderSetupVisionSourceStatus(payload = {}) {
@@ -992,7 +954,9 @@ function renderSetupVisionSourceStatus(payload = {}) {
     const running = camera.running === true;
     const frames = Number(camera.frames_received);
     const lastError = String(camera.last_error || '').trim();
-    let text = source === 'tmflow_json' ? 'TMflow JSON' : 'USB / OpenCV';
+    let text = source === 'tmvision_http'
+        ? 'TMvision HTTP'
+        : (source === 'tmflow_json' ? 'TMflow JSON' : 'USB / OpenCV');
     if (running || connected) text += connected ? ' 已連線' : ' 啟動中';
     if (Number.isFinite(frames) && frames > 0) text += ` / ${frames} frames`;
     if (payload.test?.frames_injected) text += ` / test ${payload.test.frames_injected}`;
@@ -1270,6 +1234,20 @@ function canUseSetupControls() {
     return hasSetupAccess();
 }
 
+function requireLiveAdminControls(message = '控制通道尚未就緒。') {
+    if (canUseLiveAdminControls()) return true;
+    window.showAlert?.(message, 'warning');
+    refreshAuthorizationUI();
+    return false;
+}
+
+function requireSetupControls(message = '系統設定尚未解鎖。') {
+    if (canUseSetupControls()) return true;
+    window.showAlert?.(message, 'warning');
+    refreshAuthorizationUI();
+    return false;
+}
+
 function refreshAuthorizationUI() {
     const isAdmin = hasAdminAccess();
     const hasSetup = hasSetupAccess();
@@ -1407,35 +1385,33 @@ async function submitSetupLogin(event) {
 }
 
 function showAuthOverlay() {
-    const overlay = document.getElementById('auth-overlay');
-    if (!overlay) return;
-    overlay.classList.remove('hidden');
-    overlay.classList.add('active');
-    overlay.setAttribute('aria-hidden', 'false');
-    const input = document.getElementById('admin-password');
-    setTimeout(() => input?.focus?.(), 0);
+    showCredentialOverlay('auth-overlay', 'admin-password');
 }
 
 function hideAuthOverlay() {
-    const overlay = document.getElementById('auth-overlay');
-    if (!overlay) return;
-    overlay.classList.add('hidden');
-    overlay.classList.remove('active');
-    overlay.setAttribute('aria-hidden', 'true');
+    hideCredentialOverlay('auth-overlay');
 }
 
 function showSetupAuthOverlay() {
-    const overlay = document.getElementById('setup-auth-overlay');
+    showCredentialOverlay('setup-auth-overlay', 'setup-password');
+}
+
+function hideSetupAuthOverlay() {
+    hideCredentialOverlay('setup-auth-overlay');
+}
+
+function showCredentialOverlay(overlayId, inputId) {
+    const overlay = document.getElementById(overlayId);
     if (!overlay) return;
     overlay.classList.remove('hidden');
     overlay.classList.add('active');
     overlay.setAttribute('aria-hidden', 'false');
-    const input = document.getElementById('setup-password');
+    const input = document.getElementById(inputId);
     setTimeout(() => input?.focus?.(), 0);
 }
 
-function hideSetupAuthOverlay() {
-    const overlay = document.getElementById('setup-auth-overlay');
+function hideCredentialOverlay(overlayId) {
+    const overlay = document.getElementById(overlayId);
     if (!overlay) return;
     overlay.classList.add('hidden');
     overlay.classList.remove('active');
@@ -1474,6 +1450,7 @@ function updatePlayerGuide() {
 
     const visionStatus = playerVisionStatus(vision);
     const robotStatus = playerRobotStatus(robot, engine, turn);
+    updateVisionCaptureButton(vision);
     setTextById('player-guide-vision', visionStatus.text);
     setGuideState('player-guide-vision-card', visionStatus.state);
     setTextById('player-guide-robot', robotStatus.text);
@@ -1481,10 +1458,6 @@ function updatePlayerGuide() {
 
     if (!playerGameStarted) {
         setPlayerGuideCopy('等待開始', '請按下開始對局', '開始後，系統會提示輪到哪一方、辨識是否成功，以及機械手臂是否準備動作。');
-        return;
-    }
-    if (robot.estop_triggered || robot.global_stop || ui.estop_triggered) {
-        setPlayerGuideCopy('緊急停止', '系統已停止，請等待工作人員處理', '請勿移動棋盤或伸手靠近機械手臂。');
         return;
     }
     if (robot.busy) {
@@ -1499,6 +1472,10 @@ function updatePlayerGuide() {
         setPlayerGuideCopy('AI 思考中', '請稍候，不需要移動棋子', '系統正在計算下一步。');
         return;
     }
+    if (visionStatus.reason === 'capture_active') {
+        setPlayerGuideCopy('辨識中', '請保持雙手離開棋盤', '系統每 2 秒擷取一次最新畫面，辨識成功後會自動停止。');
+        return;
+    }
     if (visionStatus.state === 'error') {
         setPlayerGuideCopy('辨識失敗', '請重新擺正棋子', '確認棋子放在格線交點附近，手離開棋盤後等待系統重新辨識。');
         return;
@@ -1511,7 +1488,7 @@ function updatePlayerGuide() {
         setPlayerGuideCopy('等待 AI', '現在輪到黑方', '請稍候系統計算，機械手臂動作前畫面會再次提示。');
         return;
     }
-    setPlayerGuideCopy('玩家回合', '請移動紅方棋子', '移動後請把手離開棋盤，等待系統顯示辨識成功。');
+    setPlayerGuideCopy('玩家回合', '請移動紅方棋子', '移動後請把手離開棋盤，按下我已下棋。');
 }
 
 function setPlayerGuideCopy(step, action, detail) {
@@ -1521,6 +1498,18 @@ function setPlayerGuideCopy(step, action, detail) {
 }
 
 function playerVisionStatus(vision = {}) {
+    const capture = vision.capture_session && typeof vision.capture_session === 'object' ? vision.capture_session : {};
+    const captureActive = isVisionCaptureActive(vision);
+    const captureReason = String(capture.last_reason || '').toLowerCase();
+    if (captureActive) {
+        return { state: 'warning', text: '辨識中', reason: 'capture_active' };
+    }
+    if (captureReason === 'stable_vision_result') {
+        return { state: 'ok', text: '辨識成功', reason: 'capture_complete' };
+    }
+    if (captureReason === 'timeout') {
+        return { state: 'error', text: '辨識逾時', reason: 'capture_timeout' };
+    }
     const status = String(vision.status || '').toLowerCase();
     const ageMs = Number(vision.vision_age_ms ?? vision.visionAgeMs ?? 0);
     const stale = Boolean(vision.stale || vision.is_stale || vision.isStale || ageMs > VISION_STALE_THRESHOLD_MS);
@@ -1539,9 +1528,49 @@ function playerVisionStatus(vision = {}) {
     return { state: 'standby', text: '等待棋子移動' };
 }
 
+function isVisionCaptureActive(vision = {}) {
+    const capture = vision.capture_session && typeof vision.capture_session === 'object' ? vision.capture_session : {};
+    return Boolean(vision.capture_active || capture.active);
+}
+
+function updateVisionCaptureButton(vision = {}) {
+    const button = document.getElementById('btn-player-vision-capture');
+    if (!button) return;
+    const active = isVisionCaptureActive(vision);
+    button.classList.toggle('active', active);
+    button.textContent = active ? '辨識中...' : '我已下棋';
+    button.disabled = !playerGameStarted || active;
+}
+
+async function submitPlayerDone() {
+    if (!playerGameStarted) {
+        window.showAlert?.('請先開始對局。', 'warning');
+        return;
+    }
+    const button = document.getElementById('btn-player-vision-capture');
+    if (button) button.disabled = true;
+    try {
+        const payload = await apiJson('/api/player-done', {
+            method: 'POST',
+            body: JSON.stringify({
+                source: 'player_done_button',
+            }),
+        }, 6000);
+        if (payload.vision) {
+            commit('DIAGNOSTICS.UPDATED', { vision: payload.vision });
+        }
+        updatePlayerGuide();
+        window.showAlert?.('已通知系統開始辨識。', 'success');
+    } catch (error) {
+        window.showAlert?.(error?.message || '送出玩家完成狀態失敗。', 'error');
+    } finally {
+        if (button) button.disabled = false;
+        updateVisionCaptureButton(state.snapshot.vision || {});
+    }
+}
+
 function playerRobotStatus(robot = {}, engine = {}, turn = 'red') {
     if (robot.error) return { state: 'error', text: '需要工作人員確認' };
-    if (robot.estop_triggered || robot.global_stop) return { state: 'error', text: '緊急停止中' };
     if (robot.busy) return { state: 'warning', text: '動作中，請勿靠近' };
     if (turn === 'black' && (engine.best_move || engine.bestMove || engine.bestmove)) {
         return { state: 'warning', text: '即將動作' };
@@ -1574,37 +1603,11 @@ function setupAiModeControls() {
 }
 
 async function setEngineDepth(depth) {
-    if (!canUseLiveAdminControls()) {
-        window.showAlert?.('控制通道尚未就緒。', 'warning');
-        refreshAuthorizationUI();
-        return;
-    }
-    try {
-        const payload = await apiJson('/api/runtime/engine-depth', {
-            method: 'POST',
-            body: JSON.stringify({ depth: Number(depth) }),
-        });
-        applyRuntimeControlStatus(payload);
-    } catch (error) {
-        window.showAlert?.(error?.message || '更新 AI 深度失敗。', 'error');
-    }
+    await postRuntimeControl('/api/runtime/engine-depth', { depth: Number(depth) }, '更新 AI 深度失敗。');
 }
 
 async function setAiMode(mode) {
-    if (!canUseLiveAdminControls()) {
-        window.showAlert?.('控制通道尚未就緒。', 'warning');
-        refreshAuthorizationUI();
-        return;
-    }
-    try {
-        const payload = await apiJson('/api/runtime/ai-mode', {
-            method: 'POST',
-            body: JSON.stringify({ mode }),
-        });
-        applyRuntimeControlStatus(payload);
-    } catch (error) {
-        window.showAlert?.(error?.message || '更新 AI 模式失敗。', 'error');
-    }
+    await postRuntimeControl('/api/runtime/ai-mode', { mode }, '更新 AI 模式失敗。');
 }
 
 function setupSafeModeControl() {
@@ -1615,22 +1618,13 @@ function setupSafeModeControl() {
 
 async function setSafeMode(enabled) {
     const toggle = document.getElementById('safe-mode-toggle');
-    if (!canUseLiveAdminControls()) {
+    const revertToggle = () => {
         if (toggle) toggle.checked = !enabled;
-        window.showAlert?.('控制通道尚未就緒。', 'warning');
-        refreshAuthorizationUI();
-        return;
-    }
-    try {
-        const payload = await apiJson('/api/runtime/safe-mode', {
-            method: 'POST',
-            body: JSON.stringify({ enabled }),
-        });
-        applyRuntimeControlStatus(payload);
-    } catch (error) {
-        if (toggle) toggle.checked = !enabled;
-        window.showAlert?.(error?.message || '更新安全模式失敗。', 'error');
-    }
+    };
+    await postRuntimeControl('/api/runtime/safe-mode', { enabled }, '更新安全模式失敗。', {
+        onDenied: revertToggle,
+        onError: revertToggle,
+    });
 }
 
 function setupSessionControls() {
@@ -1639,37 +1633,37 @@ function setupSessionControls() {
 }
 
 async function startExperimentSession() {
-    if (!canUseLiveAdminControls()) {
-        window.showAlert?.('控制通道尚未就緒。', 'warning');
-        refreshAuthorizationUI();
-        return;
-    }
     const input = document.getElementById('session-participant-id');
     const participantId = String(input?.value || '').trim();
-    try {
-        const payload = await apiJson('/api/runtime/session/start', {
-            method: 'POST',
-            body: JSON.stringify({ participant_id: participantId }),
-        });
-        writeSessionValue('participant_id', participantId);
-        writeSessionValue('participantId', participantId);
-        applyRuntimeControlStatus(payload);
-    } catch (error) {
-        window.showAlert?.(error?.message || '開始場次失敗。', 'error');
-    }
+    await postRuntimeControl('/api/runtime/session/start', { participant_id: participantId }, '開始場次失敗。', {
+        onSuccess: () => {
+            writeSessionValue('participant_id', participantId);
+            writeSessionValue('participantId', participantId);
+        },
+    });
 }
 
 async function endExperimentSession() {
-    if (!canUseLiveAdminControls()) {
-        window.showAlert?.('控制通道尚未就緒。', 'warning');
-        refreshAuthorizationUI();
-        return;
+    await postRuntimeControl('/api/runtime/session/end', {}, '結束場次失敗。');
+}
+
+async function postRuntimeControl(endpoint, payload, failureMessage, hooks = {}) {
+    if (!requireLiveAdminControls()) {
+        hooks.onDenied?.();
+        return null;
     }
     try {
-        const payload = await apiJson('/api/runtime/session/end', { method: 'POST', body: JSON.stringify({}) });
-        applyRuntimeControlStatus(payload);
+        const response = await apiJson(endpoint, {
+            method: 'POST',
+            body: JSON.stringify(payload || {}),
+        });
+        hooks.onSuccess?.(response);
+        applyRuntimeControlStatus(response);
+        return response;
     } catch (error) {
-        window.showAlert?.(error?.message || '結束場次失敗。', 'error');
+        hooks.onError?.(error);
+        window.showAlert?.(error?.message || failureMessage, 'error');
+        return null;
     }
 }
 

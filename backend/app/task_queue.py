@@ -19,8 +19,8 @@ class TaskQueueRegistry:
     Registry of "clear hooks" for in-flight background work.
 
     This project has multiple domain queues (engine/robot/etc.) that may or may not
-    be instantiated in a given deployment. The E-Stop chain calls `clear()` to
-    best-effort cancel pending work.
+    be instantiated in a given deployment. `clear()` is available for controlled
+    software stop and recovery flows.
     """
 
     def __init__(self):

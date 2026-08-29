@@ -279,9 +279,11 @@
 
 /* Player one-screen layout */
 .view-player.active {
-    height: 100vh;
-    min-height: 100vh;
+    height: 100dvh;
+    min-height: 100dvh;
+    max-height: 100dvh;
     overflow: hidden;
+    overscroll-behavior: none;
 }
 
 .view-player .top-nav {
@@ -310,7 +312,7 @@
 .view-player .arena-layout-centered {
     flex: 1 1 auto;
     min-height: 0;
-    height: calc(100vh - 104px);
+    height: calc(100dvh - 104px);
     padding: 10px 16px 14px;
     align-items: stretch;
     overflow: hidden;
@@ -335,7 +337,7 @@
     grid-area: board;
     align-self: center;
     justify-self: center;
-    width: min(100%, calc((100vh - 128px) * 0.86));
+    width: min(100%, calc((100dvh - 128px) * 0.86));
     max-width: 560px;
     aspect-ratio: 9 / 10;
     margin: 0;
@@ -439,18 +441,19 @@
 }
 
 .view-player .arena-layout-centered .board-col-center {
-    grid-template-columns: minmax(260px, 310px) minmax(420px, 1fr);
+    grid-template-columns: minmax(220px, 300px) minmax(360px, 640px) minmax(220px, 300px);
     grid-template-rows: auto minmax(0, 1fr) auto;
     grid-template-areas:
-        "turn board"
-        "guide board"
-        "control board";
+        "guide board turn"
+        "guide board turn"
+        "control board turn";
     gap: 18px;
-    width: min(100%, 1180px);
+    width: min(100%, 1240px);
+    justify-content: center;
 }
 
 .view-player .board-container {
-    width: min(100%, calc((100vh - 124px) * 0.86), 640px);
+    width: min(100%, calc((100dvh - 124px) * 0.86), 640px);
     max-width: 640px;
     padding: clamp(10px, 1.8vh, 18px);
     border: 1px solid #d7dee8;
@@ -498,7 +501,7 @@
 }
 
 .view-player .player-turn-panel {
-    align-self: stretch;
+    align-self: center;
     padding: 12px;
 }
 

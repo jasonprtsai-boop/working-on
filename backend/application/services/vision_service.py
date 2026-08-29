@@ -1,4 +1,3 @@
-import os
 import time
 from backend.infrastructure.vision.vision_system import vision_system
 from backend.infrastructure.vision.detection.detection_result import Detection, BoundingBox
@@ -8,6 +7,7 @@ from backend.events.models.base_event import BaseEvent
 from backend.events.event_types import EventType
 from backend.events.bus.event_bus import bus
 from backend.observability.error_reporter import publish_error_diagnostic
+from backend.infrastructure.vision.capture_session import vision_capture_session
 
 class VisionService:
     """
@@ -105,15 +105,23 @@ class VisionService:
         if not result: return
 
         # 1. Map detections to board grid
-        detections = [self._normalize_detection(item) for item in result.get("detections", [])]
-        detections = [item for item in detections if item is not None]
-        serialized_detections = [self._serialize_detection(item) for item in detections]
+        normalized_items = []
+        for raw_item in result.get("detections", []):
+            detection = self._normalize_detection(raw_item)
+            if detection is not None:
+                normalized_items.append((detection, raw_item))
+        detections = [item for item, _raw_item in normalized_items]
+        serialized_detections = [
+            self._serialize_detection(item, source=raw_item)
+            for item, raw_item in normalized_items
+        ]
         avg_confidence, min_confidence = self._confidence_summary(detections)
         board_state = self._vision.mapper.map_detections(detections)
-        turn = self._turn_from_payload(result)
+        turn = self._turn_from_payload(result, allow_state_fallback=True)
 
         # 2. Temporal validation (smoothing/stability)
-        stable_state = self._vision.validator.validate(board_state)
+        stable_state = self._vision.validator.validate(board_state, turn=turn)
+        reconciliation = self._validator_reconciliation()
 
         # 3. If stable, generate FEN and publish event
         fen = result.get("fen") or ""
@@ -144,7 +152,14 @@ class VisionService:
                 "confidence": avg_confidence,
                 "latency_ms": latency_ms,
                 "fps": self._fps_from_latency(latency_ms),
+                "reconciliation": reconciliation,
             }
+            if reconciliation.get("accepted") and reconciliation.get("move"):
+                stable_payload.update({
+                    "move": reconciliation.get("move"),
+                    "inferred_move": True,
+                    "is_capture": bool(reconciliation.get("is_capture")),
+                })
             logger.info(f"[VisionService] New stable FEN: {fen} | Trace: {trace_id}")
 
             bus.publish(BaseEvent.create(
@@ -153,6 +168,19 @@ class VisionService:
                 payload=stable_payload,
                 trace_id=trace_id
             ))
+            if vision_capture_session.is_active():
+                vision_capture_session.stop(
+                    reason="stable_vision_result",
+                    result={
+                        "fen": fen,
+                        "trace_id": trace_id,
+                        "move": stable_payload.get("move"),
+                        "detections_count": len(serialized_detections),
+                        "latency_ms": latency_ms,
+                        "reconciliation": reconciliation,
+                    },
+                )
+                vision_capture_session.publish_status(source="vision_service")
 
         # 4. Diagnostics/UI heartbeat
         timestamp = self._coerce_timestamp(result.get("timestamp"), fallback=time.time())
@@ -177,6 +205,7 @@ class VisionService:
                 "min_confidence": min_confidence,
                 "confidence": avg_confidence,
                 "stable": stable_payload is not None,
+                "reconciliation": reconciliation,
             }
         ))
 
@@ -202,10 +231,10 @@ class VisionService:
             ),
         )
 
-    def _serialize_detection(self, item: Detection) -> dict:
+    def _serialize_detection(self, item: Detection, *, source=None) -> dict:
         bbox = getattr(item, "bbox", None)
         cell = self._cell_for_detection(item)
-        return {
+        payload = {
             "class_id": getattr(item, "class_id", 0),
             "class_name": getattr(item, "class_name", ""),
             "confidence": getattr(item, "confidence", 0.0),
@@ -217,6 +246,17 @@ class VisionService:
             ],
             "cell": cell,
         }
+        if isinstance(source, dict):
+            for key in (
+                "robot_anchor_point",
+                "robot_coordinate_space",
+                "vision_to_robot_coordinate_space",
+                "raw_anchor_point",
+                "raw_coordinate_space",
+            ):
+                if key in source:
+                    payload[key] = source.get(key)
+        return payload
 
     def _cell_for_detection(self, item: Detection):
         bbox = getattr(item, "bbox", None)
@@ -240,6 +280,10 @@ class VisionService:
         if not values:
             return 0.0, 0.0
         return round(sum(values) / len(values), 4), round(min(values), 4)
+
+    def _validator_reconciliation(self) -> dict:
+        report = getattr(self._vision.validator, "last_reconciliation", {})
+        return dict(report) if isinstance(report, dict) else {}
 
     def _fen_valid(self, fen: str) -> bool:
         if not fen:

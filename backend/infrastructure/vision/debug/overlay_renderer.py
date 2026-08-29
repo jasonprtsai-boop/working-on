@@ -31,11 +31,22 @@ class OverlayRenderer:
 
             # Draw box
             cv2.rectangle(output, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            center_x = int(round((x1 + x2) / 2))
+            center_y = int(round((y1 + y2) / 2))
+            cv2.drawMarker(
+                output,
+                (center_x, center_y),
+                (0, 255, 255),
+                markerType=cv2.MARKER_CROSS,
+                markerSize=14,
+                thickness=2,
+                line_type=cv2.LINE_AA,
+            )
 
             # Draw label
-            label = f"{class_name} {confidence:.2f}"
+            label = f"{class_name} {confidence:.2f} C({center_x},{center_y})"
             cv2.putText(output, label, (x1, y1 - 10),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 255, 0), 2)
 
         return output
 

@@ -106,10 +106,8 @@ function updateUIStatus(uiState) {
         if (overlay) {
             const phase = String(uiState?.phase || '').toLowerCase();
             const paused = phase === 'paused' || phase === 'pause';
-            const emergency = phase === 'emergency' || Boolean(
-                uiState?.estop_triggered || uiState?.e_stop || uiState?.emergency_stop,
-            );
-            const locked = paused || emergency;
+            const stopped = phase === 'stopped' || phase === 'stop';
+            const locked = paused || stopped;
             overlay.classList.toggle('hidden', !locked);
             overlay.classList.toggle('active', locked);
         }
@@ -173,7 +171,6 @@ function translatePhaseLabel(phase) {
         STOPPED: '已停止',
         RESETTING: '重置中',
         ERROR: '錯誤',
-        EMERGENCY: '緊急停止',
     };
     return labels[normalized] || phase || '待命';
 }

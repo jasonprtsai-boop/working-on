@@ -9,6 +9,13 @@ from typing import Any
 
 _IMAGE_KEYS = {"image", "image_base64", "data"}
 _SECRET_KEYS = {"key", "ingest_key", "tmflow_key", "vision_key", "token"}
+_ROBOT_STATE_LABELS = {
+    0: "idle",
+    1: "ready",
+    2: "busy",
+    3: "error",
+    4: "controller_fault",
+}
 
 
 class TMflowIngestState:
@@ -36,10 +43,11 @@ class TMflowIngestState:
         position, orientation, tcp = _extract_pose(body)
         joint_angles = _extract_joints(body)
         io_state = _extract_io(body)
+        robot_status = _extract_robot_status(body)
         speed = _optional_float(_first_present(body, ("speed", "tcp_speed", "velocity")))
         timestamp = _optional_float(_first_present(body, ("timestamp", "ts", "time"))) or now
         valid_image = bool(image_result and image_result.get("ok"))
-        if not any((position, orientation, joint_angles, io_state, speed is not None, valid_image)):
+        if not any((position, orientation, joint_angles, io_state, robot_status, speed is not None, valid_image)):
             return {}
 
         telemetry = {
@@ -50,6 +58,9 @@ class TMflowIngestState:
             "remote": _remote_text(remote),
             "raw_type": str(body.get("type") or body.get("event") or "").strip(),
         }
+        raw_message = str(body.get("raw") or "").strip()
+        if raw_message:
+            telemetry["raw"] = raw_message
         if tcp:
             telemetry["tcp"] = list(tcp)
             telemetry["pose"] = {
@@ -68,6 +79,8 @@ class TMflowIngestState:
             telemetry["io"] = dict(io_state)
         if speed is not None:
             telemetry["speed"] = speed
+        if robot_status:
+            telemetry.update(copy.deepcopy(robot_status))
         if image_result:
             telemetry["image"] = _public_image_result(image_result)
 
@@ -87,6 +100,10 @@ class TMflowIngestState:
             snapshot["io"] = dict(io_state)
         if speed is not None:
             snapshot["speed"] = speed
+        if robot_status:
+            snapshot.update(copy.deepcopy(robot_status))
+        if raw_message:
+            snapshot["raw"] = raw_message
         if image_result:
             public_image = _public_image_result(image_result)
             snapshot["image"] = public_image
@@ -120,9 +137,25 @@ class TMflowIngestState:
         if not snapshot or snapshot.get("stale"):
             return status
 
-        for key in ("position", "orientation", "joint_angles", "speed"):
+        for key in (
+            "position",
+            "orientation",
+            "joint_angles",
+            "speed",
+            "heartbeat_seen",
+            "robot_state_code",
+            "robot_state_label",
+            "status_code",
+            "status_label",
+            "current_command_id",
+            "completed_command_id",
+            "error_code",
+        ):
             if key in snapshot:
                 status[key] = copy.deepcopy(snapshot[key])
+        if snapshot.get("heartbeat_seen") or "robot_state_code" in snapshot or snapshot.get("telemetry"):
+            status["connected"] = True
+            status["is_connected"] = True
 
         base_telemetry = status.get("telemetry") if isinstance(status.get("telemetry"), dict) else {}
         status["telemetry"] = {
@@ -158,6 +191,11 @@ class TMflowIngestState:
             "has_pose": bool(snapshot.get("position")),
             "has_joints": bool(snapshot.get("joint_angles")),
             "has_image": bool(snapshot.get("image")),
+            "heartbeat_seen": bool(snapshot.get("heartbeat_seen")),
+            "robot_state_code": snapshot.get("robot_state_code"),
+            "robot_state_label": snapshot.get("robot_state_label"),
+            "status_code": snapshot.get("status_code"),
+            "status_label": snapshot.get("status_label"),
         }
 
 
@@ -256,6 +294,49 @@ def _extract_io(body: dict[str, Any]) -> dict[str, Any] | None:
     return io_state or None
 
 
+def _extract_robot_status(body: dict[str, Any]) -> dict[str, Any] | None:
+    status: dict[str, Any] = {}
+    heartbeat_seen = bool(
+        body.get("heartbeat_seen")
+        or str(body.get("event") or "").strip().lower() in {"heartbeat", "ready"}
+        or str(body.get("type") or "").strip().upper() in {"TMFLOW_HEARTBEAT", "TMFLOW_READY"}
+    )
+    if heartbeat_seen:
+        status["heartbeat_seen"] = True
+
+    robot_state_code = _optional_int(_first_present(body, ("robot_state_code", "robot_state", "state_code")))
+    if robot_state_code is not None:
+        status["robot_state_code"] = robot_state_code
+        status["robot_state_label"] = str(
+            body.get("robot_state_label")
+            or _ROBOT_STATE_LABELS.get(robot_state_code)
+            or f"state_{robot_state_code}"
+        )
+    elif body.get("robot_state_label"):
+        status["robot_state_label"] = str(body.get("robot_state_label"))
+
+    status_code = _optional_int(_first_present(body, ("status_code", "status")))
+    if status_code is not None:
+        status["status_code"] = status_code
+        status["status_label"] = str(body.get("status_label") or _ROBOT_STATE_LABELS.get(status_code) or f"status_{status_code}")
+    elif body.get("status_label"):
+        status["status_label"] = str(body.get("status_label"))
+
+    for source_key, target_key in (
+        ("current_command_id", "current_command_id"),
+        ("cmd_id", "current_command_id"),
+        ("command_id", "current_command_id"),
+        ("completed_command_id", "completed_command_id"),
+        ("completed_cmd_id", "completed_command_id"),
+        ("error_code", "error_code"),
+    ):
+        value = _optional_int(body.get(source_key))
+        if value is not None and target_key not in status:
+            status[target_key] = value
+
+    return status or None
+
+
 def _pose_values(source: Any) -> list[float] | None:
     if isinstance(source, (list, tuple)):
         values = []
@@ -318,6 +399,16 @@ def _optional_float(value: Any) -> float | None:
     if not math.isfinite(number):
         return None
     return number
+
+
+def _optional_int(value: Any) -> int | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(number):
+        return None
+    return int(number)
 
 
 def _remote_text(remote: tuple[str, int] | str | None) -> str:

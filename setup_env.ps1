@@ -89,7 +89,7 @@ Write-Host "[setup] Initializing DB schema..." -ForegroundColor Cyan
 # 5) Protected asset checks
 $enginePath = "backend\infrastructure\protected_assets\engine\pikafish-avx2.exe"
 $nnuePath = "backend\infrastructure\protected_assets\engine\pikafish.nnue"
-$visionModelPath = "backend\infrastructure\protected_assets\vision\best.onnx"
+$visionModelPath = "backend\infrastructure\protected_assets\vision\best.pt"
 
 if (-not (Test-Path $enginePath)) {
   Write-Host "[setup] WARNING: engine binary not found at $enginePath." -ForegroundColor Yellow

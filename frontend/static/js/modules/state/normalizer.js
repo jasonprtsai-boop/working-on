@@ -113,8 +113,6 @@ export const Normalizer = {
             current_command: data.current_command || "",
             queue_size: data.queue_size || 0,
             safety_status: data.safety_status || "UNKNOWN",
-            estop_triggered: Boolean(data.estop_triggered || data.global_stop),
-            global_stop: Boolean(data.global_stop),
             position: data.position || data.robot_position || telemetry.pose || { x: 0, y: 0, z: 0 },
             orientation: data.orientation || telemetry.orientation || {},
             joint_angles: data.joint_angles || data.joints || data.angles || telemetry.joint_angles || {},

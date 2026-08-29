@@ -115,19 +115,33 @@ export const VisionRenderer = {
         const confidence = Number(det.confidence ?? det.score ?? 0);
         const label = det.label ?? det.class_name ?? det.className ?? det.name ?? 'obj';
         const color = this.cssColor('--accent-green', '#10b981');
-        const labelText = `${label} ${Math.round(confidence * 100)}%`;
+        const rawBox = this.readRawBox(det);
+        const center = this.readCenter(det, rawBox);
+        const centerText = center ? ` C(${Math.round(center.x)},${Math.round(center.y)})` : '';
+        const labelText = `${label} ${Math.round(confidence * 100)}%${centerText}`;
 
         this.ctx.strokeStyle = color;
         this.ctx.lineWidth = 2;
         this.ctx.strokeRect(box.x, box.y, box.w, box.h);
 
-        this.ctx.font = '10px JetBrains Mono, monospace';
-        const textWidth = Math.ceil(this.ctx.measureText(labelText).width);
-        const labelY = Math.max(2, box.y - 16);
-        this.ctx.fillStyle = 'rgba(2, 6, 23, 0.78)';
-        this.ctx.fillRect(box.x, labelY, textWidth + 8, 14);
+        const centerX = box.x + box.w / 2;
+        const centerY = box.y + box.h / 2;
+        this.ctx.beginPath();
+        this.ctx.moveTo(centerX - 6, centerY);
+        this.ctx.lineTo(centerX + 6, centerY);
+        this.ctx.moveTo(centerX, centerY - 6);
+        this.ctx.lineTo(centerX, centerY + 6);
+        this.ctx.strokeStyle = '#facc15';
+        this.ctx.lineWidth = 2;
+        this.ctx.stroke();
+
+        this.ctx.font = '15px JetBrains Mono, monospace';
+        const labelY = Math.max(2, box.y - 20);
+        this.ctx.lineWidth = 3;
+        this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+        this.ctx.strokeText(labelText, box.x + 5, labelY + 15);
         this.ctx.fillStyle = color;
-        this.ctx.fillText(labelText, box.x + 4, labelY + 10);
+        this.ctx.fillText(labelText, box.x + 5, labelY + 15);
     },
 
     normalizeBox(det) {
@@ -172,6 +186,26 @@ export const VisionRenderer = {
             return { x: x1, y: y1, w: Math.max(0, x2 - x1), h: Math.max(0, y2 - y1) };
         }
         return null;
+    },
+
+    readCenter(det, rawBox = null) {
+        const centerPoint = det?.center_point ?? det?.centerPoint ?? det?.bbox_center;
+        if (Array.isArray(centerPoint) && centerPoint.length >= 2) {
+            const [x, y] = centerPoint.map(Number);
+            if (Number.isFinite(x) && Number.isFinite(y)) return { x, y };
+        }
+        const coordinates = det?.coordinates;
+        if (coordinates && typeof coordinates === 'object') {
+            const x = Number(coordinates.cx ?? coordinates.center_x);
+            const y = Number(coordinates.cy ?? coordinates.center_y);
+            if (Number.isFinite(x) && Number.isFinite(y)) return { x, y };
+        }
+        const x = Number(det?.center_x ?? det?.box_cx);
+        const y = Number(det?.center_y ?? det?.box_cy);
+        if (Number.isFinite(x) && Number.isFinite(y)) return { x, y };
+        const box = rawBox || this.readRawBox(det);
+        if (!box) return null;
+        return { x: box.x + box.w / 2, y: box.y + box.h / 2 };
     },
 
     sourceSize(det, raw) {
@@ -245,10 +279,12 @@ export const VisionRenderer = {
             const label = det.class_name || det.className || det.label || det.name || 'obj';
             const confidence = Number(det.confidence ?? det.score ?? 0);
             const box = this.readRawBox(det);
+            const center = this.readCenter(det, box);
             const bboxText = box
                 ? `[${Math.round(box.x)}, ${Math.round(box.y)}, ${Math.round(box.x + box.w)}, ${Math.round(box.y + box.h)}]`
                 : '[bbox n/a]';
-            return `${label} ${Math.round(confidence * 100)}% ${bboxText}`;
+            const centerText = center ? ` C(${Math.round(center.x)}, ${Math.round(center.y)})` : ' C(n/a)';
+            return `${label} ${Math.round(confidence * 100)}% ${bboxText} ${centerText}`;
         }).join(' | ');
     }
 };

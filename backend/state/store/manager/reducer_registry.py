@@ -1,5 +1,4 @@
-from typing import Dict, Callable, Any, Type
-from backend.events.event_types import EventType
+from typing import Dict, Any
 
 class ReducerRegistry:
     """

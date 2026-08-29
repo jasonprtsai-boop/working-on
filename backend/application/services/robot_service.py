@@ -9,7 +9,6 @@ from backend.utils.logger import logger
 from backend.utils import config
 from backend.utils.kinematics import kinematics
 from backend.infrastructure.robot.safety import RobotSafety
-from backend.application.services.estop import estop
 from backend.events.bus.event_bus import bus
 from backend.events.models.base_event import BaseEvent
 from backend.events.event_types import EventType
@@ -154,10 +153,6 @@ class RobotService:
         }
 
     async def move_piece(self, move_str: str, is_capture: bool = False):
-        if estop.GLOBAL_STOP:
-            logger.error("E-Stop active. Aborting robot move.")
-            return False
-
         if not self._move_lock.acquire(blocking=False):
             self.last_error = "Robot is already executing a move."
             logger.error(self.last_error)
@@ -181,19 +176,25 @@ class RobotService:
             ))
 
             try:
-                plan = self._plan_move(move_str, is_capture=is_capture)
+                if self._adapter_prefers_chess_move_commands():
+                    self._validate_move_command(move_str)
+                    ok = await self._execute_chess_move_command(move_str, is_capture=is_capture)
+                    if not ok:
+                        raise RuntimeError(f"Robot chess move command failed for {move_str}")
+                else:
+                    plan = self._plan_move(move_str, is_capture=is_capture)
 
-                if plan.capture_xy:
-                    logger.info(f"Capture detected at {move_str[2:4]}. Clearing space...")
-                    await self._execute_pick_and_place(
-                        plan.end_xy[0],
-                        plan.end_xy[1],
-                        plan.capture_xy[0],
-                        plan.capture_xy[1],
-                    )
+                    if plan.capture_xy:
+                        logger.info(f"Capture detected at {move_str[2:4]}. Clearing space...")
+                        await self._execute_pick_and_place(
+                            plan.end_xy[0],
+                            plan.end_xy[1],
+                            plan.capture_xy[0],
+                            plan.capture_xy[1],
+                        )
 
-                logger.info(f"Robot Primary Move: {move_str}")
-                await self._execute_pick_and_place(plan.start_xy[0], plan.start_xy[1], plan.end_xy[0], plan.end_xy[1])
+                    logger.info(f"Robot Primary Move: {move_str}")
+                    await self._execute_pick_and_place(plan.start_xy[0], plan.start_xy[1], plan.end_xy[0], plan.end_xy[1])
 
                 self.is_moving = False
                 self.last_error = None
@@ -260,17 +261,12 @@ class RobotService:
 
         return MotionProfile(label=label, speed=speed, acceleration=acceleration, timeout=timeout)
 
-    def _check_not_stopped(self) -> None:
-        if estop.GLOBAL_STOP:
-            raise RuntimeError("E-Stop active during robot move.")
-
     def _validate_xy_target(self, x, y) -> None:
         ok, msg = self.safety.validate_move(x, y)
         if not ok:
             raise ValueError(msg)
 
     def _plan_move(self, move_str: str, is_capture: bool = False) -> RobotMovePlan:
-        self._check_not_stopped()
         self._validate_move_command(move_str)
         self._validate_vertical_profile()
         self._validate_tool_pose()
@@ -397,9 +393,39 @@ class RobotService:
         await self._set_gripper(False)
         await self._motion(ex, ey, config.Z_SAFE, self.motion_profiles["lift"])
 
+    def _adapter_prefers_chess_move_commands(self) -> bool:
+        if not self.connected:
+            return False
+        sender = getattr(self.adapter, "send_chess_move", None)
+        return bool(callable(sender) and getattr(self.adapter, "prefers_chess_move_commands", False))
+
+    async def _execute_chess_move_command(self, move_str: str, is_capture: bool = False) -> bool:
+        sender = getattr(self.adapter, "send_chess_move", None)
+        if not callable(sender):
+            raise RuntimeError("Robot adapter does not support chess move commands.")
+        self.current_speed = float(self.motion_profiles["travel"].speed)
+        try:
+            ok = await self._wait_for_hardware_motion(
+                asyncio.to_thread(
+                    sender,
+                    move_str,
+                    is_capture=is_capture,
+                    timeout=float(config.ROBOT_MOTION_TIMEOUT_SEC),
+                ),
+                profile=MotionProfile(
+                    label="square_command",
+                    speed=self.motion_profiles["travel"].speed,
+                    acceleration=self.motion_profiles["travel"].acceleration,
+                    timeout=float(config.ROBOT_MOTION_TIMEOUT_SEC),
+                ),
+                coords=[move_str],
+            )
+        finally:
+            self.current_speed = 0.0
+        return bool(ok)
+
     async def _motion(self, x, y, z, profile: MotionProfile = None):
         profile = profile or self.motion_profiles["travel"]
-        self._check_not_stopped()
         coords = [float(x), float(y), float(z), *self._tool_pose()]
         ok, msg = self.safety.validate_position(coords[0], coords[1], coords[2])
         if not ok:
@@ -433,7 +459,6 @@ class RobotService:
             if not config.FAKE_ROBOT:
                 raise RuntimeError("Robot is not connected.")
             await asyncio.sleep(min(0.5, profile.timeout))
-        self._check_not_stopped()
         self.pos = coords[:3]
         self.current_speed = float(profile.speed) if self.is_moving else 0.0
 
@@ -450,7 +475,6 @@ class RobotService:
             ) from exc
 
     async def _set_gripper(self, closed: bool):
-        self._check_not_stopped()
         action = "close" if closed else "open"
         dwell = config.ROBOT_GRIPPER_CLOSE_DWELL_SEC if closed else config.ROBOT_GRIPPER_OPEN_DWELL_SEC
         if not math.isfinite(float(dwell)) or float(dwell) < 0:
@@ -471,7 +495,6 @@ class RobotService:
         logger.info(f"[Robot] Gripper/Vacuum {action.upper()}")
         if dwell:
             await asyncio.sleep(float(dwell))
-        self._check_not_stopped()
         self.gripper_closed = bool(closed)
 
     def _publish_status(self, event_type: EventType, payload: dict):
@@ -484,9 +507,6 @@ class RobotService:
             logger.warning(f"[RobotService] halt failed during stop_all: {exc}", exc_info=True)
         self.is_moving = False
         return True
-
-    def emergency_stop(self):
-        return self.stop_all()
 
     def disconnect(self):
         try:

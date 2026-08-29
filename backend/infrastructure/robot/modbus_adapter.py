@@ -4,10 +4,57 @@ from backend.utils import config
 
 try:
     from pyModbusTCP.client import ModbusClient
+    from pyModbusTCP.server import DataBank, ModbusServer
     MODBUS_AVAILABLE = True
 except ImportError:
     MODBUS_AVAILABLE = False
     logger.warning("pyModbusTCP not installed. ModbusAdapter can only run when FAKE_ROBOT=true.")
+
+
+if MODBUS_AVAILABLE:
+    class LoggingDataBank(DataBank):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self._last_remote_read_log = {}
+
+        def get_holding_registers(self, address, number=1, srv_info=None):
+            values = super().get_holding_registers(address, number=number, srv_info=srv_info)
+            self._log_remote_read("HR", address, number, values, srv_info)
+            return values
+
+        def get_input_registers(self, address, number=1, srv_info=None):
+            values = super().get_input_registers(address, number=number, srv_info=srv_info)
+            self._log_remote_read("IR", address, number, values, srv_info)
+            return values
+
+        def _log_remote_read(self, space, address, number, values, srv_info):
+            if not srv_info:
+                return
+            key = (space, int(address), int(number))
+            now = time.monotonic()
+            if now - self._last_remote_read_log.get(key, 0.0) < 1.0:
+                return
+            self._last_remote_read_log[key] = now
+            logger.info(
+                "[Modbus Server READ] space=%s address=%s count=%s values=%s client=%s",
+                space,
+                address,
+                number,
+                values,
+                srv_info,
+            )
+
+        def on_holding_registers_change(self, address, from_value, to_value, srv_info):
+            logger.info(
+                "[Modbus Server WRITE] address=%s from=%s to=%s client=%s",
+                address,
+                from_value,
+                to_value,
+                srv_info,
+            )
+else:
+    LoggingDataBank = None
+
 
 class ModbusAdapter:
     """
@@ -18,21 +65,40 @@ class ModbusAdapter:
         self.host = host
         self.port = port
         self.client = None
+        self.server = None
+        self.data_bank = None
         self.connected = False
+        self.last_error = None
         self._command_id = 0
 
+    @property
+    def prefers_chess_move_commands(self) -> bool:
+        return self._payload_mode() == "square_command"
+
+    def _payload_mode(self) -> str:
+        mode = str(getattr(config, "ROBOT_MODBUS_PAYLOAD_MODE", "pose")).strip().lower()
+        return mode if mode in {"pose", "square_command"} else "pose"
+
+    def _role(self) -> str:
+        role = str(getattr(config, "ROBOT_MODBUS_ROLE", "client")).strip().lower()
+        return role if role in {"client", "server"} else "client"
+
     def connect(self):
+        self.last_error = None
         if not MODBUS_AVAILABLE:
             if getattr(config, "FAKE_ROBOT", False):
                 self.connected = True
                 logger.info(f"[MOCK] Robot connected on {self.host}:{self.port} (Modbus TCP)")
                 return True
             self.connected = False
-            logger.error("pyModbusTCP is required when FAKE_ROBOT=false; refusing real robot connection.")
+            self.last_error = "pyModbusTCP is required when FAKE_ROBOT=false; refusing real robot connection."
+            logger.error(self.last_error)
             return False
 
         try:
             self._validate_register_configuration()
+            if self._role() == "server":
+                return self._connect_server()
             if not getattr(config, "FAKE_ROBOT", False) and int(self.port) != 502:
                 logger.warning(
                     "Robot Modbus port is %s, while standard Modbus TCP is 502. "
@@ -52,11 +118,53 @@ class ModbusAdapter:
                 logger.info(f"Robot connected on {self.host}:{self.port} (Modbus TCP)")
                 return True
             else:
-                logger.error(f"Failed to connect to robot at {self.host}:{self.port}")
+                self.last_error = f"Failed to connect to robot at {self.host}:{self.port}"
+                logger.error(self.last_error)
                 return False
         except Exception as e:
+            self.last_error = str(e)
             logger.error(f"Modbus Connection Error: {e}")
             return False
+
+    def _connect_server(self):
+        bind_host = str(getattr(config, "ROBOT_MODBUS_SERVER_HOST", "") or "").strip()
+        bind_port = int(getattr(config, "ROBOT_MODBUS_SERVER_PORT", self.port) or self.port)
+        if not bind_host:
+            self.last_error = "ROBOT_MODBUS_SERVER_HOST must not be empty."
+            logger.error("[Modbus] %s", self.last_error)
+            return False
+        self.data_bank = LoggingDataBank()
+        self._initialize_server_registers()
+        self.server = ModbusServer(host=bind_host, port=bind_port, no_block=True, data_bank=self.data_bank)
+        self.server.start()
+        self.connected = True
+        logger.info(
+            "Robot command Modbus server listening on %s:%s. Configure TMflow Modbus Device to this endpoint.",
+            bind_host,
+            bind_port,
+        )
+        return True
+
+    def _initialize_server_registers(self):
+        if self.data_bank is None:
+            return
+        initial_values = {
+            config.ROBOT_SQUARE_TRIGGER_REGISTER: getattr(config, "ROBOT_COMMAND_CLEAR_VALUE", 0),
+            config.ROBOT_SQUARE_STATUS_REGISTER: getattr(config, "ROBOT_STATUS_IDLE_VALUE", 0),
+            config.ROBOT_SQUARE_ERROR_CODE_REGISTER: 0,
+            config.ROBOT_SQUARE_COMPLETED_COMMAND_REGISTER: 0,
+            config.ROBOT_SQUARE_HEARTBEAT_REGISTER: 0,
+            config.ROBOT_SQUARE_ROBOT_STATE_REGISTER: 0,
+            config.ROBOT_COMMAND_TRIGGER_REGISTER: getattr(config, "ROBOT_COMMAND_CLEAR_VALUE", 0),
+            config.ROBOT_STATUS_REGISTER: getattr(config, "ROBOT_STATUS_IDLE_VALUE", 0),
+            config.ROBOT_ERROR_CODE_REGISTER: 0,
+            config.ROBOT_COMMAND_ACK_REGISTER: 0,
+        }
+        for register, value in initial_values.items():
+            try:
+                self._set_server_registers(self._register_address(register), [int(value)])
+            except Exception:
+                logger.debug("[Modbus] Failed to initialize server register %s", register, exc_info=True)
 
     def send_move(self, coordinates):
         return self.send_motion(coordinates)
@@ -67,6 +175,8 @@ class ModbusAdapter:
             return False
         if not MODBUS_AVAILABLE:
             return bool(getattr(config, "FAKE_ROBOT", False))
+        if self._role() == "server":
+            return self.server is not None and self.data_bank is not None
         try:
             if self.client is None:
                 return False
@@ -88,6 +198,10 @@ class ModbusAdapter:
         gateway maps often differ across deployments.
         """
         if not self.connected:
+            return False
+        if self._payload_mode() == "square_command":
+            self.last_error = "send_motion is disabled when ROBOT_MODBUS_PAYLOAD_MODE=square_command."
+            logger.error("[Modbus] %s Use send_chess_move instead.", self.last_error)
             return False
 
         if not MODBUS_AVAILABLE:
@@ -129,7 +243,66 @@ class ModbusAdapter:
             finally:
                 self._write_register(config.ROBOT_COMMAND_TRIGGER_REGISTER, config.ROBOT_COMMAND_CLEAR_VALUE)
         except Exception as e:
+            self.last_error = str(e)
             logger.error(f"Modbus Write Error: {e}")
+            return False
+
+    def send_chess_move(self, move_str: str, is_capture: bool = False, timeout=None):
+        """Send one logical board move for TMflow to execute from its own point table."""
+        if not self.connected:
+            return False
+
+        command_id = self._next_command_id()
+        try:
+            source = self._square_index(move_str[0:2])
+            target = self._square_index(move_str[2:4])
+            action = self._square_action(move_str, is_capture=is_capture)
+        except Exception as exc:
+            self.last_error = str(exc)
+            logger.error("[Modbus] Invalid square command: %s", exc)
+            return False
+
+        if not MODBUS_AVAILABLE:
+            if getattr(config, "FAKE_ROBOT", False):
+                logger.info(
+                    "[MOCK] Modbus square command: move=%s from=%s to=%s action=%s command_id=%s timeout=%s",
+                    move_str,
+                    source,
+                    target,
+                    action,
+                    command_id,
+                    timeout,
+                )
+                time.sleep(0.5)
+                return True
+            self.last_error = "pyModbusTCP is required when FAKE_ROBOT=false; refusing square command."
+            logger.error("[Modbus] %s", self.last_error)
+            return False
+
+        try:
+            if not self._square_ready_for_command():
+                return False
+            if not self._write_square_command_registers(source, target, action, command_id):
+                return False
+            if not self._write_register(config.ROBOT_SQUARE_TRIGGER_REGISTER, config.ROBOT_COMMAND_TRIGGER_VALUE):
+                self.last_error = "Failed to write square command trigger register."
+                logger.error("[Modbus] %s", self.last_error)
+                return False
+            try:
+                if not self._wait_for_square_motion_start(
+                    command_id,
+                    timeout=getattr(config, "ROBOT_COMMAND_ACK_TIMEOUT_SEC", 2.0),
+                ):
+                    return False
+                return self._wait_for_square_completion(
+                    command_id,
+                    timeout=timeout or config.ROBOT_MOTION_TIMEOUT_SEC,
+                )
+            finally:
+                self._write_register(config.ROBOT_SQUARE_TRIGGER_REGISTER, config.ROBOT_COMMAND_CLEAR_VALUE)
+        except Exception as exc:
+            self.last_error = str(exc)
+            logger.error("[Modbus] Square command error: %s", exc)
             return False
 
     def write_pose_registers(self, coordinates, speed=None, acceleration=None):
@@ -150,7 +323,7 @@ class ModbusAdapter:
         if not self._write_motion_profile(speed=speed, acceleration=acceleration):
             return False
         scaled = self._encode_coordinates(coordinates)
-        return bool(self.client.write_multiple_registers(config.ROBOT_MOTION_REGISTER_BASE, scaled))
+        return self._write_register_block(config.ROBOT_MOTION_REGISTER_BASE, scaled)
 
     def _encode_coordinates(self, coordinates):
         encoding = str(config.ROBOT_REGISTER_ENCODING).strip().lower()
@@ -177,9 +350,7 @@ class ModbusAdapter:
             "ROBOT_HALT_REGISTER",
             "ROBOT_GRIPPER_REGISTER",
         ):
-            value = int(getattr(config, name))
-            if value < 0 or value > 65535:
-                raise ValueError(f"{name} must be a valid Modbus register address.")
+            self._validate_register_range(name)
         if getattr(config, "ROBOT_COMMAND_HANDSHAKE_ENABLED", True):
             for name in (
                 "ROBOT_COMMAND_ID_REGISTER",
@@ -187,13 +358,24 @@ class ModbusAdapter:
                 "ROBOT_COMMAND_ACK_REGISTER",
                 "ROBOT_ERROR_CODE_REGISTER",
             ):
-                value = int(getattr(config, name))
-                if value < 0 or value > 65535:
-                    raise ValueError(f"{name} must be a valid Modbus register address.")
+                self._validate_register_range(name)
+        if self._payload_mode() == "square_command":
+            for name in (
+                "ROBOT_SQUARE_FROM_REGISTER",
+                "ROBOT_SQUARE_TO_REGISTER",
+                "ROBOT_SQUARE_ACTION_REGISTER",
+                "ROBOT_SQUARE_COMMAND_ID_REGISTER",
+                "ROBOT_SQUARE_TRIGGER_REGISTER",
+                "ROBOT_SQUARE_STATUS_REGISTER",
+                "ROBOT_SQUARE_ERROR_CODE_REGISTER",
+                "ROBOT_SQUARE_COMPLETED_COMMAND_REGISTER",
+                "ROBOT_SQUARE_HEARTBEAT_REGISTER",
+                "ROBOT_SQUARE_ROBOT_STATE_REGISTER",
+            ):
+                self._validate_register_range(name)
+            self._validate_square_mapping()
         if getattr(config, "ROBOT_GRIPPER_FEEDBACK_ENABLED", True):
-            value = int(getattr(config, "ROBOT_GRIPPER_STATUS_REGISTER"))
-            if value < 0 or value > 65535:
-                raise ValueError("ROBOT_GRIPPER_STATUS_REGISTER must be a valid Modbus register address.")
+            self._validate_register_range("ROBOT_GRIPPER_STATUS_REGISTER")
         if getattr(config, "ROBOT_TELEMETRY_ENABLED", False):
             value_width = self._value_register_width()
             for name, width in (
@@ -201,9 +383,7 @@ class ModbusAdapter:
                 ("ROBOT_TELEMETRY_JOINT_REGISTER_BASE", 6 * value_width),
                 ("ROBOT_TELEMETRY_SPEED_REGISTER", value_width),
             ):
-                value = int(getattr(config, name))
-                if value < 0 or value + width - 1 > 65535:
-                    raise ValueError(f"{name} must be a valid Modbus register range.")
+                self._validate_register_range(name, width=width)
         if float(config.ROBOT_REGISTER_SCALE) <= 0:
             raise ValueError("ROBOT_REGISTER_SCALE must be positive.")
         if int(getattr(config, "ROBOT_COMMAND_ID_WRAP", 32767)) < 1:
@@ -213,19 +393,111 @@ class ModbusAdapter:
         if not getattr(config, "ROBOT_VERIFY_STATUS_ON_CONNECT", False):
             return True
         try:
-            status = self.client.read_holding_registers(config.ROBOT_STATUS_REGISTER, 1)
+            register = self._status_register()
+            status = self.client.read_holding_registers(self._register_address(register), 1)
             if not status:
                 logger.error(
                     "Robot connected but status register %s did not respond. "
                     "Check the TM5-700 register map before sending motion.",
-                    config.ROBOT_STATUS_REGISTER,
+                    register,
                 )
                 return False
-            logger.info("Robot status register %s responded with %s.", config.ROBOT_STATUS_REGISTER, status[0])
+            logger.info("Robot status register %s responded with %s.", register, status[0])
             return True
         except Exception as exc:
             logger.error(f"Robot status register verification failed: {exc}")
             return False
+
+    def _register_address(self, register) -> int:
+        value = int(register)
+        addressing = str(getattr(config, "ROBOT_MODBUS_REGISTER_ADDRESSING", "holding_40001")).strip().lower()
+        if addressing == "holding_40001" and 40001 <= value <= 49999:
+            value -= 40001
+        if value < 0 or value > 65535:
+            raise ValueError(f"Modbus register address {register!r} is outside 0..65535.")
+        return value
+
+    def _validate_register_range(self, name: str, width: int = 1) -> None:
+        start = self._register_address(getattr(config, name))
+        if width < 1 or start + int(width) - 1 > 65535:
+            raise ValueError(f"{name} must be a valid Modbus register range.")
+
+    def _validate_square_mapping(self) -> None:
+        files = str(getattr(config, "ROBOT_SQUARE_FILES", "")).strip()
+        ranks = str(getattr(config, "ROBOT_SQUARE_RANKS", "")).strip()
+        if not files or not ranks:
+            raise ValueError("ROBOT_SQUARE_FILES and ROBOT_SQUARE_RANKS must not be empty.")
+        if len(set(files)) != len(files):
+            raise ValueError("ROBOT_SQUARE_FILES must not contain duplicate file labels.")
+        if len(set(ranks)) != len(ranks):
+            raise ValueError("ROBOT_SQUARE_RANKS must not contain duplicate rank labels.")
+
+    def _status_register(self):
+        if self._payload_mode() == "square_command":
+            return config.ROBOT_SQUARE_STATUS_REGISTER
+        return config.ROBOT_STATUS_REGISTER
+
+    def _error_code_register(self):
+        if self._payload_mode() == "square_command":
+            return config.ROBOT_SQUARE_ERROR_CODE_REGISTER
+        return config.ROBOT_ERROR_CODE_REGISTER
+
+    def _square_index(self, square: str) -> int:
+        files = str(getattr(config, "ROBOT_SQUARE_FILES", "abcdefghi")).strip()
+        ranks = str(getattr(config, "ROBOT_SQUARE_RANKS", "0123456789")).strip()
+        self._validate_square_mapping()
+        if not isinstance(square, str) or len(square) != 2:
+            raise ValueError(f"Invalid square label: {square!r}")
+        file_label = square[0].lower()
+        rank_label = square[1]
+        if file_label not in files or rank_label not in ranks:
+            raise ValueError(f"Square {square!r} is outside configured board mapping.")
+        index = ranks.index(rank_label) * len(files) + files.index(file_label)
+        index += int(getattr(config, "ROBOT_SQUARE_INDEX_BASE", 0))
+        if index < 0 or index > 65535:
+            raise ValueError(f"Square index {index} is outside 0..65535.")
+        return index
+
+    def _square_action(self, move_str: str, is_capture: bool) -> int:
+        if is_capture:
+            return int(getattr(config, "ROBOT_SQUARE_ACTION_CAPTURE_VALUE", 1))
+        if isinstance(move_str, str) and len(move_str) > 4:
+            return int(getattr(config, "ROBOT_SQUARE_ACTION_PROMOTION_VALUE", 3))
+        return int(getattr(config, "ROBOT_SQUARE_ACTION_NORMAL_VALUE", 0))
+
+    def _square_ready_for_command(self) -> bool:
+        status = self._read_register(config.ROBOT_SQUARE_STATUS_REGISTER)
+        if status is None:
+            self.last_error = "Square status register did not respond."
+            logger.error("[Modbus] %s", self.last_error)
+            return False
+        if status == getattr(config, "ROBOT_STATUS_MOVING_VALUE", 1):
+            self.last_error = "TMflow is already executing a square command."
+            logger.error("[Modbus] %s", self.last_error)
+            return False
+        if self._is_failure_status(status):
+            self.last_error = f"TMflow is in error state. code={self._read_error_code()}"
+            logger.error("[Modbus] %s", self.last_error)
+            return False
+        return True
+
+    def _write_square_command_registers(self, source: int, target: int, action: int, command_id: int) -> bool:
+        if not self._write_register(config.ROBOT_SQUARE_TRIGGER_REGISTER, config.ROBOT_COMMAND_CLEAR_VALUE):
+            self.last_error = "Failed to clear square command trigger register."
+            logger.error("[Modbus] %s", self.last_error)
+            return False
+        writes = (
+            (config.ROBOT_SQUARE_FROM_REGISTER, source),
+            (config.ROBOT_SQUARE_TO_REGISTER, target),
+            (config.ROBOT_SQUARE_ACTION_REGISTER, action),
+            (config.ROBOT_SQUARE_COMMAND_ID_REGISTER, command_id),
+        )
+        for register, value in writes:
+            if not self._write_register(register, value):
+                self.last_error = f"Failed to write square command register {register}."
+                logger.error("[Modbus] %s", self.last_error)
+                return False
+        return True
 
     def _scaled_int(self, value):
         return int(round(float(value) * float(config.ROBOT_REGISTER_SCALE)))
@@ -255,7 +527,7 @@ class ModbusAdapter:
                 registers.append(0)
             registers.append(self._unsigned_profile_register(acceleration, "acceleration"))
 
-        return bool(self.client.write_multiple_registers(config.ROBOT_PROFILE_REGISTER_BASE, registers))
+        return self._write_register_block(config.ROBOT_PROFILE_REGISTER_BASE, registers)
 
     def _unsigned_profile_register(self, value, name: str) -> int:
         scaled = self._scaled_int(value)
@@ -294,10 +566,48 @@ class ModbusAdapter:
         return self._command_id
 
     def _write_register(self, register, value) -> bool:
-        return bool(self.client.write_single_register(int(register), int(value)))
+        if self._role() == "server":
+            return self._set_server_registers(self._register_address(register), [int(value)])
+        return bool(self.client.write_single_register(self._register_address(register), int(value)))
+
+    def _write_register_block(self, register, values) -> bool:
+        if self._role() == "server":
+            return self._set_server_registers(
+                self._register_address(register),
+                [int(value) for value in values],
+            )
+        return bool(self.client.write_multiple_registers(self._register_address(register), list(values)))
+
+    def _set_server_registers(self, address, values) -> bool:
+        """Publish command words as holding registers and input registers.
+
+        TMflow 1.82 screen labels vary by controller/package. Some projects expose
+        holding-register signals as Output Register/HR/Register, while some
+        signal-table workflows read input registers. Mirroring command values keeps
+        both TMflow read paths usable; status writes still arrive through holding
+        registers.
+        """
+        if self.data_bank is None:
+            return False
+        words = [int(value) for value in values]
+        holding_ok = bool(self.data_bank.set_holding_registers(int(address), words))
+        set_input_registers = getattr(self.data_bank, "set_input_registers", None)
+        if callable(set_input_registers):
+            try:
+                set_input_registers(int(address), list(words))
+            except Exception:
+                logger.debug("[Modbus] Failed to mirror input registers at %s", address, exc_info=True)
+        return holding_ok
 
     def _read_register(self, register):
-        values = self.client.read_holding_registers(int(register), 1)
+        if self._role() == "server":
+            if self.data_bank is None:
+                return None
+            values = self.data_bank.get_holding_registers(self._register_address(register), 1)
+            if not values:
+                return None
+            return values[0]
+        values = self.client.read_holding_registers(self._register_address(register), 1)
         if not values:
             return None
         return values[0]
@@ -311,8 +621,12 @@ class ModbusAdapter:
                 return {"status_code": config.ROBOT_STATUS_IDLE_VALUE, "status_label": "idle"}
             return {}
 
-        snapshot = {}
-        status = self._read_register(config.ROBOT_STATUS_REGISTER)
+        snapshot = {
+            "role": self._role(),
+            "payload_mode": self._payload_mode(),
+            "register_addressing": str(getattr(config, "ROBOT_MODBUS_REGISTER_ADDRESSING", "holding_40001")),
+        }
+        status = self._read_register(self._status_register())
         if status is not None:
             snapshot["status_code"] = int(status)
             snapshot["status_label"] = self._status_label(status)
@@ -321,11 +635,42 @@ class ModbusAdapter:
         if error_code is not None:
             snapshot["error_code"] = int(error_code)
 
+        if self._payload_mode() == "square_command":
+            completed = self._read_register(config.ROBOT_SQUARE_COMPLETED_COMMAND_REGISTER)
+            if completed is not None:
+                snapshot["completed_command_id"] = int(completed)
+            heartbeat = self._read_register(config.ROBOT_SQUARE_HEARTBEAT_REGISTER)
+            if heartbeat is not None:
+                snapshot["heartbeat"] = int(heartbeat)
+            robot_state = self._read_register(config.ROBOT_SQUARE_ROBOT_STATE_REGISTER)
+            if robot_state is not None:
+                snapshot["robot_state_code"] = int(robot_state)
+            snapshot["square_registers"] = self._square_register_snapshot()
+        if self._role() == "server":
+            snapshot["server"] = {
+                "host": str(getattr(config, "ROBOT_MODBUS_SERVER_HOST", "")),
+                "port": int(getattr(config, "ROBOT_MODBUS_SERVER_PORT", self.port)),
+            }
+
         if getattr(config, "ROBOT_GRIPPER_FEEDBACK_ENABLED", True):
             gripper_status = self._read_register(config.ROBOT_GRIPPER_STATUS_REGISTER)
             if gripper_status is not None:
                 snapshot["gripper_status_code"] = int(gripper_status)
         return snapshot
+
+    def _square_register_snapshot(self):
+        return {
+            "from": getattr(config, "ROBOT_SQUARE_FROM_REGISTER", None),
+            "to": getattr(config, "ROBOT_SQUARE_TO_REGISTER", None),
+            "action": getattr(config, "ROBOT_SQUARE_ACTION_REGISTER", None),
+            "command_id": getattr(config, "ROBOT_SQUARE_COMMAND_ID_REGISTER", None),
+            "trigger": getattr(config, "ROBOT_SQUARE_TRIGGER_REGISTER", None),
+            "status": getattr(config, "ROBOT_SQUARE_STATUS_REGISTER", None),
+            "error_code": getattr(config, "ROBOT_SQUARE_ERROR_CODE_REGISTER", None),
+            "completed_command": getattr(config, "ROBOT_SQUARE_COMPLETED_COMMAND_REGISTER", None),
+            "heartbeat": getattr(config, "ROBOT_SQUARE_HEARTBEAT_REGISTER", None),
+            "robot_state": getattr(config, "ROBOT_SQUARE_ROBOT_STATE_REGISTER", None),
+        }
 
     def read_telemetry(self):
         """
@@ -387,7 +732,18 @@ class ModbusAdapter:
             return "complete"
         if value == int(getattr(config, "ROBOT_STATUS_ERROR_VALUE", 3)):
             return "error"
+        if value == int(getattr(config, "ROBOT_STATUS_FAULT_VALUE", 4)):
+            return "controller_fault"
         return "unknown"
+
+    def _is_failure_status(self, status) -> bool:
+        if status is None:
+            return False
+        value = int(status)
+        return value in {
+            int(getattr(config, "ROBOT_STATUS_ERROR_VALUE", 3)),
+            int(getattr(config, "ROBOT_STATUS_FAULT_VALUE", 4)),
+        }
 
     def _value_register_width(self) -> int:
         return 2 if str(config.ROBOT_REGISTER_ENCODING).strip().lower() == "scaled_int32" else 1
@@ -398,7 +754,14 @@ class ModbusAdapter:
         return self._decode_scaled_values(raw_registers, int(value_count))
 
     def _read_register_block(self, register, count):
-        values = self.client.read_holding_registers(int(register), int(count))
+        if self._role() == "server":
+            if self.data_bank is None:
+                raise RuntimeError("Modbus server data bank is not available")
+            values = self.data_bank.get_holding_registers(self._register_address(register), int(count))
+            if not values or len(values) < int(count):
+                raise RuntimeError(f"register block {register}:{count} did not return enough values")
+            return list(values[:int(count)])
+        values = self.client.read_holding_registers(self._register_address(register), int(count))
         if not values or len(values) < int(count):
             raise RuntimeError(f"register block {register}:{count} did not return enough values")
         return list(values[:int(count)])
@@ -439,8 +802,8 @@ class ModbusAdapter:
             ack = self._read_register(config.ROBOT_COMMAND_ACK_REGISTER)
             if ack == command_id:
                 return True
-            status = self._read_register(config.ROBOT_STATUS_REGISTER)
-            if status == config.ROBOT_STATUS_ERROR_VALUE:
+            status = self._read_register(self._status_register())
+            if self._is_failure_status(status):
                 logger.error("Robot reported error before command ack. code=%s", self._read_error_code())
                 return False
             time.sleep(0.05)
@@ -451,10 +814,10 @@ class ModbusAdapter:
         """Wait for the robot to report moving after acknowledging the command."""
         start_time = time.time()
         while time.time() - start_time < timeout:
-            status = self._read_register(config.ROBOT_STATUS_REGISTER)
+            status = self._read_register(self._status_register())
             if status == getattr(config, "ROBOT_STATUS_MOVING_VALUE", 1):
                 return True
-            if status == config.ROBOT_STATUS_ERROR_VALUE:
+            if self._is_failure_status(status):
                 logger.error("Robot reported error before motion start. code=%s", self._read_error_code())
                 return False
             if status == config.ROBOT_STATUS_COMPLETE_VALUE:
@@ -469,7 +832,7 @@ class ModbusAdapter:
         start_time = time.time()
         saw_moving = bool(saw_moving or command_id is None)
         while time.time() - start_time < timeout:
-            status = self._read_register(config.ROBOT_STATUS_REGISTER)
+            status = self._read_register(self._status_register())
             if status == getattr(config, "ROBOT_STATUS_MOVING_VALUE", 1):
                 saw_moving = True
             elif status == config.ROBOT_STATUS_COMPLETE_VALUE:
@@ -490,10 +853,53 @@ class ModbusAdapter:
                 ack = self._read_register(config.ROBOT_COMMAND_ACK_REGISTER)
                 if ack == command_id:
                     return True
-            elif status == config.ROBOT_STATUS_ERROR_VALUE:
+            elif self._is_failure_status(status):
                 logger.error("Robot reported motion error. code=%s", self._read_error_code())
                 return False
             time.sleep(0.1)
+        return False
+
+    def _wait_for_square_motion_start(self, command_id, timeout=2.0):
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            status = self._read_register(config.ROBOT_SQUARE_STATUS_REGISTER)
+            if status == getattr(config, "ROBOT_STATUS_MOVING_VALUE", 1):
+                return True
+            if self._is_failure_status(status):
+                self.last_error = f"TMflow reported square command error before start. code={self._read_error_code()}"
+                logger.error("[Modbus] %s", self.last_error)
+                return False
+            completed = self._read_register(config.ROBOT_SQUARE_COMPLETED_COMMAND_REGISTER)
+            if (
+                status == getattr(config, "ROBOT_STATUS_COMPLETE_VALUE", 2)
+                and bool(getattr(config, "ROBOT_SQUARE_REQUIRE_COMPLETED_COMMAND", True))
+                and completed == command_id
+            ):
+                return True
+            time.sleep(0.05)
+        self.last_error = f"Square command start timeout. command_id={command_id}"
+        logger.error("[Modbus] %s", self.last_error)
+        return False
+
+    def _wait_for_square_completion(self, command_id, timeout=10):
+        start_time = time.time()
+        require_completed = bool(getattr(config, "ROBOT_SQUARE_REQUIRE_COMPLETED_COMMAND", True))
+        while time.time() - start_time < timeout:
+            status = self._read_register(config.ROBOT_SQUARE_STATUS_REGISTER)
+            completed = self._read_register(config.ROBOT_SQUARE_COMPLETED_COMMAND_REGISTER)
+            if status == getattr(config, "ROBOT_STATUS_COMPLETE_VALUE", 2):
+                if not require_completed or completed == command_id:
+                    return True
+            elif status == getattr(config, "ROBOT_STATUS_IDLE_VALUE", 0):
+                if require_completed and completed == command_id:
+                    return True
+            elif self._is_failure_status(status):
+                self.last_error = f"TMflow reported square command error. code={self._read_error_code()}"
+                logger.error("[Modbus] %s", self.last_error)
+                return False
+            time.sleep(0.1)
+        self.last_error = f"Square command completion timeout. command_id={command_id}"
+        logger.error("[Modbus] %s", self.last_error)
         return False
 
     def _wait_for_gripper_status(self, closed: bool):
@@ -513,17 +919,24 @@ class ModbusAdapter:
 
     def _read_error_code(self):
         try:
-            return self._read_register(config.ROBOT_ERROR_CODE_REGISTER)
+            return self._read_register(self._error_code_register())
         except Exception:
             return None
 
     def halt(self):
         """Sends immediate stop signal to the configured halt register."""
         if self.connected and MODBUS_AVAILABLE:
-            self.client.write_single_register(config.ROBOT_HALT_REGISTER, config.ROBOT_HALT_VALUE)
+            self._write_register(config.ROBOT_HALT_REGISTER, config.ROBOT_HALT_VALUE)
         logger.warning("[Modbus] HALT signal sent")
 
     def disconnect(self):
         if self.client:
             self.client.close()
+        if self.server:
+            try:
+                self.server.stop()
+            except Exception:
+                logger.debug("[Modbus] server stop failed", exc_info=True)
+        self.server = None
+        self.data_bank = None
         self.connected = False

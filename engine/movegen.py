@@ -1,5 +1,3 @@
-from engine.board import Piece
-
 class MoveGen:
     def gen_all(self, board, color):
         moves = []

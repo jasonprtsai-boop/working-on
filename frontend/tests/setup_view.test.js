@@ -46,6 +46,7 @@ test('setup camera panel exposes vision source switch controls once', () => {
   });
 
   expect(countText('data-setup-vision-source="opencv"')).toBe(1);
+  expect(countText('data-setup-vision-source="tmvision_http"')).toBe(1);
   expect(countText('data-setup-vision-source="tmflow_json"')).toBe(1);
   expect(countText('id="btn-setup-test-vision-source"')).toBe(1);
   expect(setupTemplate).toContain('id="setup-vision-source-status"');
@@ -54,4 +55,13 @@ test('setup camera panel exposes vision source switch controls once', () => {
   expect(setupTemplate).toContain('id="setup-vision-channel-status"');
   expect(setupTemplate).toContain('id="setup-vision-frame-age"');
   expect(setupTemplate).toContain('id="setup-vision-reconnects"');
+});
+
+test('setup view separates essential settings from live data', () => {
+  expect(setupTemplate).toContain('data-setup-tab="essential"');
+  expect(setupTemplate).toContain('data-setup-pane-target="essential"');
+  expect(setupTemplate).toContain('data-setup-pane-target="live"');
+  expect(setupTemplate).toContain('class="setup-section setup-section-essential"');
+  expect(setupTemplate).toContain('class="setup-section setup-section-secondary"');
+  expect(setupTemplate).toContain('class="setup-live-detail setup-channel-diagnostics"');
 });

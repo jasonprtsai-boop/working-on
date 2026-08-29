@@ -21,7 +21,6 @@ const dashboardIds = [
   'dashboard-robot-joints',
   'dashboard-robot-speed',
   'dashboard-robot-telemetry-source',
-  'dashboard-safety-estop',
   'dashboard-safety-safe-mode',
   'dashboard-safety-camera-ready',
   'dashboard-exp-participant',
@@ -119,7 +118,6 @@ test('DashboardRenderer surfaces board, engine, robot, safety, and experiment da
   expect(document.getElementById('dashboard-robot-joints').textContent).toBe('J1:1.0 J2:2.0 J3:3.0 J4:4.0 J5:5.0 J6:6.0');
   expect(document.getElementById('dashboard-robot-speed').textContent).toBe('42.5 mm/s');
   expect(document.getElementById('dashboard-robot-telemetry-source').textContent).toBe('硬體');
-  expect(document.getElementById('dashboard-safety-estop').textContent).toBe('正常');
   expect(document.getElementById('dashboard-safety-safe-mode').textContent).toBe('已啟用');
   expect(document.getElementById('dashboard-safety-camera-ready').textContent).toBe('已就緒');
   expect(document.getElementById('dashboard-exp-participant').textContent).toBe('P-001');
@@ -140,7 +138,7 @@ test('DashboardRenderer keeps unsupported fields explicit instead of inventing v
     engine: {},
     robot: { connected: false, error: 'axis fault' },
     vision: { status: 'OFFLINE' },
-    ui: { phase: 'EMERGENCY' },
+    ui: { phase: 'ERROR' },
   });
 
   expect(document.getElementById('dashboard-board-turn').textContent).toBe('--');
@@ -148,7 +146,6 @@ test('DashboardRenderer keeps unsupported fields explicit instead of inventing v
   expect(document.getElementById('dashboard-engine-depth').textContent).toBe('--');
   expect(document.getElementById('dashboard-robot-status').textContent).toBe('離線');
   expect(document.getElementById('dashboard-robot-error').textContent).toBe('axis fault');
-  expect(document.getElementById('dashboard-safety-estop').textContent).toBe('已觸發');
   expect(document.getElementById('dashboard-safety-safe-mode').textContent).toBe('未提供');
   expect(document.getElementById('dashboard-safety-camera-ready').textContent).toBe('未就緒');
   expect(document.getElementById('dashboard-exp-participant').textContent).toBe('未設定');

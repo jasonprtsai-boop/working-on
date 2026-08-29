@@ -91,13 +91,13 @@ def _check_manifest(failures: list[str]) -> None:
 def _check_static(report: dict, failures: list[str]) -> None:
     model = report.get("model") or {}
     label = model.get("path")
-    if model.get("extension") != ".onnx":
-        failures.append("configured YOLO model must be .onnx")
+    if model.get("extension") not in {".pt", ".onnx"}:
+        failures.append("configured YOLO model must be .pt or .onnx")
     if not model.get("exists"):
         failures.append(f"missing YOLO model: {label}")
     if not model.get("protected"):
         failures.append(f"YOLO model is outside protected assets: {label}")
-    if model.get("extension") == ".onnx" and not model.get("readonly"):
+    if model.get("extension") in {".pt", ".onnx"} and not model.get("readonly"):
         failures.append(f"YOLO model is not read-only: {label}")
 
     dataset = report.get("dataset_mapping") or {}

@@ -12,11 +12,47 @@ def normalize_vision_source(source: str | None) -> str:
     value = str(source or "opencv").strip().lower()
     if value in {"usb", "usb_camera", "camera", "opencv_usb"}:
         return "opencv"
+    if value in {"tmvision", "tmvision_http", "eih", "eih_http", "external_detection"}:
+        return "tmvision_http"
     if value in {"tmflow", "tmflow_camera", "tmflow_json_camera"}:
         return "tmflow_json"
-    if value not in {"opencv", "tmflow_json"}:
+    if value not in {"opencv", "tmvision_http", "tmflow_json"}:
         return "opencv"
     return value
+
+
+class TMvisionHTTPFrameSource:
+    """Passive source for TMvision External Classification/Detection HTTP POSTs."""
+
+    def __init__(self):
+        self.running = False
+
+    def start(self) -> bool:
+        self.running = True
+        return True
+
+    def stop(self):
+        self.running = False
+
+    def get_status(self) -> dict:
+        try:
+            from .frame_buffer import frame_buffer
+
+            stats = frame_buffer.raw_stats() if hasattr(frame_buffer, "raw_stats") else {}
+        except Exception as exc:
+            stats = {"last_error": str(exc)}
+        latest_available = bool(stats.get("latest_frame_available"))
+        return {
+            "source": "tmvision_http",
+            "running": bool(self.running),
+            "opened": latest_available,
+            "connected": latest_available,
+            "passive": True,
+            "endpoint": "/api/vision/tmvision/detect",
+            "frames_received": int(stats.get("put_count") or 0),
+            "last_frame_age_sec": stats.get("age_sec"),
+            "last_frame_at": stats.get("last_put_at"),
+        }
 
 
 class VisionSourceManager:
@@ -28,6 +64,8 @@ class VisionSourceManager:
         self._delegate = self._build_delegate()
 
     def _build_delegate(self):
+        if self.source == "tmvision_http":
+            return TMvisionHTTPFrameSource()
         if self.source == "tmflow_json":
             return TMflowJsonFrameSource()
         return CameraManager()

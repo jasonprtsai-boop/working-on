@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 import numpy as np
 from typing import List
 from backend.utils.logger import get_logger
-from .detection_result import Detection, DetectionResult
+from .detection_result import Detection
 
 logger = get_logger(__name__)
 

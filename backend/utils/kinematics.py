@@ -1,7 +1,7 @@
 import json
 import math
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from backend.utils import config
 from backend.utils.logger import logger
@@ -23,6 +23,11 @@ class Kinematics:
         self.affine_matrix = None
         self.inverse_affine_matrix = None
         self.calibration_error = None
+        self.vision_to_robot_homography = None
+        self.robot_to_vision_homography = None
+        self.vision_to_robot_coordinate_space = "rectified_board"
+        self.vision_to_robot_calibration_error = None
+        self.vision_to_robot_samples: List[Dict[str, Any]] = []
         self._square_cache: Dict[str, Tuple[float, float]] = {}
         self._load_calibration()
 
@@ -87,6 +92,11 @@ class Kinematics:
                 self._set_affine_matrix(affine)
             else:
                 self._refresh_affine()
+
+            try:
+                self._load_vision_to_robot(data.get("vision_to_robot"))
+            except Exception:
+                logger.warning("[Kinematics] invalid vision-to-robot calibration ignored", exc_info=True)
         except Exception:
             logger.warning("[Kinematics] failed to load calibration; using defaults", exc_info=True)
             self._refresh_affine()
@@ -165,6 +175,44 @@ class Kinematics:
             return None
         file_char, rank = grid
         return 9 - int(rank), self._file_to_idx[file_char]
+
+    def vision_point_to_robot(
+        self,
+        x: float,
+        y: float,
+        *,
+        coordinate_space: Optional[str] = None,
+    ) -> Optional[Tuple[float, float]]:
+        """Map a YOLO/vision anchor point to robot-base XY using calibrated homography."""
+        if self.vision_to_robot_homography is None:
+            return None
+        expected_space = self.vision_to_robot_coordinate_space
+        requested_space = self._normalize_coordinate_space(coordinate_space or expected_space)
+        if requested_space != expected_space:
+            raise ValueError(
+                f"vision point coordinate_space must be {expected_space!r}; got {requested_space!r}"
+            )
+        robot_x, robot_y = self._apply_homography(self.vision_to_robot_homography, x, y)
+        return float(robot_x), float(robot_y)
+
+    def robot_point_to_vision(
+        self,
+        x: float,
+        y: float,
+        *,
+        coordinate_space: Optional[str] = None,
+    ) -> Optional[Tuple[float, float]]:
+        """Map robot-base XY back to the calibrated vision coordinate space."""
+        if self.robot_to_vision_homography is None:
+            return None
+        expected_space = self.vision_to_robot_coordinate_space
+        requested_space = self._normalize_coordinate_space(coordinate_space or expected_space)
+        if requested_space != expected_space:
+            raise ValueError(
+                f"vision point coordinate_space must be {expected_space!r}; got {requested_space!r}"
+            )
+        image_x, image_y = self._apply_homography(self.robot_to_vision_homography, x, y)
+        return float(image_x), float(image_y)
 
     def get_dead_zone_coords(self, slot: int = 1) -> Tuple[float, float]:
         zone = self.dead_zone_range or self._default_dead_zone_range()
@@ -258,12 +306,10 @@ class Kinematics:
         else:
             self.origin_x, self.square_size_x = self._fit_axis(
                 [(file_idx, x) for file_idx, _rank_idx, x, _y in samples],
-                self.origin_x,
                 self.square_size_x,
             )
             self.origin_y, self.square_size_y = self._fit_axis(
                 [(rank_idx, y) for _file_idx, rank_idx, _x, y in samples],
-                self.origin_y,
                 self.square_size_y,
             )
             self._refresh_affine()
@@ -283,6 +329,86 @@ class Kinematics:
             self.save_calibration(path=path)
         return self.to_dict()
 
+    def calibrate_vision_to_robot(
+        self,
+        *,
+        points: Optional[Iterable[Dict[str, Any]]] = None,
+        image_points: Optional[Iterable[Any]] = None,
+        robot_points: Optional[Iterable[Any]] = None,
+        coordinate_space: str = "rectified_board",
+        ransac_reprojection_threshold: float = 5.0,
+        persist: bool = False,
+        path: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Calibrate YOLO/vision anchor coordinates to robot-base XY.
+
+        Use coordinate_space="rectified_board" for detections after board warp, or
+        "camera_frame" for raw camera-frame pixels.
+        """
+        samples = self._normalize_vision_to_robot_samples(
+            points=points,
+            image_points=image_points,
+            robot_points=robot_points,
+        )
+        if len(samples) < 4:
+            raise ValueError("At least four vision-to-robot calibration points are required")
+
+        matrix, inlier_mask = self._fit_homography(
+            samples,
+            ransac_reprojection_threshold=ransac_reprojection_threshold,
+        )
+        calibration_error = self._vision_to_robot_error(samples, matrix, inlier_mask)
+        self.set_vision_to_robot_homography(
+            matrix,
+            coordinate_space=coordinate_space,
+            calibration_error=calibration_error,
+            points=[
+                {
+                    "image": [float(u), float(v)],
+                    "robot": [float(x), float(y)],
+                    "inlier": bool(inlier),
+                }
+                for (u, v, x, y), inlier in zip(samples, inlier_mask)
+            ],
+            persist=False,
+        )
+
+        if persist:
+            self.save_calibration(path=path)
+        return self.to_dict()
+
+    def set_vision_to_robot_homography(
+        self,
+        matrix,
+        *,
+        coordinate_space: str = "rectified_board",
+        calibration_error: Optional[Dict[str, Any]] = None,
+        points: Optional[Iterable[Dict[str, Any]]] = None,
+        persist: bool = False,
+        path: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        mat = self._normalize_homography_matrix(matrix, "vision_to_robot.homography_matrix")
+        inverse = self._invert_homography(mat)
+        self.vision_to_robot_homography = mat
+        self.robot_to_vision_homography = inverse
+        self.vision_to_robot_coordinate_space = self._normalize_coordinate_space(coordinate_space)
+        self.vision_to_robot_calibration_error = dict(calibration_error or {})
+        self.vision_to_robot_samples = [dict(point) for point in points] if points is not None else []
+        if persist:
+            self.save_calibration(path=path)
+        return self.to_dict()
+
+    def clear_vision_to_robot_calibration(self, *, persist: bool = False, path: Optional[str] = None) -> Dict[str, Any]:
+        self.vision_to_robot_homography = None
+        self.robot_to_vision_homography = None
+        self.vision_to_robot_coordinate_space = "rectified_board"
+        self.vision_to_robot_calibration_error = None
+        self.vision_to_robot_samples = []
+        if persist:
+            self.save_calibration(path=path)
+        return self.to_dict()
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "origin_x": float(self.origin_x),
@@ -293,6 +419,7 @@ class Kinematics:
             "dead_zone_range": dict(self.dead_zone_range),
             "affine_matrix": [row[:] for row in self.affine_matrix] if self.affine_matrix else None,
             "calibration_error": dict(self.calibration_error) if self.calibration_error else None,
+            "vision_to_robot": self._vision_to_robot_dict(),
             "path": str(Path(getattr(config, "CALIBRATION_FILE", "robot/calibration.json"))),
         }
 
@@ -362,6 +489,256 @@ class Kinematics:
         y = matrix[1][0] * file_idx + matrix[1][1] * rank_idx + matrix[1][2]
         return x, y
 
+    def _load_vision_to_robot(self, payload) -> None:
+        if not isinstance(payload, dict):
+            self.clear_vision_to_robot_calibration(persist=False)
+            return
+        matrix = payload.get("homography_matrix")
+        if matrix is None:
+            self.clear_vision_to_robot_calibration(persist=False)
+            return
+        self.set_vision_to_robot_homography(
+            matrix,
+            coordinate_space=payload.get("coordinate_space") or "rectified_board",
+            calibration_error=payload.get("calibration_error"),
+            points=payload.get("points"),
+            persist=False,
+        )
+
+    def _vision_to_robot_dict(self) -> Dict[str, Any]:
+        calibrated = self.vision_to_robot_homography is not None
+        return {
+            "calibrated": bool(calibrated),
+            "coordinate_space": self.vision_to_robot_coordinate_space,
+            "homography_matrix": (
+                [row[:] for row in self.vision_to_robot_homography]
+                if self.vision_to_robot_homography
+                else None
+            ),
+            "calibration_error": (
+                dict(self.vision_to_robot_calibration_error)
+                if self.vision_to_robot_calibration_error
+                else None
+            ),
+            "points": [dict(point) for point in self.vision_to_robot_samples],
+        }
+
+    def _normalize_vision_to_robot_samples(
+        self,
+        *,
+        points: Optional[Iterable[Dict[str, Any]]],
+        image_points: Optional[Iterable[Any]],
+        robot_points: Optional[Iterable[Any]],
+    ) -> List[Tuple[float, float, float, float]]:
+        samples: List[Tuple[float, float, float, float]] = []
+        if points is not None:
+            for index, point in enumerate(points):
+                image_point, robot_point = self._split_vision_to_robot_point(point, index)
+                u, v = self._normalize_point(
+                    image_point,
+                    f"points[{index}].image",
+                    x_keys=("u", "image_x", "pixel_x", "camera_x", "x"),
+                    y_keys=("v", "image_y", "pixel_y", "camera_y", "y"),
+                )
+                x, y = self._normalize_point(
+                    robot_point,
+                    f"points[{index}].robot",
+                    x_keys=("x", "robot_x", "base_x"),
+                    y_keys=("y", "robot_y", "base_y"),
+                )
+                samples.append((u, v, x, y))
+        else:
+            image_values = list(image_points or [])
+            robot_values = list(robot_points or [])
+            if len(image_values) != len(robot_values):
+                raise ValueError("image_points and robot_points must have the same length")
+            for index, (image_point, robot_point) in enumerate(zip(image_values, robot_values)):
+                u, v = self._normalize_point(image_point, f"image_points[{index}]")
+                x, y = self._normalize_point(robot_point, f"robot_points[{index}]")
+                samples.append((u, v, x, y))
+
+        self._validate_homography_samples(samples)
+        return samples
+
+    def _split_vision_to_robot_point(self, point: Dict[str, Any], index: int):
+        if not isinstance(point, dict):
+            raise ValueError(f"points[{index}] must be an object")
+        image_point = (
+            point.get("image")
+            or point.get("pixel")
+            or point.get("camera")
+            or point.get("vision")
+        )
+        robot_point = point.get("robot") or point.get("base") or point.get("world")
+        if image_point is not None and robot_point is not None:
+            return image_point, robot_point
+
+        u = point.get("u", point.get("image_x", point.get("pixel_x", point.get("camera_x"))))
+        v = point.get("v", point.get("image_y", point.get("pixel_y", point.get("camera_y"))))
+        robot_x = point.get("robot_x", point.get("base_x", point.get("x")))
+        robot_y = point.get("robot_y", point.get("base_y", point.get("y")))
+        if u is None or v is None or robot_x is None or robot_y is None:
+            raise ValueError(
+                f"points[{index}] must include image/pixel and robot/base coordinates"
+            )
+        return {"u": u, "v": v}, {"x": robot_x, "y": robot_y}
+
+    def _normalize_point(
+        self,
+        point,
+        field_name: str,
+        *,
+        x_keys=("x", "u"),
+        y_keys=("y", "v"),
+    ) -> Tuple[float, float]:
+        if isinstance(point, dict):
+            x_value = next((point.get(key) for key in x_keys if point.get(key) is not None), None)
+            y_value = next((point.get(key) for key in y_keys if point.get(key) is not None), None)
+        elif isinstance(point, (list, tuple)) and len(point) >= 2:
+            x_value, y_value = point[0], point[1]
+        else:
+            raise ValueError(f"{field_name} must be [x, y] or an object with x/y")
+        return (
+            self._finite_float(x_value, f"{field_name}.x"),
+            self._finite_float(y_value, f"{field_name}.y"),
+        )
+
+    def _validate_homography_samples(self, samples: List[Tuple[float, float, float, float]]) -> None:
+        if len(samples) < 4:
+            raise ValueError("At least four vision-to-robot calibration points are required")
+        source_points = {(round(u, 6), round(v, 6)) for u, v, _x, _y in samples}
+        target_points = {(round(x, 6), round(y, 6)) for _u, _v, x, y in samples}
+        if len(source_points) < 4:
+            raise ValueError("vision calibration image points must contain at least four unique points")
+        if len(target_points) < 4:
+            raise ValueError("vision calibration robot points must contain at least four unique points")
+
+    def _fit_homography(
+        self,
+        samples: List[Tuple[float, float, float, float]],
+        *,
+        ransac_reprojection_threshold: float,
+    ):
+        try:
+            import cv2
+            import numpy as np
+
+            src = np.array([[u, v] for u, v, _x, _y in samples], dtype=np.float64)
+            dst = np.array([[x, y] for _u, _v, x, y in samples], dtype=np.float64)
+            method = cv2.RANSAC if len(samples) > 4 else 0
+            threshold = max(0.001, float(ransac_reprojection_threshold))
+            matrix, mask = cv2.findHomography(src, dst, method, threshold)
+            if matrix is None or np.array(matrix).shape != (3, 3) or not np.isfinite(matrix).all():
+                raise ValueError("vision-to-robot homography could not be solved")
+            inliers = [True] * len(samples)
+            if mask is not None:
+                inliers = [bool(value) for value in np.array(mask).reshape(-1).tolist()]
+            return matrix.astype(float).tolist(), inliers
+        except ImportError:
+            return self._fit_homography_lstsq(samples)
+
+    def _fit_homography_lstsq(self, samples: List[Tuple[float, float, float, float]]):
+        import numpy as np
+
+        design = []
+        target = []
+        for u, v, x, y in samples:
+            design.append([u, v, 1.0, 0.0, 0.0, 0.0, -x * u, -x * v])
+            design.append([0.0, 0.0, 0.0, u, v, 1.0, -y * u, -y * v])
+            target.extend([x, y])
+        matrix = np.array(design, dtype=float)
+        values = np.array(target, dtype=float)
+        if np.linalg.matrix_rank(matrix) < 8:
+            raise ValueError("vision-to-robot homography points are degenerate")
+        coeffs, *_ = np.linalg.lstsq(matrix, values, rcond=None)
+        homography = np.array(
+            [
+                [coeffs[0], coeffs[1], coeffs[2]],
+                [coeffs[3], coeffs[4], coeffs[5]],
+                [coeffs[6], coeffs[7], 1.0],
+            ],
+            dtype=float,
+        )
+        if not np.isfinite(homography).all():
+            raise ValueError("vision-to-robot homography could not be solved")
+        return homography.tolist(), [True] * len(samples)
+
+    def _vision_to_robot_error(
+        self,
+        samples: List[Tuple[float, float, float, float]],
+        matrix,
+        inlier_mask: List[bool],
+    ) -> Dict[str, float]:
+        errors = []
+        inlier_errors = []
+        for (u, v, x, y), inlier in zip(samples, inlier_mask):
+            px, py = self._apply_homography(matrix, u, v)
+            error = math.hypot(float(px) - float(x), float(py) - float(y))
+            errors.append(error)
+            if inlier:
+                inlier_errors.append(error)
+        active = inlier_errors or errors
+        rms = math.sqrt(sum(error * error for error in active) / len(active)) if active else 0.0
+        return {
+            "rms_mm": float(rms),
+            "max_mm": float(max(active)) if active else 0.0,
+            "sample_count": int(len(samples)),
+            "inlier_count": int(sum(1 for value in inlier_mask if value)),
+        }
+
+    def _normalize_coordinate_space(self, value: Optional[str]) -> str:
+        text = str(value or "rectified_board").strip().lower()
+        aliases = {
+            "rectified": "rectified_board",
+            "rectified-board": "rectified_board",
+            "board": "rectified_board",
+            "board_pixel": "rectified_board",
+            "board_pixels": "rectified_board",
+            "board_image": "rectified_board",
+            "camera": "camera_frame",
+            "camera-frame": "camera_frame",
+            "raw": "camera_frame",
+            "raw_camera": "camera_frame",
+            "image": "camera_frame",
+            "image_frame": "camera_frame",
+        }
+        normalized = aliases.get(text, text)
+        if normalized not in {"rectified_board", "camera_frame"}:
+            raise ValueError("coordinate_space must be rectified_board or camera_frame")
+        return normalized
+
+    def _normalize_homography_matrix(self, matrix, field_name: str) -> List[List[float]]:
+        rows = [[self._finite_float(value, field_name) for value in row] for row in matrix]
+        if len(rows) != 3 or any(len(row) != 3 for row in rows):
+            raise ValueError(f"{field_name} must be a 3x3 matrix")
+        det = (
+            rows[0][0] * (rows[1][1] * rows[2][2] - rows[1][2] * rows[2][1])
+            - rows[0][1] * (rows[1][0] * rows[2][2] - rows[1][2] * rows[2][0])
+            + rows[0][2] * (rows[1][0] * rows[2][1] - rows[1][1] * rows[2][0])
+        )
+        if abs(det) < 1e-12:
+            raise ValueError(f"{field_name} must be invertible")
+        return rows
+
+    def _invert_homography(self, matrix) -> List[List[float]]:
+        import numpy as np
+
+        inv = np.linalg.inv(np.array(matrix, dtype=float))
+        if not np.isfinite(inv).all():
+            raise ValueError("vision-to-robot homography inverse is invalid")
+        return inv.astype(float).tolist()
+
+    def _apply_homography(self, matrix, x: float, y: float) -> Tuple[float, float]:
+        x_value = self._finite_float(x, "point.x")
+        y_value = self._finite_float(y, "point.y")
+        rows = self._normalize_homography_matrix(matrix, "homography_matrix")
+        denom = rows[2][0] * x_value + rows[2][1] * y_value + rows[2][2]
+        if abs(denom) < 1e-12:
+            raise ValueError("homography mapped point to infinity")
+        out_x = (rows[0][0] * x_value + rows[0][1] * y_value + rows[0][2]) / denom
+        out_y = (rows[1][0] * x_value + rows[1][1] * y_value + rows[1][2]) / denom
+        return float(out_x), float(out_y)
+
     def _apply_inverse_affine(self, x: float, y: float) -> Tuple[float, float]:
         matrix = self.inverse_affine_matrix
         if matrix is None:
@@ -383,7 +760,7 @@ class Kinematics:
         inv_f = -(inv_d * c + inv_e * f)
         return [[inv_a, inv_b, inv_c], [inv_d, inv_e, inv_f]]
 
-    def _fit_axis(self, samples, default_origin: float, default_step: float) -> Tuple[float, float]:
+    def _fit_axis(self, samples, default_step: float) -> Tuple[float, float]:
         indices = [float(index) for index, _value in samples]
         values = [float(value) for _index, value in samples]
         if len(set(indices)) >= 2:

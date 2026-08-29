@@ -39,7 +39,7 @@ class AiService:
             result = await self.engine.compute(fen, depth=self.depth)
             if result:
                 best_move = result["best_move"]
-                
+
                 # Validation: 確保 AI move 能夠轉成實體座標
                 if best_move and best_move != "none":
                     try:

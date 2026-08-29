@@ -4,7 +4,7 @@
         <button id="btn-setup-exit" type="button" class="btn-exit" aria-label="返回主畫面">返回主畫面</button>
     </nav>
 
-    <form id="setup-settings-form" class="setup-page setup-page-standalone" autocomplete="off">
+    <form id="setup-settings-form" class="setup-page setup-page-standalone" autocomplete="off" data-setup-tab="essential">
         <header class="setup-toolbar">
             <div>
                 <h2>硬體設定</h2>
@@ -15,6 +15,11 @@
                 <button type="submit" class="admin-btn mini success" id="btn-setup-save" data-setup-admin="true">儲存設定</button>
             </div>
         </header>
+
+        <div class="setup-pane-switch" role="tablist" aria-label="設定畫面切換">
+            <button type="button" class="setup-pane-tab active" data-setup-pane-target="essential" role="tab" aria-selected="true">必要設定</button>
+            <button type="button" class="setup-pane-tab" data-setup-pane-target="live" role="tab" aria-selected="false">即時資料</button>
+        </div>
 
         <section class="setup-section setup-commissioning">
             <div class="setup-section-head">
@@ -106,15 +111,21 @@
                     <div><span>遙測</span><strong id="setup-current-telemetry">--</strong></div>
                     <div><span>更新時間</span><strong id="setup-current-updated">--</strong></div>
                 </div>
+                <div class="setup-live-detail setup-channel-diagnostics" aria-live="polite">
+                    <div><span>5890 控制</span><strong id="setup-control-channel-status">--</strong></div>
+                    <div><span>5891 影像</span><strong id="setup-vision-channel-status">--</strong></div>
+                    <div><span>Frame age</span><strong id="setup-vision-frame-age">--</strong></div>
+                    <div><span>重連次數</span><strong id="setup-vision-reconnects">--</strong></div>
+                </div>
             </aside>
 
             <div class="setup-parameter-panel">
                 <div class="setup-parameter-head">
-                    <h3>系統設計參數</h3>
-                    <span>以格狀排列關鍵參數，儲存後套用到目前系統設定</span>
+                    <h3>後台設定與資料</h3>
+                    <span>必要設定保留日常會調整的欄位，其餘集中到即時資料頁</span>
                 </div>
                 <div class="setup-grid">
-            <section class="setup-section">
+            <section class="setup-section setup-section-essential">
                 <div class="setup-section-head">
                     <h3>系統模式</h3>
                     <div class="setup-inline-actions">
@@ -133,7 +144,7 @@
                 </div>
             </section>
 
-            <section class="setup-section setup-section-camera">
+            <section class="setup-section setup-section-camera setup-section-essential">
                 <div class="setup-section-head">
                     <h3>相機</h3>
                     <div class="setup-inline-actions">
@@ -151,6 +162,7 @@
                     <input id="setup-vision-source" type="hidden" data-setup-field="vision.source" value="opencv">
                     <div class="setup-segmented setup-vision-source-switch" role="group" aria-label="切換影像來源">
                         <button type="button" class="admin-btn mini" data-setup-admin="true" data-setup-vision-source="opencv">USB / OpenCV</button>
+                        <button type="button" class="admin-btn mini" data-setup-admin="true" data-setup-vision-source="tmvision_http">TMvision HTTP</button>
                         <button type="button" class="admin-btn mini" data-setup-admin="true" data-setup-vision-source="tmflow_json">TMflow JSON</button>
                     </div>
                 </div>
@@ -164,12 +176,6 @@
                     <label class="setup-field"><span>影像逾時秒數</span><input type="number" min="0.1" step="0.1" data-setup-field="vision.tmflow_json.timeout_sec"></label>
                     <label class="setup-field"><span>最大影像訊息 Bytes</span><input type="number" min="65536" max="10485760" step="1024" data-setup-field="vision.tmflow_json.max_message_bytes"></label>
                     <label class="setup-field"><span>TMflow 接收 FPS 上限</span><input type="number" min="0.1" max="30" step="0.1" data-setup-field="vision.tmflow_json.fps_limit"></label>
-                </div>
-                <div class="setup-init-status setup-channel-diagnostics" aria-live="polite">
-                    <div><span>5890 控制通道</span><strong id="setup-control-channel-status">--</strong></div>
-                    <div><span>5891 影像通道</span><strong id="setup-vision-channel-status">--</strong></div>
-                    <div><span>最後 frame age</span><strong id="setup-vision-frame-age">--</strong></div>
-                    <div><span>重連次數</span><strong id="setup-vision-reconnects">--</strong></div>
                 </div>
                 <div class="setup-status-line">
                     <span>視覺校正</span>
@@ -185,7 +191,7 @@
                 </div>
             </section>
 
-            <section class="setup-section">
+            <section class="setup-section setup-section-essential">
                 <div class="setup-section-head"><h3>棋盤座標</h3></div>
                 <div class="setup-field-grid two">
                     <label class="setup-field"><span>原點 X</span><input type="number" step="0.01" data-setup-field="robot.calibration.origin_x"></label>
@@ -199,7 +205,7 @@
                 </div>
             </section>
 
-            <section class="setup-section">
+            <section class="setup-section setup-section-essential">
                 <div class="setup-section-head"><h3>Z 軸高度</h3></div>
                 <div class="setup-field-grid three">
                     <label class="setup-field"><span>安全 Z</span><input type="number" step="0.01" data-setup-field="robot.motion.z_safe"></label>
@@ -211,7 +217,7 @@
                 </div>
             </section>
 
-            <section class="setup-section">
+            <section class="setup-section setup-section-secondary">
                 <div class="setup-section-head"><h3>速度</h3></div>
                 <div class="setup-field-grid two">
                     <label class="setup-field"><span>最低速度</span><input type="number" step="0.01" min="0.01" data-setup-field="robot.motion.min_speed"></label>
@@ -224,7 +230,7 @@
                 </div>
             </section>
 
-            <section class="setup-section">
+            <section class="setup-section setup-section-secondary">
                 <div class="setup-section-head"><h3>死棋區域</h3></div>
                 <div class="setup-field-grid three">
                     <label class="setup-field"><span>X</span><input type="number" step="0.01" data-setup-field="robot.calibration.dead_zone_range.x"></label>
@@ -236,7 +242,7 @@
                 </div>
             </section>
 
-            <section class="setup-section">
+            <section class="setup-section setup-section-secondary">
                 <div class="setup-section-head"><h3>三軸邊界</h3></div>
                 <div class="setup-field-grid two">
                     <label class="setup-field"><span>最小 X</span><input type="number" step="0.01" data-setup-field="robot.limits.min_x"></label>
@@ -248,7 +254,7 @@
                 </div>
             </section>
 
-            <section class="setup-section">
+            <section class="setup-section setup-section-secondary">
                 <div class="setup-section-head"><h3>進階通訊參數</h3></div>
                 <div class="setup-field-grid two">
                     <label class="setup-field"><span>連線逾時秒數</span><input type="number" min="0.1" step="0.1" data-setup-field="robot.connection.timeout_sec"></label>
@@ -268,7 +274,7 @@
                     <label class="setup-field"><span>TMflow Base</span><input type="text" maxlength="128" data-setup-field="robot.tmflow_json.base"></label>
                     <label class="setup-field"><span>TMflow TCP</span><input type="text" maxlength="128" data-setup-field="robot.tmflow_json.tcp"></label>
                     <label class="setup-field"><span>夾爪等待 ms</span><input type="number" min="0" max="60000" step="1" data-setup-field="robot.tmflow_json.gripper_wait_ms"></label>
-                    <label class="setup-field"><span>停止模式</span><select data-setup-field="robot.tmflow_json.stop_mode"><option value="CONTROLLED_STOP">CONTROLLED_STOP</option><option value="EMERGENCY_STOP">EMERGENCY_STOP</option></select></label>
+                    <label class="setup-field"><span>停止模式</span><select data-setup-field="robot.tmflow_json.stop_mode"><option value="CONTROLLED_STOP">CONTROLLED_STOP</option></select></label>
                     <label class="setup-field"><span>暫存器比例</span><input type="number" min="0.01" step="0.01" data-setup-field="robot.modbus.register_scale"></label>
                     <label class="setup-field"><span>暫存器編碼</span><input type="text" maxlength="16" data-setup-field="robot.modbus.register_encoding"></label>
                     <label class="setup-field"><span>動作暫存器起點</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.motion_register_base"></label>
@@ -291,6 +297,9 @@
                     <label class="setup-field"><span>移動狀態值</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.status_moving_value"></label>
                     <label class="setup-field"><span>完成狀態值</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.status_complete_value"></label>
                     <label class="setup-field"><span>錯誤狀態值</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.status_error_value"></label>
+                    <label class="setup-field"><span>控制器故障狀態值</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.status_fault_value"></label>
+                    <label class="setup-field"><span>心跳暫存器</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.square_heartbeat_register"></label>
+                    <label class="setup-field"><span>手臂狀態暫存器</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.square_robot_state_register"></label>
                     <label class="setup-field"><span>夾爪回饋</span><input type="checkbox" data-setup-field="robot.modbus.gripper_feedback_enabled"></label>
                     <label class="setup-field"><span>夾爪狀態暫存器</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.gripper_status_register"></label>
                     <label class="setup-field"><span>夾爪關閉值</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.gripper_close_value"></label>

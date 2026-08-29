@@ -21,6 +21,13 @@ except Exception:
     YOLO = None
     ULTRALYTICS_AVAILABLE = False
 
+try:
+    from sahi import AutoDetectionModel
+    from sahi.predict import get_sliced_prediction
+    SAHI_AVAILABLE = True
+except Exception:
+    SAHI_AVAILABLE = False
+
 ULTRALYTICS_MIN_VERSION = getattr(config, "ULTRALYTICS_MIN_VERSION", "8.4.55")
 
 
@@ -65,6 +72,7 @@ class YOLODetector(BaseDetector):
         warmup_on_load: bool = config.YOLO_WARMUP_ON_LOAD,
     ):
         self.model = None
+        self.sahi_model = None
         self.model_path = os.path.abspath(model_path) if model_path else ""
         self.confidence_threshold = float(confidence_threshold)
         self.nms_iou = float(nms_iou)
@@ -97,6 +105,22 @@ class YOLODetector(BaseDetector):
         try:
             kwargs = {"task": "detect"} if self.model_path.lower().endswith(".onnx") else {}
             self.model = YOLO(self.model_path, **kwargs)
+
+            if SAHI_AVAILABLE:
+                try:
+                    self.sahi_model = AutoDetectionModel.from_pretrained(
+                        model_type="yolov8",
+                        model_path=self.model_path,
+                        confidence_threshold=self.confidence_threshold,
+                        device=self.device,
+                    )
+                    logger.info("[YOLODetector] SAHI Model loaded: %s", self.model_path)
+                except Exception as e:
+                    self.sahi_model = None
+                    logger.warning("[YOLODetector] Failed to load SAHI model: %s", e)
+            else:
+                self.sahi_model = None
+
             if self.warmup_on_load:
                 self._warmup_model()
             logger.info("[YOLODetector] Model loaded: %s", self.model_path)
@@ -118,25 +142,111 @@ class YOLODetector(BaseDetector):
             verbose=False,
         )
 
-    def detect(self, frame: np.ndarray) -> List[Detection]:
+    def detect(self, frame: np.ndarray, expected_count: int | None = None) -> List[Detection]:
         if self.model is None or frame is None:
             return []
 
         frame_height, frame_width = frame.shape[:2]
         start = time.time()
+
+        use_sahi = getattr(config, "YOLO_USE_SAHI", True) and SAHI_AVAILABLE and self.sahi_model is not None
+        detector_frame = frame
+
         try:
+            # Fast Path: Run raw YOLO inference first
             results = self.model.predict(
-                source=np.ascontiguousarray(frame),
+                source=np.ascontiguousarray(detector_frame),
                 conf=self.confidence_threshold,
                 iou=self.nms_iou,
                 device=self.device,
                 verbose=False,
             )
+            fast_detections = self._parse_results(results, frame_width, frame_height)
+
+            if not self._should_retry_with_sahi(
+                fast_count=len(fast_detections),
+                expected_count=expected_count,
+                use_sahi=use_sahi,
+            ):
+                latency_ms = (time.time() - start) * 1000.0
+                logger.debug(
+                    "[YOLODetector] fast-path inference=%.2fms detections=%s expected=%s sahi_enabled=%s",
+                    latency_ms,
+                    len(fast_detections),
+                    expected_count,
+                    use_sahi,
+                )
+                return fast_detections
+
+            logger.debug(
+                "[YOLODetector] retrying with SAHI expected=%s fast_detections=%s",
+                expected_count,
+                len(fast_detections),
+            )
+            sahi_detections = self._detect_with_sahi(detector_frame, frame_width, frame_height)
+            latency_ms = (time.time() - start) * 1000.0
+            logger.debug(
+                "[YOLODetector] fallback inference=%.2fms fast=%s sahi=%s",
+                latency_ms,
+                len(fast_detections),
+                len(sahi_detections),
+            )
+            if len(sahi_detections) > len(fast_detections):
+                return sahi_detections
+            return fast_detections
+
         except Exception as exc:
             self.last_error = str(exc)
             logger.error("[YOLODetector] Inference failed: %s", exc)
+            if use_sahi:
+                try:
+                    return self._detect_with_sahi(detector_frame, frame_width, frame_height)
+                except Exception:
+                    logger.error("[YOLODetector] SAHI fallback failed after YOLO exception", exc_info=True)
             return []
 
+    def _should_retry_with_sahi(self, *, fast_count: int, expected_count: int | None, use_sahi: bool) -> bool:
+        if not use_sahi:
+            return False
+        if fast_count <= 0:
+            return True
+        if expected_count is None:
+            return False
+        return fast_count < max(1, int(expected_count))
+
+    def _detect_with_sahi(self, detector_frame: np.ndarray, frame_width: int, frame_height: int) -> List[Detection]:
+        if not SAHI_AVAILABLE or self.sahi_model is None:
+            return []
+        result = get_sliced_prediction(
+            detector_frame,
+            self.sahi_model,
+            slice_height=256,
+            slice_width=256,
+            overlap_height_ratio=0.2,
+            overlap_width_ratio=0.2,
+            verbose=False,
+        )
+        detections: List[Detection] = []
+        for obj in getattr(result, "object_prediction_list", []) or []:
+            detections.append(
+                Detection(
+                    class_id=int(obj.category.id),
+                    class_name=str(obj.category.name),
+                    confidence=float(obj.score.value),
+                    bbox=BoundingBox(
+                        x1=float(obj.bbox.minx),
+                        y1=float(obj.bbox.miny),
+                        x2=float(obj.bbox.maxx),
+                        y2=float(obj.bbox.maxy),
+                    ),
+                    coordinate_space="detector_input",
+                    frame_width=int(frame_width),
+                    frame_height=int(frame_height),
+                )
+            )
+        return detections
+
+    def _parse_results(self, results, frame_width, frame_height) -> List[Detection]:
         detections: List[Detection] = []
         for result in results or []:
             boxes = getattr(result, "boxes", None)
@@ -168,9 +278,6 @@ class YOLODetector(BaseDetector):
                         frame_height=int(frame_height),
                     )
                 )
-
-        latency_ms = (time.time() - start) * 1000.0
-        logger.debug("[YOLODetector] inference=%.2fms detections=%s", latency_ms, len(detections))
         return detections
 
     def _to_numpy(self, value):
@@ -199,5 +306,9 @@ class YOLODetector(BaseDetector):
             "nms_iou": self.nms_iou,
             "device": self.device,
             "warmup_on_load": self.warmup_on_load,
+            "sahi_available": bool(SAHI_AVAILABLE),
+            "sahi_enabled": bool(getattr(config, "YOLO_USE_SAHI", True)),
+            "sahi_loaded": self.sahi_model is not None,
+            "sahi_policy": "fallback_only",
             "last_error": self.last_error,
         }

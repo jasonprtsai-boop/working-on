@@ -61,7 +61,6 @@ export const UIRegistry = {
             dashboardRobotJoints: document.getElementById('dashboard-robot-joints'),
             dashboardRobotSpeed: document.getElementById('dashboard-robot-speed'),
             dashboardRobotTelemetrySource: document.getElementById('dashboard-robot-telemetry-source'),
-            dashboardSafetyEstop: document.getElementById('dashboard-safety-estop'),
             dashboardSafetySafeMode: document.getElementById('dashboard-safety-safe-mode'),
             dashboardSafetyCameraReady: document.getElementById('dashboard-safety-camera-ready'),
             dashboardExpParticipant: document.getElementById('dashboard-exp-participant'),

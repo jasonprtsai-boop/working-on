@@ -1,9 +1,6 @@
 import asyncio
-import hashlib
 import os
 import queue
-import shutil
-import tempfile
 import time
 from contextlib import suppress
 from typing import Dict, List, Optional
@@ -12,6 +9,19 @@ from backend.events.bus.event_bus import bus
 from backend.events.event_types import EventType
 from backend.events.models.base_event import BaseEvent
 from backend.core.engine_parser import EngineParser
+from backend.application.services.engine_analysis import build_analysis_result, update_search_progress
+from backend.application.services.engine_assets import (
+    build_nnue_candidate_list,
+    mirror_non_ascii_nnue_path,
+    probe_status_payload,
+)
+from backend.application.services.engine_runtime_helpers import (
+    build_engine_diagnostics_payload,
+    drain_output_queue,
+    enqueue_output_line,
+    get_output_line,
+    new_output_queue,
+)
 from backend.utils import config
 from backend.utils.logger import logger
 
@@ -34,7 +44,7 @@ class EngineService:
         self.process = None
         self.reader_task = None
         self.running = False
-        self.output_queue: "queue.Queue[str]" = queue.Queue(maxsize=max(1, int(config.ENGINE_OUTPUT_QUEUE_SIZE)))
+        self.output_queue: "queue.Queue[str]" = new_output_queue(config.ENGINE_OUTPUT_QUEUE_SIZE)
 
         self.last_internal_error: Optional[str] = None
         self.last_startup_error: Optional[str] = None
@@ -48,50 +58,20 @@ class EngineService:
         self._shutdown_requested = False
 
     def _build_candidate_list(self) -> List[str]:
-        candidates: List[str] = []
-        for raw_path in getattr(config, "ENGINE_NNUE_CANDIDATES", []):
-            abs_path = os.path.abspath(raw_path)
-            if abs_path not in candidates:
-                candidates.append(abs_path)
-        return candidates
+        return build_nnue_candidate_list(getattr(config, "ENGINE_NNUE_CANDIDATES", []))
 
     def _resolve_nnue_path(self, source_path: str) -> str:
-        """
-        Mirror non-ASCII paths to an ASCII-safe temp directory for Windows subprocesses.
-        """
-        if not source_path or not os.path.exists(source_path):
-            return source_path
-
-        try:
-            source_path.encode("ascii")
-            return source_path
-        except UnicodeEncodeError:
-            pass
-
-        safe_dir = os.path.join(tempfile.gettempdir(), "smart-chess-engine")
-        os.makedirs(safe_dir, exist_ok=True)
-        source_hash = hashlib.sha1(source_path.encode("utf-8")).hexdigest()[:10]
-        file_name = os.path.basename(source_path)
-        name, ext = os.path.splitext(file_name)
-        safe_path = os.path.join(safe_dir, f"{name}-{source_hash}{ext}")
-        try:
-            if not os.path.exists(safe_path) or os.path.getmtime(safe_path) < os.path.getmtime(source_path):
-                shutil.copy2(source_path, safe_path)
-            logger.info(f"[EngineService] using ASCII-safe NNUE path: {safe_path}")
-            return safe_path
-        except Exception:
-            logger.warning("[EngineService] failed to mirror NNUE file; using original path", exc_info=True)
-            return source_path
+        return mirror_non_ascii_nnue_path(source_path, logger=logger)
 
     def get_probe_status(self) -> Dict[str, object]:
-        return {
-            "status": self.compatibility_status,
-            "engine_path": self.path,
-            "active_nnue_path": self.active_nnue_path,
-            "candidates": list(self.configured_nnue_candidates),
-            "report": list(self.compatibility_report),
-            "last_startup_error": self.last_startup_error,
-        }
+        return probe_status_payload(
+            status=self.compatibility_status,
+            engine_path=self.path,
+            active_nnue_path=self.active_nnue_path,
+            candidates=self.configured_nnue_candidates,
+            report=self.compatibility_report,
+            last_startup_error=self.last_startup_error,
+        )
 
     def schedule_probe(self):
         """
@@ -190,7 +170,7 @@ class EngineService:
             cwd=os.path.dirname(self.path),
         )
         self.running = True
-        self.output_queue = queue.Queue(maxsize=max(1, int(config.ENGINE_OUTPUT_QUEUE_SIZE)))
+        self.output_queue = new_output_queue(config.ENGINE_OUTPUT_QUEUE_SIZE)
         self.reader_task = asyncio.create_task(self._reader())
 
         await self.send("uci")
@@ -222,32 +202,18 @@ class EngineService:
         logger.info("[EngineService] engine pair validated successfully.")
 
     def _drain_output_queue(self) -> None:
-        while not self.output_queue.empty():
-            try:
-                self.output_queue.get_nowait()
-            except queue.Empty:
-                break
+        drain_output_queue(self.output_queue)
 
     async def _get_output_line(self, timeout: float = 1.0) -> str:
-        deadline = asyncio.get_running_loop().time() + max(0.0, float(timeout))
-        while True:
-            try:
-                return self.output_queue.get_nowait()
-            except queue.Empty:
-                remaining = deadline - asyncio.get_running_loop().time()
-                if remaining <= 0:
-                    raise
-                await asyncio.sleep(min(0.05, remaining))
+        return await get_output_line(self.output_queue, timeout=timeout)
 
     def _publish_diagnostics(self, status: str, error: Optional[str]) -> None:
-        payload = {
-            "engine": {
-                "status": status,
-                "error": error,
-                "active_nnue_path": self.active_nnue_path,
-                "compatibility_status": self.compatibility_status,
-            }
-        }
+        payload = build_engine_diagnostics_payload(
+            status=status,
+            error=error,
+            active_nnue_path=self.active_nnue_path,
+            compatibility_status=self.compatibility_status,
+        )
         try:
             bus.publish(BaseEvent.create(
                 event_type=EventType.DIAGNOSTICS_UPDATED,
@@ -315,18 +281,7 @@ class EngineService:
                 break
 
     def _enqueue_output_line(self, line: str) -> None:
-        try:
-            self.output_queue.put_nowait(line)
-            return
-        except queue.Full:
-            try:
-                self.output_queue.get_nowait()
-            except queue.Empty:
-                pass
-        try:
-            self.output_queue.put_nowait(line)
-        except queue.Full:
-            logger.debug("[EngineService] output queue full; dropped latest engine line")
+        enqueue_output_line(self.output_queue, line, logger=logger)
 
     async def _wait_for_line(self, target: str) -> str:
         while self.running:
@@ -413,25 +368,7 @@ class EngineService:
                     line = await self._get_output_line(timeout=1.0)
 
                     if line.startswith("info"):
-                        parts = line.split()
-                        if "depth" in parts:
-                            try:
-                                d_val = int(parts[parts.index("depth") + 1])
-                                if d_val > current_depth:
-                                    current_depth = d_val
-                            except Exception:
-                                logger.debug("[EngineService] failed to parse depth", exc_info=True)
-
-                        if "multipv" in parts and "score" in parts and "pv" in parts:
-                            try:
-                                rank = int(parts[parts.index("multipv") + 1])
-                                score_idx = parts.index("score")
-                                score_type = parts[score_idx + 1]
-                                score_val = int(parts[score_idx + 2]) if score_type == "cp" else 9999
-                                move = parts[parts.index("pv") + 1]
-                                pv_lines[rank] = {"rank": rank, "move": move, "score_cp": score_val}
-                            except Exception:
-                                continue
+                        current_depth = update_search_progress(line, current_depth, pv_lines)
 
                     if "bestmove" in line:
                         parts = line.split()
@@ -446,18 +383,7 @@ class EngineService:
         except Exception as exc:
             logger.error(f"Computation error: {exc}")
 
-        sorted_lines = sorted(pv_lines.values(), key=lambda item: item["rank"])
-        return {
-            "best_move": final_best,
-            "score": pv_lines.get(1, {}).get("score_cp", 0),
-            "depth": current_depth,
-            "final": True,
-            "is_thinking": False,
-            "multi_pv": [
-                {"move": line["move"], "score": line["score_cp"], "pv": [line["move"]]}
-                for line in sorted_lines
-            ],
-        }
+        return build_analysis_result(pv_lines, current_depth, final_best)
 
     async def is_healthy(self) -> bool:
         process = self.process

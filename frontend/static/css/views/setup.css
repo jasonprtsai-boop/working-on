@@ -72,6 +72,62 @@
     color: #ffffff;
 }
 
+.setup-pane-switch {
+    display: inline-grid;
+    grid-template-columns: repeat(2, minmax(120px, 1fr));
+    gap: 4px;
+    width: min(100%, 320px);
+    padding: 4px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #ffffff;
+    box-shadow: var(--shadow-soft);
+}
+
+.setup-pane-tab {
+    min-height: 36px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+    font-weight: 950;
+    cursor: pointer;
+}
+
+.setup-pane-tab.active {
+    background: var(--primary);
+    color: #ffffff;
+}
+
+.setup-page[data-setup-tab="essential"] .setup-workbench {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.setup-page[data-setup-tab="essential"] .setup-live-panel,
+.setup-page[data-setup-tab="essential"] .setup-section-secondary,
+.setup-page[data-setup-tab="live"] .setup-commissioning,
+.setup-page[data-setup-tab="live"] .setup-init-panel,
+.setup-page[data-setup-tab="live"] .setup-section-essential {
+    display: none;
+}
+
+.setup-page[data-setup-tab="live"] .setup-workbench {
+    grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
+}
+
+.setup-page[data-setup-tab="live"] .setup-parameter-head span::before {
+    content: "即時座標、通道狀態、進階通訊與硬體測試集中在此頁。";
+}
+
+.setup-page[data-setup-tab="live"] .setup-parameter-head span {
+    font-size: 0;
+}
+
+.setup-page[data-setup-tab="live"] .setup-parameter-head span::before {
+    font-size: 0.72rem;
+}
+
 .setup-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));

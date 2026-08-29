@@ -479,7 +479,6 @@ class ExcelExporter:
         robot_payload = self._dict_child(data, "robot")
         system_payload = self._dict_child(data, "system")
         game_payload = self._dict_child(data, "game")
-        data_sources = [data]
 
         vision_context = "VISION" in upper_type or bool(vision_payload) or any(
             key in data for key in ("detections", "detections_count", "latency_ms", "yolo_latency_ms", "camera_status", "vision_status")
@@ -626,7 +625,6 @@ class ExcelExporter:
         event_type = str(record.get("event_type", "")).upper()
         vision_payload = self._dict_child(raw, "vision")
         engine_payload = self._dict_child(raw, "engine")
-        robot_payload = self._dict_child(raw, "robot")
 
         if field == "camera_status":
             value = self._first_from_sources([raw, vision_payload], "camera_status", "vision_status", default="")

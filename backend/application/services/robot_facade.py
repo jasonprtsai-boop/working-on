@@ -7,7 +7,6 @@ from typing import Any, Dict
 from backend.interfaces.hardware_interfaces import RobotInterface
 from backend.utils import config
 from backend.utils.logger import logger
-from backend.application.services.estop import estop
 from backend.observability.error_reporter import publish_error_diagnostic
 
 
@@ -25,21 +24,6 @@ class RobotFacade(RobotInterface):
         self._fake_mode = None
 
         self._configure_impl()
-
-        # register for E-Stop chain if supported
-        try:
-            estop.register_robot(self)
-        except Exception as exc:
-            logger.warning("[RobotFacade] failed to register with E-Stop controller", exc_info=True)
-            publish_error_diagnostic(
-                source="robot_facade",
-                module="robot",
-                code="robot_estop_registration_failed",
-                message=str(exc),
-                severity="error",
-                recoverable=False,
-                throttle_seconds=30.0,
-            )
 
     def _configure_impl(self):
         fake_mode = bool(getattr(config, "FAKE_ROBOT", False))
@@ -125,10 +109,6 @@ class RobotFacade(RobotInterface):
         return result_holder.get("value")
 
     def execute_move(self, move: str, is_capture: bool = False) -> bool:
-        if estop.GLOBAL_STOP:
-            logger.error("[RobotFacade] Refusing execute_move due to GLOBAL_STOP")
-            return False
-
         # FakeRobot is sync; RobotService is async.
         if hasattr(self._impl, "move_piece"):
             try:
@@ -151,19 +131,16 @@ class RobotFacade(RobotInterface):
             return bool(self._impl.execute_move(move, is_capture=is_capture))
         return False
 
-    def emergency_stop(self) -> bool:
+    def stop_all(self) -> bool:
         try:
             if hasattr(self._impl, "stop_all"):
                 return bool(self._impl.stop_all())
-            if hasattr(self._impl, "emergency_stop"):
-                self._impl.emergency_stop()
-                return True
         except Exception as e:
-            logger.error(f"[RobotFacade] emergency_stop failed: {e}", exc_info=True)
+            logger.error(f"[RobotFacade] stop_all failed: {e}", exc_info=True)
             publish_error_diagnostic(
                 source="robot_facade",
                 module="robot",
-                code="robot_emergency_stop_failed",
+                code="robot_stop_all_failed",
                 message=str(e),
                 severity="error",
                 recoverable=False,

@@ -134,28 +134,11 @@ class GameService:
             ))
             return
 
-        if action_type == "EMERGENCY_STOP":
-            from backend.application.services.estop import estop
-
-            reason = "Manual Emergency Stop"
-            if isinstance(data, dict):
-                reason = data.get("reason") or reason
-            estop.trigger(reason=reason)
-            return
-
-        if action_type == "CLEAR_EMERGENCY":
-            from backend.application.services.estop import estop
-
-            estop.reset()
-            self.is_paused = False
+        if action_type in {"STOP", "SOFTWARE_STOP"}:
+            self.is_paused = True
             bus.publish(BaseEvent.create(
-                event_type=EventType.SYSTEM_RESET,
-                payload={},
-                source="game_service",
-            ))
-            bus.publish(BaseEvent.create(
-                event_type=EventType.UI_TOAST,
-                payload={"text": "Emergency stop cleared.", "level": "success"},
+                event_type=EventType.GAME_PAUSE,
+                payload={"phase": "paused", "reason": data.get("reason") if isinstance(data, dict) else "software_stop"},
                 source="game_service",
             ))
             return

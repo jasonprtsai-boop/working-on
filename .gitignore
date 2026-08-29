@@ -14,8 +14,10 @@ build/
 test_output.txt
 
 # Reports & Logs
+_archive/
 reports/
 analysis_artifacts/
+docx_work/
 reports/*.xlsx
 reports/*.csv
 logs/
@@ -38,6 +40,7 @@ chess_robot_experiment.xlsx
 .DS_Store
 Thumbs.db
 .gemini/
+.edge-render-profile/
 
 # Node
 node_modules/

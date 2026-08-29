@@ -14,7 +14,7 @@ function Get-LocalAdminPassword {
     }
   }
 
-  return "888888"
+  return "login"
 }
 
 function Invoke-WithRetry($url, $secondsTotal = 20, $headers = $null) {

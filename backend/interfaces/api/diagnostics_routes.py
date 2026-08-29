@@ -7,6 +7,7 @@ from flask import current_app, jsonify
 from backend.interfaces.api.shared import (
     api_bp,
     asset_info,
+    bounded_int_arg,
     config,
     container,
     engine_worker,
@@ -113,6 +114,26 @@ def runtime_status():
 @api_bp.route("/runtime/metrics", methods=["GET"])
 def runtime_metrics():
     return jsonify(runtime_metrics_report())
+
+
+@api_bp.route("/events", methods=["GET"])
+def minimal_events():
+    """Compact monitor API for recent system events."""
+    from backend.observability.telemetry import telemetry_service
+
+    limit = bounded_int_arg("limit", 50, 1, 200)
+    snapshot = telemetry_service.snapshot(
+        recent_events_limit=limit,
+        errors_limit=min(limit, 50),
+        trace_events_limit=min(limit, 50),
+    )
+    telemetry = snapshot.get("telemetry", {})
+    return jsonify({
+        "ok": True,
+        "events": telemetry.get("recent_events", []),
+        "errors": telemetry.get("errors", []),
+        "pipeline": snapshot.get("pipeline", {}),
+    })
 
 
 @api_bp.route("/vision/status", methods=["GET"])

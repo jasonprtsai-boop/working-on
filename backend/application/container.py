@@ -1,9 +1,9 @@
 import logging
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger("ServiceContainer")
 
-from typing import Any, Dict, Type, TypeVar, Optional, Protocol, runtime_checkable
+from typing import Any, Dict, Type, TypeVar, Protocol, runtime_checkable
 
 T = TypeVar("T")
 

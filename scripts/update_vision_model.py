@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import os
 import shutil
 import stat
 import subprocess
@@ -13,8 +12,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 PROTECTED_VISION_DIR = ROOT / "backend" / "infrastructure" / "protected_assets" / "vision"
 MANIFEST_PATH = ROOT / "backend" / "infrastructure" / "protected_assets" / "ASSET_MANIFEST.md"
-REQUIRED_FILES = ("best.onnx", "dataset_mapping.yaml", "args.yaml")
-READONLY_FILES = {"best.onnx"}
+REQUIRED_FILES = ("best.pt", "dataset_mapping.yaml", "args.yaml")
+READONLY_FILES = {"best.pt"}
 
 
 def _sha256(path: Path) -> str:
@@ -56,7 +55,7 @@ def _manifest_row(rel_path: str, path: Path, description: str) -> str:
 
 def _update_manifest(dest: Path) -> None:
     descriptions = {
-        "vision/best.onnx": "Configured YOLO26-compatible ONNX runtime model",
+        "vision/best.pt": "Configured Ultralytics YOLO runtime model",
         "vision/dataset_mapping.yaml": "Preserved dataset class mapping",
         "vision/args.yaml": "Preserved YOLO training/export args",
     }
@@ -69,6 +68,8 @@ def _update_manifest(dest: Path) -> None:
     updated: list[str] = []
     seen = set()
     for line in lines:
+        if line.startswith("| `vision/best.onnx` |"):
+            continue
         replaced = False
         for rel, row in replacements.items():
             if line.startswith(f"| `{rel}` |"):
@@ -113,6 +114,10 @@ def update_vision_model(source: Path, *, dest: Path = PROTECTED_VISION_DIR, dry_
         shutil.copy2(src, target)
         _set_readonly(target, src.name in READONLY_FILES)
         copied.append(target)
+    stale_onnx = dest / "best.onnx"
+    if stale_onnx.exists():
+        _set_readonly(stale_onnx, False)
+        stale_onnx.unlink()
 
     _update_manifest(dest)
     return copied
@@ -120,7 +125,7 @@ def update_vision_model(source: Path, *, dest: Path = PROTECTED_VISION_DIR, dry_
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Safely replace protected YOLO vision model assets.")
-    parser.add_argument("source", type=Path, help="Folder containing best.onnx, dataset_mapping.yaml, and args.yaml.")
+    parser.add_argument("source", type=Path, help="Folder containing best.pt, dataset_mapping.yaml, and args.yaml.")
     parser.add_argument("--dry-run", action="store_true", help="Show intended changes without copying files.")
     parser.add_argument("--delete-source", action="store_true", help="Delete the source folder after a successful update.")
     parser.add_argument("--warmup", action="store_true", help="Run scripts/check_vision_models.py --warmup after copying.")

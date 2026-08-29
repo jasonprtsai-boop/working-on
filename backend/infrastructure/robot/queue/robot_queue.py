@@ -7,7 +7,7 @@ class RobotQueue:
     Deprecated legacy queue for robotic movement commands.
 
     RobotFacade.execute_move() is the active v1 command authority. This queue is
-    retained for E-Stop cleanup compatibility and should not gain new consumers.
+    retained for legacy cleanup compatibility and should not gain new consumers.
     """
     DEPRECATED_ACTIVE_CONSUMER = False
 

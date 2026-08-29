@@ -1,13 +1,10 @@
-import copy
 import dataclasses
 import threading
-from typing import List, Dict, Any, Optional
+from typing import List, Optional
 from backend.state.store.models.system_state import SystemState
 from backend.events.bus.event_bus import bus
 from backend.events.event_types import EventType
 from backend.events.models.base_event import BaseEvent
-from backend.events.adapters.legacy_event_adapter import adapt_legacy_event
-from backend.state.reducers.move_reducer import MoveReducer
 from backend.utils.logger import logger
 
 

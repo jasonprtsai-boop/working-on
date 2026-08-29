@@ -1,5 +1,4 @@
 from typing import List, Dict, Tuple
-import time
 from backend.infrastructure.vision.detection.detection_result import Detection
 
 class PieceTracker:

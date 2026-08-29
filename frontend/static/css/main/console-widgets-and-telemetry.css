@@ -1,0 +1,262 @@
+/* --- Board Busy Overlay --- */
+.board-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.4);
+    backdrop-filter: blur(4px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 2000;
+    color: white;
+    border-radius: inherit;
+    transition: all 0.4s ease;
+    pointer-events: all; /* Blocks board interaction */
+}
+
+.board-overlay p {
+    margin-top: 16px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    font-size: 0.9rem;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+}
+
+.loader-ring {
+    width: 48px;
+    height: 48px;
+    border: 4px solid rgba(255,255,255,0.1);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: rotate 1s linear infinite;
+}
+
+/* Frontend integrity repair: stable console widgets */
+.panel-title {
+    margin: 0;
+    color: var(--text-main);
+    font-size: 0.9rem;
+    font-weight: 900;
+}
+
+.engine-live-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.multipv-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 150px;
+    overflow-y: auto;
+}
+
+.multipv-list .pv-row,
+.pv-row {
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1fr) 58px 52px;
+    gap: 8px;
+    align-items: center;
+    padding: 8px 10px;
+    margin-bottom: 0;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.7);
+    color: var(--text-main);
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+}
+
+.pv-row.empty {
+    grid-template-columns: 1fr;
+    color: var(--text-secondary);
+    text-align: center;
+    font-family: var(--font-sans);
+}
+
+.pv-move {
+    color: var(--primary);
+    font-weight: 800;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pv-score,
+.pv-win {
+    text-align: right;
+    font-weight: 800;
+}
+
+.pv-win {
+    color: var(--accent-green);
+}
+
+.latency-bars {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.latency-row {
+    display: grid;
+    grid-template-columns: 64px minmax(0, 1fr) 56px;
+    gap: 8px;
+    align-items: center;
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+    font-weight: 800;
+}
+
+.latency-track {
+    height: 8px;
+    overflow: hidden;
+    background: rgba(15, 23, 42, 0.08);
+    border-radius: 999px;
+}
+
+.latency-fill {
+    width: 0;
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent-blue), var(--accent-green));
+    border-radius: inherit;
+    transition: width 0.25s ease;
+}
+
+.analysis-card {
+    padding: 16px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.78);
+    box-shadow: var(--shadow-soft);
+}
+
+.analysis-card .card-header,
+.analysis-card .metrics-row,
+.suggestion-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.analysis-card .card-title {
+    font-weight: 900;
+}
+
+.phase-badge {
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: var(--primary-light);
+    color: var(--primary);
+    font-size: 0.72rem;
+    font-weight: 900;
+}
+
+.eval-score {
+    font-family: var(--font-mono);
+    font-size: 1.8rem;
+    font-weight: 900;
+}
+
+.best-move-hint,
+.threat-indicator,
+.suggestion-item {
+    color: var(--text-secondary);
+    font-size: 0.84rem;
+}
+
+.highlight,
+.s-move,
+.s-score {
+    color: var(--text-main);
+    font-family: var(--font-mono);
+    font-weight: 900;
+}
+
+.suggestions-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 12px;
+}
+
+.suggestion-item {
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: rgba(241, 245, 249, 0.9);
+}
+
+.suggestion-item.muted {
+    justify-content: center;
+    color: var(--text-secondary);
+}
+
+/* -------------------------------------------------------------------------- */
+/*  PHASE 3: TELEMETRY & WATERFALL STYLES                                     */
+/* -------------------------------------------------------------------------- */
+#telemetry-waterfall-container {
+    margin-top: 20px;
+    padding: 18px;
+    background: rgba(15, 23, 42, 0.6);
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(12px);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+}
+
+.waterfall-header {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: #94a3b8;
+    margin-bottom: 16px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    padding-bottom: 8px;
+    font-weight: 800;
+}
+
+.waterfall-row {
+    display: flex;
+    align-items: center;
+    margin-bottom: 10px;
+    font-size: 0.75rem;
+}
+
+.waterfall-label {
+    width: 150px;
+    color: #cbd5e1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-family: var(--font-mono);
+}
+
+.waterfall-bar-wrapper {
+    flex: 1;
+    height: 8px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 4px;
+    position: relative;
+    margin: 0 12px;
+}
+
+.waterfall-bar {
+    position: absolute;
+    height: 100%;
+    background: linear-gradient(90deg, #38bdf8, #818cf8);
+    border-radius: 4px;
+    box-shadow: 0 0 15px rgba(56, 189, 248, 0.4);
+    transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.waterfall-time {
+    width: 60px;
+    text-align: right;
+    color: #34d399;
+    font-weight: 800;
+    font-family: var(--font-mono);
+}

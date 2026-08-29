@@ -5,7 +5,6 @@ from flask_cors import CORS
 
 # System bootstrap (single authoritative wiring)
 from backend.application.bootstrap import bootstrap_system
-from backend.application.container import container
 from backend.utils.logger import logger
 from backend.utils import config
 from backend.utils.error_response import build_error
@@ -33,10 +32,8 @@ def create_app():
 
     # 2. Register Blueprints (Interfaces)
     from backend.interfaces.api.api_routes import api_bp
-    from backend.interfaces.dashboard import dashboard_bp
 
     app.register_blueprint(api_bp, url_prefix="/api")
-    app.register_blueprint(dashboard_bp)
 
     @app.errorhandler(413)
     def payload_too_large(_error):
@@ -69,6 +66,11 @@ def create_app():
 
     @app.route("/")
     def serve_index():
+        return render_template("index.html")
+
+    @app.route("/dashboard")
+    def serve_monitor_index():
+        """Keep the old monitor URL pointed at the retained website system."""
         return render_template("index.html")
 
     # 3. Initialize WebSocket Gateway

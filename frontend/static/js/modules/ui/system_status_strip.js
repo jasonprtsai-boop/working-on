@@ -9,11 +9,13 @@ const DEFAULT_LIGHTS = [
     { id: 'board', label: '棋盤', group: 'logic' },
     { id: 'engine', label: 'Pikafish', group: 'logic' },
     { id: 'queue', label: '佇列', group: 'logic' },
+    { id: 'storage', label: 'Storage', group: 'logic' },
     { id: 'robot', label: '機械手臂', group: 'hardware' },
     { id: 'serial', label: '序列埠', group: 'hardware' },
     { id: 'usb', label: 'USB', group: 'hardware' },
     { id: 'cpu', label: 'CPU', group: 'hardware' },
     { id: 'ram', label: 'RAM', group: 'hardware' },
+    { id: 'gpu', label: 'GPU', group: 'hardware' },
 ];
 
 const STATUS_PRIORITY = {
@@ -55,7 +57,34 @@ export const SystemStatusStrip = {
         this.lights = new Map(DEFAULT_LIGHTS.map((item) => [item.id, normalizeLight(item)]));
         this.selectedId = '';
         this.initialized = Boolean(this.container);
+
+        if (this.container) {
+            this.container.textContent = '';
+            for (const light of this.lights.values()) {
+                this.container.appendChild(this.createLightElement(light));
+            }
+        }
         this.render();
+    },
+
+    createLightElement(light) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.dataset.statusId = light.id;
+
+        const dot = document.createElement('span');
+        dot.className = 'system-status-light__dot';
+        const label = document.createElement('span');
+        label.className = 'system-status-light__label';
+        const state = document.createElement('span');
+        state.className = 'system-status-light__state';
+
+        button.append(dot, label, state);
+        button.addEventListener('click', () => {
+            this.selectedId = this.selectedId === light.id ? '' : light.id;
+            this.renderDetail(this.selectedId ? this.lights.get(this.selectedId) : null);
+        });
+        return button;
     },
 
     handleEvent(event) {
@@ -114,6 +143,7 @@ export const SystemStatusStrip = {
         this.mergeLight('usb', linkLight('USB', robot.usb));
         this.mergeLight('cpu', cpuLight(health));
         this.mergeLight('ram', ramLight(health));
+        this.mergeLight('gpu', gpuLight(health));
 
         if (this.updated) {
             this.updated.textContent = `更新 ${formatTime(topology.updated_at || health.timestamp || Date.now() / 1000)}`;
@@ -133,40 +163,44 @@ export const SystemStatusStrip = {
     render() {
         if (!this.container) return;
         RenderScheduler.schedule('system-status-strip', () => {
-            const fragment = document.createDocumentFragment();
             for (const light of this.lights.values()) {
-                fragment.appendChild(this.renderLight(light));
+                this.updateLightElement(light);
             }
-            replaceChildren(this.container, fragment);
             if (this.selectedId) {
                 this.renderDetail(this.lights.get(this.selectedId));
             }
         });
     },
 
-    renderLight(light) {
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.className = `system-status-light is-${light.status}`;
-        button.dataset.statusId = light.id;
-        button.title = detailText(light);
-        button.setAttribute('aria-label', `${light.label}: ${STATUS_LABELS[light.status] || light.status}`);
+    updateLightElement(light) {
+        const button = this.container.querySelector(`[data-status-id="${light.id}"]`);
+        if (!button) return;
 
-        const dot = document.createElement('span');
-        dot.className = 'system-status-light__dot';
-        const label = document.createElement('span');
-        label.className = 'system-status-light__label';
-        label.textContent = light.label;
-        const state = document.createElement('span');
-        state.className = 'system-status-light__state';
-        state.textContent = STATUS_LABELS[light.status] || light.status;
+        const newClassName = `system-status-light is-${light.status}`;
+        if (button.className !== newClassName) {
+            button.className = newClassName;
+        }
 
-        button.append(dot, label, state);
-        button.addEventListener('click', () => {
-            this.selectedId = this.selectedId === light.id ? '' : light.id;
-            this.renderDetail(this.selectedId ? light : null);
-        });
-        return button;
+        const newTitle = detailText(light);
+        if (button.title !== newTitle) {
+            button.title = newTitle;
+        }
+
+        const newAriaLabel = `${light.label}: ${STATUS_LABELS[light.status] || light.status}`;
+        if (button.getAttribute('aria-label') !== newAriaLabel) {
+            button.setAttribute('aria-label', newAriaLabel);
+        }
+
+        const labelEl = button.children[1];
+        if (labelEl.textContent !== light.label) {
+            labelEl.textContent = light.label;
+        }
+
+        const stateEl = button.children[2];
+        const newState = STATUS_LABELS[light.status] || light.status;
+        if (stateEl.textContent !== newState) {
+            stateEl.textContent = newState;
+        }
     },
 
     renderDetail(light) {
@@ -354,7 +388,18 @@ function ramLight(health) {
     };
 }
 
-
+function gpuLight(health) {
+    const gpu = health.gpu;
+    if (!gpu || typeof gpu !== 'object') {
+        return { label: 'GPU', status: 'idle', message: '無法取得', lastEvent: 'HEALTH.GPU' };
+    }
+    return {
+        label: 'GPU',
+        status: gpu.available ? 'success' : 'offline',
+        message: gpu.status || gpu.reason || (gpu.available ? '可用' : '不可用'),
+        lastEvent: 'HEALTH.GPU',
+    };
+}
 
 function detailText(light) {
     if (!light) return '';

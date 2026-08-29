@@ -1,5 +1,5 @@
 import asyncio
-from typing import Optional, Any
+from typing import Optional
 from backend.application.container import container
 from backend.state.store.state_store import state_store
 from backend.events.bus.event_bus import bus
