@@ -22,6 +22,8 @@ TMflow 1.82.51
 
 ## 圖片
 
+![TMflow 1.82.51 A-G full node expansion](tmflow_1_82_51_full_node_expanded_ag.png)
+
 ![TMflow 1.82.51 full node design](tmflow_1_82_51_full_node_design.png)
 
 ![Full TMflow and Python exchange flowchart](tmflow_full_python_exchange_flowchart.png)
