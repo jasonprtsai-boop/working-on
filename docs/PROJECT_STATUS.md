@@ -18,6 +18,7 @@
 - Robot 入口已集中到 `RobotFacade` / `RobotService`。
 - Modbus square-command 模式已存在，Python 可作 PC Modbus server，TMflow 輪詢棋格命令。
 - TMflow Network Node -> PC TCP `9001` ingest 可接 JSON telemetry；若未設定 `TMFLOW_INGEST_KEY`，也可接簡單 CSV heartbeat、pose、BUSY、DONE、ERR。
+- Set-only 通過後的 TMflow 1.82.51 完整 motion 節點設計已整理到 `docs/TMFLOW_1_82_51_FULL_NODE_DESIGN.md`，包含 Move、Point、吸盤、吃子區、子流程與狀態回寫。
 - 前端測試與目前保留的 Python 測試可通過。
 
 ## 目前實際設定重點
@@ -101,6 +102,7 @@ http://192.168.10.50:5000/api/vision/tmvision/detect?probe_box=1&key=<VISION_TMF
 ## 已知風險
 
 - 真實硬體動作尚未在這次整理中驗證。
+- 完整 TMflow motion 設計目前是節點規劃，不是現場已跑通紀錄；需要照文件分段測 HOME/READY、Z 下降、吸盤、正常走子、吃子。
 - Ethernet 目前你表示可以連接，但文件只把它當作「現況前提」，不再保留舊的「網路不通」結論。
 - `VISION_SOURCE=tmvision_http` 在 real/shared network 下需要 `VISION_TMFLOW_INGEST_KEY`，否則設定會拒絕啟動。
 - `TMFLOW_INGEST_KEY` 若有值，`9001` 的純 CSV 狀態訊息會被拒收；要嘛送 JSON 並帶 key，要嘛在實驗室暫時不設 telemetry key。

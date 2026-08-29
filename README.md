@@ -28,6 +28,7 @@
 | `docs/ARCHITECTURE.md` | 系統分層、資料流、服務責任、事件/API/queue 規則。 |
 | `docs/CONFIGURATION.md` | `.env`、`data/setup_settings.json`、模擬/實驗室真機/正式部署設定。 |
 | `docs/TM_VISION_ROBOT_RUNBOOK.md` | TMvision/EIH、TMflow 1.82.51 Modbus Set-only 節點、9001 選配觀測。 |
+| `docs/TMFLOW_1_82_51_FULL_NODE_DESIGN.md` | Set-only 通過後的完整 TMflow motion 節點、Move、取放、吃子與狀態回寫設計。 |
 | `backend/infrastructure/protected_assets/ASSET_MANIFEST.md` | 受保護模型與引擎資產 manifest。 |
 
 舊的日期式進度封存、重複 TMflow 研究筆記、過期安裝文件與不存在檔案引用已移除，避免現場測試時讀到舊路線。
@@ -90,7 +91,8 @@ http://127.0.0.1:5000/
 5. External Detection parser 通過。
 6. TMflow 1.82.51 Modbus Set-only trigger/status/completed_cmd_id 通過。
 7. 若需要觀測 pose/status，再加測 Network Node `9001`；有 `TMFLOW_INGEST_KEY` 時要送 JSON，不要送純 CSV。
-8. 單步安全點、吸盤與實際 Move 通過後才考慮 `AUTO_EXECUTE_ROBOT=true`。
+8. 依 `docs/TMFLOW_1_82_51_FULL_NODE_DESIGN.md` 建完整 motion 版：Move、Point、吸盤、吃子、錯誤回寫。
+9. 單步安全點、吸盤與實際 Move 通過後才考慮 `AUTO_EXECUTE_ROBOT=true`。
 
 ## 常用檢查
 
