@@ -1,6 +1,6 @@
 # TM Vision And Robot Runbook
 
-本文件是後續現場測 TMvision/EIH 與 TMflow/TM5-700 的主線。不要同時測影像、Modbus、pose、手臂動作；每次只驗證一條資料有沒有到下一層。
+本文件是現場測 TMvision/EIH 與 TMflow/TM5-700 的主線。這一版的 TMflow 1.82.51 設計只驗證通訊與狀態握手：TMvision 把影像送到 Python，TMflow 透過 Modbus 讀到棋格命令，再用 Set 寫回 Busy/Done。暫時不做真實 Move、不做吸盤、不做安全檢查節點，也盡量不使用副流程或子流程。
 
 ## 0. 現場前提
 
@@ -11,7 +11,7 @@ PC Ethernet IP = 192.168.10.50
 Robot IP       = 192.168.10.10
 Subnet mask    = 255.255.0.0
 Flask          = 0.0.0.0:5000
-TMflow ingest  = 0.0.0.0:9001
+TMflow ingest  = 0.0.0.0:9001, optional telemetry only
 Modbus server  = 192.168.10.50:1502
 ```
 
@@ -19,9 +19,11 @@ Windows 防火牆需允許：
 
 ```text
 5000  HTTP from TMvision/TMflow to Python
-9001  TMflow Network Node telemetry/status to Python
 1502  TMflow Modbus client/master to Python Modbus server
+9001  optional TMflow Network Node telemetry/status to Python
 ```
+
+本次 Set-only 測試的必要通道只有 `5000` 與 `1502`。`9001` 只作選配觀測，不放進主要成敗判斷。
 
 ## 1. 啟動 Python
 
@@ -45,23 +47,42 @@ AUTO_EXECUTE_ROBOT=false
 http://192.168.10.50:5000/api/ready
 ```
 
-若 TMflow 要從 robot 網段 POST 影像，Flask 不能只綁 `127.0.0.1`，必須使用：
+若 TMvision 要從 robot 網段 POST 影像，Flask 不能只綁 `127.0.0.1`，必須使用：
 
 ```env
 SMART_CHESS_BIND_ALL=1
 SMART_CHESS_HOST=0.0.0.0
 ```
 
-## 2. 只測 TMvision Classification
-
-先不要接 YOLO，不要接手臂動作。目標只是證明 EIH 影像到 Python。
-
-TMvision / TMflow Vision node：
+TMvision HTTP 目前需要 ingest key。若 TMvision 畫面支援 header，使用：
 
 ```text
-Function: External Classification
+X-TMflow-Vision-Key: <VISION_TMFLOW_INGEST_KEY>
+```
+
+若畫面只方便填 URL，先用 query string：
+
+```text
+?key=<VISION_TMFLOW_INGEST_KEY>
+```
+
+不要把本機 `.env` 的實際 key 寫進文件或截圖。
+
+## 2. TMvision 節點設計
+
+這是影像鏈路測試，不放進機械手臂 Modbus PollLoop。目的只確認 EIH/TMvision 的圖片能進 Python，後續才看 YOLO annotations。
+
+建議建立兩個獨立的 TMvision 測試項目；它們不是 TMflow robot 子流程：
+
+| 測試 | TMvision function | URL |
+| --- | --- | --- |
+| Classification ingress | External Classification | `http://192.168.10.50:5000/api/vision/tmvision/classify?key=<VISION_TMFLOW_INGEST_KEY>` |
+| Detection parser | External Detection | `http://192.168.10.50:5000/api/vision/tmvision/detect?probe_box=1&key=<VISION_TMFLOW_INGEST_KEY>` |
+
+External Classification 設定：
+
+```text
 Method: POST
-URL: http://192.168.10.50:5000/api/vision/tmvision/classify
 Image source: EIH / built-in camera
 Image format: jpg
 Form field: file first, if needed try image
@@ -78,7 +99,7 @@ Timeout: 3000-5000 ms
 }
 ```
 
-接著在 PC 看 snapshot：
+PC 端確認 snapshot：
 
 ```powershell
 Invoke-WebRequest -Uri "http://127.0.0.1:5000/api/vision/snapshot" -OutFile "C:\tmp\tmvision_snapshot.jpg"
@@ -92,6 +113,28 @@ C:\tmp\tmvision_snapshot.jpg 存在
 影像內容是 EIH 相機畫面
 ```
 
+External Detection 第一輪先使用 `probe_box=1`，因為它不依賴 YOLO，只驗證 TMvision 能不能解析 Python 回傳的 detection JSON：
+
+```json
+{
+  "message": "success",
+  "count": 1,
+  "annotations_count": 1,
+  "annotations": [
+    {
+      "label": "probe",
+      "score": 0.99
+    }
+  ]
+}
+```
+
+`probe_box=1` 通過後，改用真正 YOLO：
+
+```text
+http://192.168.10.50:5000/api/vision/tmvision/detect?key=<VISION_TMFLOW_INGEST_KEY>
+```
+
 若 HTTP 413 或 `image_too_large`，調高：
 
 ```env
@@ -99,185 +142,228 @@ MAX_REQUEST_BYTES=4194304
 VISION_TMFLOW_IMAGE_MAX_MESSAGE_BYTES=4194304
 ```
 
-## 3. 只測 TMvision Detection Parser
+## 3. TMflow Modbus Device
 
-Classification 成功後，再測：
-
-```text
-Function: External Detection
-URL: http://192.168.10.50:5000/api/vision/tmvision/detect
-```
-
-成功回應會有：
-
-```json
-{
-  "message": "success",
-  "annotations": []
-}
-```
-
-若 TMflow 不接受空 annotations，用：
-
-```text
-http://192.168.10.50:5000/api/vision/tmvision/detect?probe_box=1
-```
-
-這會回一個測試框，用來證明 TMflow 的 detection JSON parser 正常。這一步通過後才開始看 YOLO 結果。
-
-## 4. 只測 TMflow Network Node
-
-目標：TMflow 能把 heartbeat、pose、BUSY、DONE、ERR 送進 Python `9001`。
-
-Network Device：
-
-```text
-Device IP: 192.168.10.50
-Device port: 9001
-Mode: Send
-```
-
-建議測試訊息：
-
-```text
-"HB," + GetString(heartbeat) + Ctrl("\r\n")
-"BUSY," + GetString(cmd_id) + Ctrl("\r\n")
-"DONE," + GetString(cmd_id) + Ctrl("\r\n")
-"ERR," + GetString(cmd_id) + "," + GetString(error_code) + Ctrl("\r\n")
-"CoordBase," + GetString(Robot[0].CoordBase, ",") + Ctrl("\r\n")
-```
-
-TMflow 1.82 若不接受 `Ctrl("\r\n")`，改用畫面內建 newline。不要輸入普通字串 `var_tcp_x` 期待它變成座標；那只會送出文字。
-
-成功條件：
-
-```text
-/api/robot/status 看得到 telemetry/status/pose
-heartbeat 有變化
-pose 不是 stale
-```
-
-## 5. 只測 Modbus Square Command
-
-主方案：
+目前程式碼採用：
 
 ```text
 Python PC = Modbus TCP server
-TMflow    = Modbus client/master
+TMflow    = Modbus TCP client/master
 ```
 
-PC 端設定：
+TMflow 1.82.51 建議建立一個 Modbus Device：
 
-```env
-ROBOT_ADAPTER=modbus
-ROBOT_MODBUS_ROLE=server
-ROBOT_MODBUS_SERVER_HOST=192.168.10.50
-ROBOT_MODBUS_SERVER_PORT=1502
-ROBOT_MODBUS_PAYLOAD_MODE=square_command
-ROBOT_MODBUS_REGISTER_ADDRESSING=holding_40001
+```text
+Name: PC_MODBUS_1502
+Protocol: Modbus TCP
+Role: Client / Master
+Server IP: 192.168.10.50
+Server port: 1502
+Unit ID: 1
+Data type: 16-bit integer / word
+Register type: Holding Register
+Poll interval: 100 ms
+Timeout: 1000 ms
+Retry: 1 or 2
 ```
+
+位址要特別注意：目前 Python 設定是 `ROBOT_MODBUS_REGISTER_ADDRESSING=holding_40001`，也就是 Python 文件用 `40001`，但 Modbus protocol offset 是 `0`。Techman 官方 Modbus 範例也採用這個對應：40001 在 TMflow 端是 address 0。若 TMflow 畫面問的是 protocol address，請填 `0..9`；如果畫面問的是 holding register number，才填 `40001..40010`。不要兩種表示法混用。
 
 Register map：
 
-| Register | 變數 | 說明 |
-| ---: | --- | --- |
-| 40001 | `from_square` | 來源格 0..89 |
-| 40002 | `to_square` | 目標格 0..89 |
-| 40003 | `action_type` | `0=move`, `1=capture`, `3=special` |
-| 40004 | `cmd_id` | 命令編號 |
-| 40005 | `trigger` | `1=執行`, `0=清除` |
-| 40006 | `status` | `0=Idle`, `1=Busy`, `2=Done`, `3=Error`, `4=Fault` |
-| 40007 | `error_code` | 錯誤碼 |
-| 40008 | `completed_cmd_id` | 完成命令 |
-| 40009 | `heartbeat` | 心跳 |
-| 40010 | `robot_state` | 手臂狀態摘要 |
+| Python register | Protocol offset | TMflow 方向 | TMflow 變數 | 說明 |
+| ---: | ---: | --- | --- | --- |
+| 40001 | 0 | Read | `from_square` | 來源格，0..89 |
+| 40002 | 1 | Read | `to_square` | 目標格，0..89 |
+| 40003 | 2 | Read | `action_type` | `0=move`, `1=capture`, `3=special` |
+| 40004 | 3 | Read | `cmd_id` | 命令編號 |
+| 40005 | 4 | Read | `trigger` | `1=有新命令`, `0=Python 已清除` |
+| 40006 | 5 | Write | `status` | `0=Idle`, `1=Busy`, `2=Done`, `3=Error`, `4=Fault` |
+| 40007 | 6 | Write | `error_code` | 本階段固定 0 |
+| 40008 | 7 | Write | `completed_cmd_id` | 完成的命令編號 |
+| 40009 | 8 | Write | `heartbeat` | 每輪加 1 |
+| 40010 | 9 | Write | `robot_state` | 本階段用 `0=Idle`, `1=Busy` |
 
-先用獨立測試 server：
+棋格編號：
+
+```text
+a0=0, b0=1, ... i0=8
+a1=9, b1=10, ... i9=89
+```
+
+這個 Set-only 版本不使用 `from_square`、`to_square`、`action_type` 做動作判斷，只讀進來並完成握手。它的目的不是移動棋子，而是證明 Python 和 TMflow 對命令生命週期的理解一致。
+
+## 4. TMflow 變數
+
+在 TMflow project 建立下列全域變數或主流程變數，型別用 16-bit int 或一般整數即可：
+
+| 變數 | 初始值 | 用途 |
+| --- | ---: | --- |
+| `from_square` | 0 | Modbus 讀入來源格 |
+| `to_square` | 0 | Modbus 讀入目標格 |
+| `action_type` | 0 | Modbus 讀入動作類型 |
+| `cmd_id` | 0 | Modbus 讀入命令編號 |
+| `trigger` | 0 | Modbus 讀入觸發值 |
+| `status` | 0 | 寫回 Python 的命令狀態 |
+| `error_code` | 0 | 寫回 Python 的錯誤碼，本階段固定 0 |
+| `completed_cmd_id` | 0 | 寫回 Python 的完成命令 |
+| `heartbeat` | 0 | 心跳計數 |
+| `robot_state` | 0 | 手臂狀態摘要，本階段只用 Idle/Busy |
+| `last_cmd_id` | 0 | 避免同一筆命令重複觸發 |
+| `sim_delay_ms` | 500 | 模擬處理時間，讓 Python 看得到 Busy |
+
+如果 TMflow 不能用 `sim_delay_ms` 變數餵給 Wait node，就在 Wait node 直接填 `500 ms`。
+
+## 5. TMflow 1.82.51 Set-only 主流程
+
+Project name 建議：
+
+```text
+SMART_CHESS_SET_ONLY_HANDSHAKE
+```
+
+主流程節點只需要這些：
+
+| 順序 | 節點 | 類型 | 內部設定 |
+| ---: | --- | --- | --- |
+| 1 | `START` | Start | 無 |
+| 2 | `SET_INIT` | Set | `from_square=0`, `to_square=0`, `action_type=0`, `cmd_id=0`, `trigger=0`, `status=0`, `error_code=0`, `completed_cmd_id=0`, `heartbeat=0`, `robot_state=0`, `last_cmd_id=0`, `sim_delay_ms=500` |
+| 3 | `MB_WRITE_INIT` | Modbus Write | 寫 offset `5..9`：`status`, `error_code`, `completed_cmd_id`, `heartbeat`, `robot_state` |
+| 4 | `WAIT_LOOP` | Wait | `100 ms` |
+| 5 | `SET_HEARTBEAT` | Set | `heartbeat=heartbeat+1`; 若超過 32760 可設回 1 |
+| 6 | `MB_WRITE_HEARTBEAT` | Modbus Write | 寫 offset `8`=`heartbeat`，offset `9`=`robot_state` |
+| 7 | `MB_READ_COMMAND` | Modbus Read | 讀 offset `0..4` 到 `from_square`, `to_square`, `action_type`, `cmd_id`, `trigger` |
+| 8 | `IF_NEW_COMMAND` | If | 條件：`trigger==1 AND cmd_id!=last_cmd_id` |
+| 9 | `SET_BUSY` | Set | `status=1`, `error_code=0`, `robot_state=1`, `last_cmd_id=cmd_id` |
+| 10 | `MB_WRITE_BUSY` | Modbus Write | 寫 offset `5`=`status`, offset `6`=`error_code`, offset `9`=`robot_state` |
+| 11 | `WAIT_SIM_DONE` | Wait | `500 ms` |
+| 12 | `SET_DONE` | Set | `status=2`, `completed_cmd_id=cmd_id`, `robot_state=0` |
+| 13 | `MB_WRITE_DONE` | Modbus Write | 寫 offset `5`=`status`, offset `7`=`completed_cmd_id`, offset `8`=`heartbeat`, offset `9`=`robot_state` |
+| 14 | `WAIT_CLEAR` | Wait | `100 ms` |
+| 15 | `MB_READ_TRIGGER` | Modbus Read | 只讀 offset `4` 到 `trigger` |
+| 16 | `IF_TRIGGER_CLEAR` | If | 條件：`trigger==0` |
+| 17 | `SET_IDLE` | Set | `status=0`, `robot_state=0` |
+| 18 | `MB_WRITE_IDLE` | Modbus Write | 寫 offset `5`=`status`, offset `9`=`robot_state` |
+
+流程線：
+
+```text
+START
+  -> SET_INIT
+  -> MB_WRITE_INIT
+  -> WAIT_LOOP
+  -> SET_HEARTBEAT
+  -> MB_WRITE_HEARTBEAT
+  -> MB_READ_COMMAND
+  -> IF_NEW_COMMAND
+       false -> WAIT_LOOP
+       true  -> SET_BUSY
+                 -> MB_WRITE_BUSY
+                 -> WAIT_SIM_DONE
+                 -> SET_DONE
+                 -> MB_WRITE_DONE
+                 -> WAIT_CLEAR
+                 -> MB_READ_TRIGGER
+                 -> IF_TRIGGER_CLEAR
+                      false -> WAIT_CLEAR
+                      true  -> SET_IDLE
+                                -> MB_WRITE_IDLE
+                                -> WAIT_LOOP
+```
+
+本階段不要加入：
+
+```text
+Move
+PTP/Line
+吸盤 DO
+安全高度判斷
+from/to/action range validation
+吃子 dead zone
+棋規 / FEN / AI
+Listen Node 5890
+高頻影像串流
+```
+
+這不是因為那些不重要，而是這次要先把 failure boundary 限縮到「Python 是否能送命令，TMflow 是否能回 Done」。只要加入 Move 或安全判斷，失敗時就很難判斷是通訊、點位、吸盤、姿態還是流程邏輯造成。
+
+## 6. Python 端 Modbus 測試
+
+先用獨立測試 server，不要一開始跑完整網站流程：
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\start_modbus_square_server.py --host 192.168.10.50 --port 1502 --watch
+.\.venv\Scripts\python.exe scripts\start_modbus_square_server.py --host 192.168.10.50 --port 1502 --watch --test-move a0b1
+```
+
+預期：
+
+```text
+Python writes command + trigger=1
+TMflow reads from/to/action/cmd_id/trigger
+TMflow writes status=1 Busy
+TMflow writes status=2 Done
+TMflow writes completed_cmd_id=cmd_id
+Python clears trigger=0
+TMflow writes status=0 Idle
 ```
 
 成功條件：
 
 ```text
-TMflow 讀到 trigger=1
-TMflow 寫回 status=1 Busy
-TMflow 寫回 status=2 Done
+Python watch 視窗看得到 trigger 從 1 回到 0
+status 至少出現 Busy 或 Done
 completed_cmd_id 等於 cmd_id
-Python 清 trigger=0
-下一筆 cmd_id 可以再次觸發
+同一個 test server 不重開，也能再測第二筆 --test-move
 ```
 
-## 6. TMflow 最小主流程
-
-主 PollLoop 只做命令輪詢、動作、狀態回報：
+若 timeout：
 
 ```text
-Init
-  -> Write heartbeat/status
-  -> Read from/to/action/cmd_id/trigger
-  -> if trigger and new cmd_id: Busy
-  -> validate from_square/to_square/action_type
-  -> capture target if action_type=1
-  -> move source to target
-  -> Done
-  -> wait trigger clear
-  -> Idle
+先查 TMflow 是否讀的是 offset 0..4
+再查 TMflow 是否寫的是 offset 5..9
+再查 TMflow Modbus Device IP/port 是否是 192.168.10.50:1502
+最後才看 Python 程式
 ```
 
-不要放進主 PollLoop：
+## 7. 9001 Network Node 選配
+
+本次主流程不依賴 `9001`。如果要額外觀測 TMflow Network Node，先注意目前後端若設定了 `TMFLOW_INGEST_KEY`，簡單 CSV 例如 `HB,0` 會因為沒有 key 被拒收。
+
+若 `TMFLOW_INGEST_KEY` 有值，Network Node 請送 JSON line。下面是內容形狀，`cmd_id`、pose 數值要用 TMflow 表達式轉成實際數字，不要把變數名稱當普通文字送出：
 
 ```text
-Vision node
-Python /api/ready
-port 探針
-棋規 / FEN / AI
-Listen Node 5890
-高頻影像串流
-軟體 pause flow
+"{\"key\":\"<TMFLOW_INGEST_KEY>\",\"event\":\"heartbeat\",\"robot_state_code\":0}" + Ctrl("\r\n")
+"{\"key\":\"<TMFLOW_INGEST_KEY>\",\"status\":1,\"current_command_id\":" + GetString(cmd_id) + "}" + Ctrl("\r\n")
+"{\"key\":\"<TMFLOW_INGEST_KEY>\",\"status\":2,\"completed_command_id\":" + GetString(cmd_id) + "}" + Ctrl("\r\n")
+"{\"key\":\"<TMFLOW_INGEST_KEY>\",\"tcp\":[" + GetString(Robot[0].CoordBase, ",") + "]}" + Ctrl("\r\n")
 ```
 
-## 7. 真機動作前安全檢查
-
-在任何自動移動前，必須完成：
-
-- TM 控制器速度限制。
-- 力道/碰撞偵測。
-- 安全區域或虛擬牆。
-- 實體急停可用且有人在旁。
-- `Z_SAFE` 高於棋子與夾具。
-- `Z_GRAB` 不會壓壞棋盤。
-- 棋盤四角、中心、dead zone 都教點完成。
-- 吸盤 DO 腳位已確認。
-
-第一輪只測：
+如果只是實驗室快速測 `9001` 的連線，也可以暫時不設定 `TMFLOW_INGEST_KEY`，再用 CSV：
 
 ```text
-P_square_0_SAFE
-P_square_8_SAFE
-P_square_40_SAFE
-P_square_81_SAFE
-P_square_89_SAFE
-P_dead_1_SAFE
+HB,0
+BUSY,1
+DONE,1
+CoordBase, x,y,z,rx,ry,rz
 ```
 
-安全點通過後才測吸盤與單顆棋子的 pick/place。
+但不要同時期待「有 key」又「純 CSV 會通過」。
 
-## 8. 啟用自動執行前完成條件
+## 8. 啟用完整流程前完成條件
 
-全部通過後，才考慮 `AUTO_EXECUTE_ROBOT=true`：
+本文件目前只規劃 Set-only commissioning。它通過後，只能說：
 
 ```text
-TMvision Classification -> Python snapshot 成功
-TMvision Detection parser 成功
-YOLO annotations 能對應棋盤
-TMflow Network heartbeat/status/pose 成功
-Modbus square-command trigger/status/completed_cmd_id 成功
-安全點 motion 成功
-吸盤 ON/OFF 成功
-單步 pick/place 成功
-吃子 dead-zone 成功
+TMvision HTTP image ingress verified
+TMvision External Detection JSON parser verified
+Modbus square-command handshake verified
+Robot motion not verified
+Gripper not verified
+Safety/motion nodes not verified
 ```
 
-任何一項失敗，不要開自動下棋。
+後續要真的移動棋子時，才恢復安全高度、點位、吸盤、吃子 dead zone、動作 timeout、實體急停等檢查，並且在那些通過前維持：
+
+```env
+AUTO_EXECUTE_ROBOT=false
+```

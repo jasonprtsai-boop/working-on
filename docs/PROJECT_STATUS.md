@@ -4,7 +4,7 @@
 
 ## 目前結論
 
-本專題目前已整理成「Python 主控、網站操作、TMvision/OpenCV 供影像、Pikafish 算棋、TMflow 執行安全動作」的架構。下一步應先測 TMvision/EIH 是否能把影像穩定送進 Python，不要同時測手臂自動下棋。
+本專題目前已整理成「Python 主控、網站操作、TMvision/OpenCV 供影像、Pikafish 算棋、TMflow 執行動作」的架構。下一步應先測 TMvision/EIH 是否能把影像穩定送進 Python，再測 TMflow 1.82.51 Modbus Set-only 握手，不要同時測手臂自動下棋。
 
 ## 已完成
 
@@ -17,7 +17,7 @@
 - AI runtime 使用受保護 Pikafish + NNUE。
 - Robot 入口已集中到 `RobotFacade` / `RobotService`。
 - Modbus square-command 模式已存在，Python 可作 PC Modbus server，TMflow 輪詢棋格命令。
-- TMflow Network Node -> PC TCP `9001` ingest 可接 heartbeat、pose、BUSY、DONE、ERR。
+- TMflow Network Node -> PC TCP `9001` ingest 可接 JSON telemetry；若未設定 `TMFLOW_INGEST_KEY`，也可接簡單 CSV heartbeat、pose、BUSY、DONE、ERR。
 - 前端測試與目前保留的 Python 測試可通過。
 
 ## 目前實際設定重點
@@ -81,7 +81,7 @@ ROBOT_MODBUS_PAYLOAD_MODE=square_command
 ```text
 TMvision/EIH camera
   -> External Classification
-  -> POST http://192.168.10.50:5000/api/vision/tmvision/classify
+  -> POST http://192.168.10.50:5000/api/vision/tmvision/classify?key=<VISION_TMFLOW_INGEST_KEY>
   -> Python 回 frame_received
   -> /api/vision/snapshot 看得到 EIH 畫面
 ```
@@ -89,13 +89,13 @@ TMvision/EIH camera
 Classification 通過後再測 Detection：
 
 ```text
-POST http://192.168.10.50:5000/api/vision/tmvision/detect
+POST http://192.168.10.50:5000/api/vision/tmvision/detect?key=<VISION_TMFLOW_INGEST_KEY>
 ```
 
 若 TMflow 不接受空 annotations，先用：
 
 ```text
-http://192.168.10.50:5000/api/vision/tmvision/detect?probe_box=1
+http://192.168.10.50:5000/api/vision/tmvision/detect?probe_box=1&key=<VISION_TMFLOW_INGEST_KEY>
 ```
 
 ## 已知風險
@@ -103,6 +103,7 @@ http://192.168.10.50:5000/api/vision/tmvision/detect?probe_box=1
 - 真實硬體動作尚未在這次整理中驗證。
 - Ethernet 目前你表示可以連接，但文件只把它當作「現況前提」，不再保留舊的「網路不通」結論。
 - `VISION_SOURCE=tmvision_http` 在 real/shared network 下需要 `VISION_TMFLOW_INGEST_KEY`，否則設定會拒絕啟動。
+- `TMFLOW_INGEST_KEY` 若有值，`9001` 的純 CSV 狀態訊息會被拒收；要嘛送 JSON 並帶 key，要嘛在實驗室暫時不設 telemetry key。
 - `AUTO_EXECUTE_ROBOT` 必須保持 `false`，直到影像、Modbus、TMflow、點位、吸盤、安全高度都通過。
 - TMflow 節點欄位名稱以實機 1.82.51 畫面為準；文件只保留目前專題採用的設定方向。
 - 舊的大型測試樹已被移除，只保留目前能直接驗證主線的測試。若要回復完整覆蓋率，應另行建立新的分層測試基準。

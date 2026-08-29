@@ -27,7 +27,7 @@
 | `docs/PROJECT_STATUS.md` | 目前進度、設定語意、已知風險、下一步 TM Vision 測試重點。 |
 | `docs/ARCHITECTURE.md` | 系統分層、資料流、服務責任、事件/API/queue 規則。 |
 | `docs/CONFIGURATION.md` | `.env`、`data/setup_settings.json`、模擬/實驗室真機/正式部署設定。 |
-| `docs/TM_VISION_ROBOT_RUNBOOK.md` | TMvision/EIH、TMflow Network Node、Modbus、真機試車順序。 |
+| `docs/TM_VISION_ROBOT_RUNBOOK.md` | TMvision/EIH、TMflow 1.82.51 Modbus Set-only 節點、9001 選配觀測。 |
 | `backend/infrastructure/protected_assets/ASSET_MANIFEST.md` | 受保護模型與引擎資產 manifest。 |
 
 舊的日期式進度封存、重複 TMflow 研究筆記、過期安裝文件與不存在檔案引用已移除，避免現場測試時讀到舊路線。
@@ -88,9 +88,9 @@ http://127.0.0.1:5000/
 3. TMvision External Classification 先能 POST 到 Python。
 4. `/api/vision/snapshot` 確認收到 EIH 影像。
 5. External Detection parser 通過。
-6. TMflow Network Node `9001` heartbeat/pose/status 通過。
-7. Modbus square-command trigger/status/completed_cmd_id 通過。
-8. 單步安全點與吸盤通過後才考慮 `AUTO_EXECUTE_ROBOT=true`。
+6. TMflow 1.82.51 Modbus Set-only trigger/status/completed_cmd_id 通過。
+7. 若需要觀測 pose/status，再加測 Network Node `9001`；有 `TMFLOW_INGEST_KEY` 時要送 JSON，不要送純 CSV。
+8. 單步安全點、吸盤與實際 Move 通過後才考慮 `AUTO_EXECUTE_ROBOT=true`。
 
 ## 常用檢查
 

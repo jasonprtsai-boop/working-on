@@ -48,7 +48,7 @@ Player View
 | `backend/application/services/robot_facade.py` | 唯一 robot entrypoint，依 fake/real 選 adapter。 |
 | `backend/application/services/robot_service.py` | Move planning、adapter 呼叫、安全參數檢查。 |
 | `backend/infrastructure/robot/modbus_adapter.py` | Modbus client/server 與 square-command handshake。 |
-| `backend/infrastructure/robot/tmflow_socket_ingest_server.py` | TMflow Network Node -> PC TCP telemetry/status ingest。 |
+| `backend/infrastructure/robot/tmflow_socket_ingest_server.py` | 選配的 TMflow Network Node -> PC TCP telemetry/status ingest。 |
 | `backend/application/services/system_preflight.py` | 真機前的 software preflight。 |
 
 ## 視覺
@@ -114,7 +114,8 @@ a1=9, b1=10, ... i9=89
 ```text
 Python writes command + trigger=1
 TMflow writes status=1 Busy
-TMflow executes safe motion
+Current commissioning: TMflow only uses Set nodes, no real motion
+Later motion phase: TMflow executes pick/place/capture
 TMflow writes status=2 Done or status=3 Error
 Python sees completed_cmd_id
 Python clears trigger=0

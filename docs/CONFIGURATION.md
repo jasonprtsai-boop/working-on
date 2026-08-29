@@ -76,6 +76,8 @@ ROBOT_MODBUS_PAYLOAD_MODE=square_command
 
 注意：只要 `VISION_SOURCE=tmvision_http` 且是 real/shared network，就必須設定 `VISION_TMFLOW_INGEST_KEY`。這是避免任何同網段裝置都能任意 POST 圖片進後端。
 
+`TMFLOW_INGEST_KEY` 只影響 `9001` telemetry ingest，不影響 Modbus `1502`。若 `TMFLOW_INGEST_KEY` 有值，TMflow Network Node 不能送純 `HB,0` 這種 CSV，必須送 JSON 並帶 key；若只是實驗室快速測 CSV，可暫時不設定 telemetry key。
+
 ## Production 必要條件
 
 真正正式部署時，`scripts/check_production_config.py --current --require-production` 會要求：
