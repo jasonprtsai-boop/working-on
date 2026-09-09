@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
+import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
@@ -9,10 +10,22 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = PROJECT_ROOT;
 const REPORT_DIR = path.join(ROOT, 'reports');
 const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..+/, '').replace('T', '-');
-const PORT = Number(process.env.HTML_CHECK_PORT || 5123);
-const BASE_URL = `http://127.0.0.1:${PORT}`;
+let PORT = Number(process.env.HTML_CHECK_PORT || 0);
+let BASE_URL = PORT ? `http://127.0.0.1:${PORT}` : '';
 const ADMIN_PASSWORD = `html-check-${stamp}`;
 const DB_PATH = path.join(REPORT_DIR, `smart-chess-html-check-${stamp}.db`);
+
+async function getAvailablePort() {
+  if (process.env.HTML_CHECK_PORT) return Number(process.env.HTML_CHECK_PORT);
+  return new Promise((resolve, reject) => {
+    const srv = net.createServer();
+    srv.listen(0, '127.0.0.1', () => {
+      const port = srv.address().port;
+      srv.close(() => resolve(port));
+    });
+    srv.on('error', reject);
+  });
+}
 
 const results = [];
 const comparisons = [];
@@ -449,6 +462,10 @@ ${warnings}
 async function main() {
   await fs.mkdir(REPORT_DIR, { recursive: true });
   await fs.mkdir(path.dirname(DB_PATH), { recursive: true });
+  if (!PORT) {
+    PORT = await getAvailablePort();
+    BASE_URL = `http://127.0.0.1:${PORT}`;
+  }
   const server = startServer();
   let browserResult = null;
   try {

@@ -116,7 +116,8 @@ function Resolve-ProjectPython {
   foreach ($attempt in $attempts) {
     Write-Host "- $($attempt.Label): $($attempt.Detail)"
   }
-  throw "Run setup_env.ps1 after installing Python 3.11, or set SMART_CHESS_PYTHON to a working python.exe."
+  Write-Host "Fix: run setup_env.ps1 after installing Python 3.11, or set SMART_CHESS_PYTHON to a working python.exe." -ForegroundColor Yellow
+  exit 1
 }
 
 function Test-ServerReachable {
