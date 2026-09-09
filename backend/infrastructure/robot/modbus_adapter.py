@@ -135,8 +135,23 @@ class ModbusAdapter:
             return False
         self.data_bank = LoggingDataBank()
         self._initialize_server_registers()
-        self.server = ModbusServer(host=bind_host, port=bind_port, no_block=True, data_bank=self.data_bank)
-        self.server.start()
+        try:
+            self.server = ModbusServer(host=bind_host, port=bind_port, no_block=True, data_bank=self.data_bank)
+            self.server.start()
+        except Exception as exc:
+            if bind_host not in {"0.0.0.0", "127.0.0.1"}:
+                logger.warning(
+                    "[Modbus] Failed to bind to %s:%s (%s); falling back to 0.0.0.0:%s",
+                    bind_host,
+                    bind_port,
+                    exc,
+                    bind_port,
+                )
+                bind_host = "0.0.0.0"
+                self.server = ModbusServer(host=bind_host, port=bind_port, no_block=True, data_bank=self.data_bank)
+                self.server.start()
+            else:
+                raise
         self.connected = True
         logger.info(
             "Robot command Modbus server listening on %s:%s. Configure TMflow Modbus Device to this endpoint.",
