@@ -91,6 +91,11 @@
             <div id="pane-status-view" class="view-pane" role="tabpanel" aria-labelledby="btn-toggle-status" tabindex="0" aria-hidden="true" style="overflow-y: auto; padding-right: 8px;">
                 {% include 'templates/components/system_status_strip.html' %}
 
+                <div id="console-robot-readiness-alert" class="console-readiness-alert hidden" role="alert" aria-live="polite">
+                    <strong id="console-robot-readiness-title">真機未連線</strong>
+                    <span id="console-robot-readiness-detail">請先確認手臂網路與連線設定。</span>
+                </div>
+
                 <div class="stat-card-glass detailed-status-card">
                     <h4 class="panel-title">系統狀態</h4>
                     <div class="system-status-list industrial">
@@ -157,7 +162,7 @@
                         <div class="pv-row empty">等待 Pikafish 分析資料...</div>
                     </div>
                     <div class="dashboard-control-block mt-12">
-                        <span class="control-label">AI 模式</span>
+                        <span class="control-label">AI 難度預設</span>
                         <div class="ai-mode-grid" id="ai-mode-controls">
                             <button type="button" class="ai-mode-btn active" data-ai-mode="companionship">陪伴</button>
                             <button type="button" class="ai-mode-btn" data-ai-mode="training">訓練</button>

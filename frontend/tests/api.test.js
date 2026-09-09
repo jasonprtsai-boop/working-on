@@ -52,6 +52,15 @@ test('apiFetch does not attach setup token for public player endpoints', async (
   expect(options.headers.has('Authorization')).toBe(false);
 });
 
+test('apiFetch attaches setup token for TMflow play control', async () => {
+  setSetupToken('setup-token');
+
+  await apiFetch('/api/robot/play', { method: 'POST' });
+
+  const [_url, options] = global.fetch.mock.calls[0];
+  expect(options.headers.get('Authorization')).toBe('Bearer setup-token');
+});
+
 test('clearAdminToken removes stored console credentials', () => {
   setAdminToken('t123');
   clearAdminToken();
@@ -157,10 +166,14 @@ test('apiJson raises a useful error on failed response payload', async () => {
     ok: false,
     status: 401,
     headers: new Headers(),
-    json: async () => ({ message: 'unauthorized' }),
+    json: async () => ({ message: 'unauthorized', details: { reason: 'missing_token' } }),
   }));
 
-  await expect(apiJson('/api/state')).rejects.toThrow('unauthorized');
+  await expect(apiJson('/api/state')).rejects.toMatchObject({
+    message: 'unauthorized',
+    status: 401,
+    payload: { details: { reason: 'missing_token' } },
+  });
 });
 
 test('apiFetch maps aborts to request_timeout', async () => {

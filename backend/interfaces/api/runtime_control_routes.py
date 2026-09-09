@@ -20,9 +20,18 @@ def set_runtime_engine_depth():
     if "depth" not in payload:
         return error_response("invalid_depth", "depth is required.", 400)
     try:
-        snapshot = runtime_control.set_engine_depth(int(payload.get("depth")))
+        depth = int(payload.get("depth"))
     except (TypeError, ValueError):
         return error_response("invalid_depth", "depth must be an integer.", 400)
+    bounds = runtime_control.supported_engine_depth_range()
+    if depth < bounds["min"] or depth > bounds["max"]:
+        return error_response(
+            "invalid_depth",
+            f"depth must be between {bounds['min']} and {bounds['max']}.",
+            400,
+            details={"supported_range": bounds},
+        )
+    snapshot = runtime_control.set_engine_depth(depth)
     return jsonify({"ok": True, **snapshot})
 
 
@@ -35,7 +44,16 @@ def set_runtime_ai_mode():
     mode = str(payload.get("mode", payload.get("ai_mode", "")) or "")
     if not mode:
         return error_response("invalid_ai_mode", "mode is required.", 400)
-    snapshot = runtime_control.set_ai_mode(mode)
+    normalized = runtime_control.resolve_ai_mode(mode)
+    if not normalized:
+        supported = runtime_control.supported_ai_modes()
+        return error_response(
+            "invalid_ai_mode",
+            "mode must be one of the supported AI modes.",
+            400,
+            details={"supported_modes": supported},
+        )
+    snapshot = runtime_control.set_ai_mode(normalized)
     return jsonify({"ok": True, **snapshot})
 
 
@@ -45,8 +63,15 @@ def set_runtime_safe_mode():
         payload = json_object_payload()
     except ValueError as exc:
         return error_response("validation_failed", str(exc), 400)
-    enabled = payload.get("enabled", payload.get("safe_mode", payload.get("safeMode", True)))
-    snapshot = runtime_control.set_safe_mode(_coerce_bool(enabled))
+    missing = object()
+    enabled = payload.get("enabled", payload.get("safe_mode", payload.get("safeMode", missing)))
+    if enabled is missing:
+        return error_response("invalid_safe_mode", "enabled is required.", 400)
+    try:
+        safe_mode = _coerce_bool(enabled)
+    except ValueError:
+        return error_response("invalid_safe_mode", "enabled must be a boolean.", 400)
+    snapshot = runtime_control.set_safe_mode(safe_mode)
     return jsonify({"ok": True, **snapshot})
 
 
@@ -56,17 +81,39 @@ def start_runtime_session():
         payload = json_object_payload()
     except ValueError as exc:
         return error_response("validation_failed", str(exc), 400)
+    if runtime_control.active_session_id:
+        return error_response(
+            "session_already_active",
+            "An experiment session is already active. End it before starting a new one.",
+            409,
+            details={"session": runtime_control.snapshot().get("session", {})},
+        )
     snapshot = runtime_control.start_session(participant_id=str(payload.get("participant_id", "") or ""))
     return jsonify({"ok": True, **snapshot})
 
 
 @api_bp.route("/runtime/session/end", methods=["POST"])
 def end_runtime_session():
+    if not runtime_control.active_session_id:
+        return error_response(
+            "session_not_active",
+            "No active experiment session is available to end.",
+            409,
+            details={"session": runtime_control.snapshot().get("session", {})},
+        )
     snapshot = runtime_control.end_session()
     return jsonify({"ok": True, **snapshot})
 
 
 def _coerce_bool(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int) and value in {0, 1}:
+        return bool(value)
     if isinstance(value, str):
-        return value.strip().lower() not in {"0", "false", "no", "off", "disabled"}
-    return bool(value)
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "on", "enabled"}:
+            return True
+        if normalized in {"0", "false", "no", "off", "disabled"}:
+            return False
+    raise ValueError("Invalid boolean value.")

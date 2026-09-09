@@ -81,6 +81,22 @@ class ChessLogic:
             return fen
 
     @staticmethod
+    def game_result(fen: str) -> dict:
+        """Return terminal-state information for a Xiangqi FEN."""
+        try:
+            from backend.domain.game.rule_engine import rule_engine
+
+            return rule_engine.game_result(fen)
+        except Exception as exc:
+            logger.error(f"game_result failed: {exc}", exc_info=True)
+            return {
+                "ended": False,
+                "reason": "unavailable",
+                "winner": None,
+                "legal_moves_count": 0,
+            }
+
+    @staticmethod
     def _fen_to_board(fen: str) -> list[list[str]]:
         rows = fen.split()[0].split("/")
         board = []

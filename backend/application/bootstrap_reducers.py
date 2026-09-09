@@ -20,3 +20,4 @@ def register_bootstrap_reducers() -> None:
     reducer_registry.register(EventType.SYSTEM_RESET, SystemReducer)
     reducer_registry.register(EventType.SYSTEM_ERROR, SystemReducer)
     reducer_registry.register(EventType.DIAGNOSTICS_UPDATED, SystemReducer)
+    reducer_registry.register(EventType.GAME_OVER, SystemReducer)

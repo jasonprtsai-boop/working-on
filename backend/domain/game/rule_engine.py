@@ -56,31 +56,13 @@ class RuleEngine:
         AI Fallback: Pick a random pseudo-legal move if the engine fails.
         """
         fen = self._extract_fen(state)
-        turn = self._turn_from_fen(fen)
-
-        board = self._parse_fen(fen)
-        my_pieces = []
-        for r in range(10):
-            for c in range(9):
-                piece = board[r][c]
-                if piece:
-                    if self._is_own(piece, turn):
-                        my_pieces.append((r, c, piece))
-
-        valid_moves = []
-        for r, c, piece in my_pieces:
-            for move in self._get_pseudo_legal_moves(board, r, c, piece, turn):
-                if not self._would_leave_general_in_check(board, move[0], move[1], turn):
-                    valid_moves.append(move)
+        valid_moves = self.legal_moves(fen)
 
         if not valid_moves:
             logger.error("RuleEngine: No legal moves found for fallback.")
             return None
 
-        selected_move = random.choice(valid_moves)
-        from_rc, to_rc, is_capture = selected_move
-
-        uci_move = f"{self._rc_to_uci(from_rc[0], from_rc[1])}{self._rc_to_uci(to_rc[0], to_rc[1])}"
+        uci_move = random.choice(valid_moves)
 
         # Build fake analysis result
         return {
@@ -90,6 +72,72 @@ class RuleEngine:
             "depth": 1,
             "is_fallback": True
         }
+
+    def game_result(self, fen: str) -> dict:
+        """Return whether the current Xiangqi position has reached a terminal state."""
+        try:
+            board = self._parse_fen(fen)
+        except Exception:
+            return {
+                "ended": False,
+                "reason": "invalid_fen",
+                "winner": None,
+                "legal_moves_count": 0,
+            }
+
+        red_general = self._has_piece(board, "K")
+        black_general = self._has_piece(board, "k")
+        if not red_general:
+            return {
+                "ended": True,
+                "reason": "red_general_missing",
+                "winner": "black",
+                "legal_moves_count": 0,
+            }
+        if not black_general:
+            return {
+                "ended": True,
+                "reason": "black_general_missing",
+                "winner": "red",
+                "legal_moves_count": 0,
+            }
+
+        legal_moves = self.legal_moves(fen)
+        if not legal_moves:
+            turn = self._turn_from_fen(fen)
+            return {
+                "ended": True,
+                "reason": "no_legal_moves",
+                "winner": "black" if turn == "white" else "red",
+                "legal_moves_count": 0,
+            }
+
+        return {
+            "ended": False,
+            "reason": "in_progress",
+            "winner": None,
+            "legal_moves_count": len(legal_moves),
+        }
+
+    def legal_moves(self, fen: str) -> list[str]:
+        """Enumerate legal UCCI moves for the side to move in the supplied FEN."""
+        try:
+            board = self._parse_fen(fen)
+        except Exception:
+            return []
+
+        turn = self._turn_from_fen(fen)
+        valid_moves = []
+        for r in range(10):
+            for c in range(9):
+                piece = board[r][c]
+                if not piece or not self._is_own(piece, turn):
+                    continue
+                for from_rc, to_rc, _is_capture in self._get_pseudo_legal_moves(board, r, c, piece, turn):
+                    if self._would_leave_general_in_check(board, from_rc, to_rc, turn):
+                        continue
+                    valid_moves.append(f"{self._rc_to_uci(*from_rc)}{self._rc_to_uci(*to_rc)}")
+        return valid_moves
 
     def _extract_fen(self, state_dict: dict) -> str:
         if not isinstance(state_dict, dict):
@@ -105,6 +153,9 @@ class RuleEngine:
         from backend.utils.fen.parser import fen_to_board
 
         return fen_to_board(fen, empty="")
+
+    def _has_piece(self, board, piece: str) -> bool:
+        return any(cell == piece for row in board for cell in row)
 
     def _turn_from_fen(self, fen: str):
         parts = str(fen or "").split()

@@ -28,10 +28,12 @@
 | `docs/ARCHITECTURE.md` | 系統分層、資料流、服務責任、事件/API/queue 規則。 |
 | `docs/CONFIGURATION.md` | `.env`、`data/setup_settings.json`、模擬/實驗室真機/正式部署設定。 |
 | `docs/TM_VISION_ROBOT_RUNBOOK.md` | TMvision/EIH、TMflow 1.82.51 Modbus Set-only 節點、9001 選配觀測。 |
-| `docs/TMFLOW_1_82_51_FULL_NODE_DESIGN.md` | Set-only 通過後的完整 TMflow motion 節點、Move、取放、吃子與狀態回寫設計。 |
+| `docs/TMFLOW_1_82_51_FIELD_OPERATION_MANUAL.md` | 現場唯一優先入口；照這份先跑安全高度假流程。 |
+| `docs/TMFLOW_1_82_51_NODE_SETUP_GUIDE.md` | 逐節點查表；只在操作手冊需要查欄位時搭配使用。 |
+| `docs/TMFLOW_1_82_51_FULL_NODE_DESIGN.md` | 工程參考設計；不作現場第一線照做手冊。 |
 | `backend/infrastructure/protected_assets/ASSET_MANIFEST.md` | 受保護模型與引擎資產 manifest。 |
 
-舊的日期式進度封存、重複 TMflow 研究筆記、過期安裝文件與不存在檔案引用已移除，避免現場測試時讀到舊路線。
+現場人員先看 `docs/TMFLOW_1_82_51_FIELD_OPERATION_MANUAL.md`；其他 TMflow 圖、節點展開與版本文件只作工程支援，避免現場測試時讀到多條路線。
 
 ## 安裝
 
@@ -91,17 +93,21 @@ http://127.0.0.1:5000/
 5. External Detection parser 通過。
 6. TMflow 1.82.51 Modbus Set-only trigger/status/completed_cmd_id 通過。
 7. 若需要觀測 pose/status，再加測 Network Node `9001`；有 `TMFLOW_INGEST_KEY` 時要送 JSON，不要送純 CSV。
-8. 依 `docs/TMFLOW_1_82_51_FULL_NODE_DESIGN.md` 建完整 motion 版：Move、Point、吸盤、吃子、錯誤回寫。
+8. 依 `docs/TMFLOW_1_82_51_FIELD_OPERATION_MANUAL.md` 跑通安全高度假流程；再用 `docs/TMFLOW_1_82_51_FULL_NODE_DESIGN.md` 作工程參考，建完整 motion 版：Move、Point、吸盤、吃子、錯誤回寫。
 9. 單步安全點、吸盤與實際 Move 通過後才考慮 `AUTO_EXECUTE_ROBOT=true`。
 
 ## 常用檢查
 
 ```powershell
 .\scripts\npm24.cmd test
+.\scripts\npm24.cmd run check:system
+.\scripts\npm24.cmd run check:system:hardware
 .\.venv\Scripts\python.exe -m unittest discover tests -v
 .\.venv\Scripts\python.exe scripts\check_production_config.py --self-test
 .\.venv\Scripts\python.exe scripts\check_production_config.py --current
 ```
+
+`check:system` 代表軟體 smoke、HTML、測試與基本 runtime 檢查通過；`check:system:hardware` 會要求 `/api/ready` 回報真機 readiness，robot 未連線時會失敗。
 
 `--require-production` 只應在真正 `APP_ENV=production` 時使用。若目前是實驗室測試，`APP_ENV=development` 失敗是正常保護，不代表程式壞掉。
 

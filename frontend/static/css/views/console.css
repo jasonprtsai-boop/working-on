@@ -174,6 +174,128 @@
     display: flex;
 }
 
+.export-support-tools {
+    padding-top: 8px;
+    border-top: 1px solid rgba(148, 163, 184, 0.28);
+}
+
+.export-support-tools summary {
+    color: var(--text-secondary);
+    font-size: 0.76rem;
+    font-weight: 900;
+    cursor: pointer;
+}
+
+.export-support-tools .btn-remote {
+    width: 100%;
+}
+
+.console-readiness-alert {
+    display: grid;
+    gap: 6px;
+    margin: 0 0 16px;
+    padding: 12px 14px;
+    border: 1px solid #fecaca;
+    border-left: 4px solid var(--error);
+    border-radius: 8px;
+    background: #fff1f2;
+    color: #7f1d1d;
+}
+
+.console-readiness-alert.hidden {
+    display: none;
+}
+
+.console-readiness-alert strong {
+    font-size: 0.88rem;
+    font-weight: 950;
+}
+
+.console-readiness-alert span {
+    font-size: 0.76rem;
+    font-weight: 760;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+}
+
+.replay-browser {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.replay-toolbar,
+.replay-step-controls {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: center;
+}
+
+.replay-step-controls {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.replay-select {
+    min-width: 0;
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.9);
+    color: var(--text-main);
+    font-weight: 700;
+}
+
+.replay-range {
+    width: 100%;
+    min-width: 0;
+}
+
+.replay-summary-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+
+.replay-summary-grid div {
+    min-width: 0;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.75);
+}
+
+.replay-summary-grid span {
+    display: block;
+    color: var(--text-secondary);
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+
+.replay-summary-grid strong {
+    display: block;
+    margin-top: 4px;
+    overflow-wrap: anywhere;
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+}
+
+.replay-fen {
+    max-height: 92px;
+    overflow: auto;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: rgba(15, 23, 42, 0.92);
+    color: #dbeafe;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
 .col-left, .col-right {
     height: 100%;
     display: flex;
@@ -348,4 +470,3 @@
     background: rgba(255,255,255,0.2);
     z-index: 5;
 }
-

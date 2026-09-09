@@ -122,22 +122,55 @@ def explain_socket_error(exc: OSError) -> str:
     return f"Socket 錯誤：{exc}"
 
 
+def normalize_source_ip(value: str | None) -> str | None:
+    text = str(value or "").strip()
+    if not text or text.lower() in {"auto", "none"}:
+        return None
+    return text
+
+
+def connect_socket(
+    robot_ip: str,
+    source_ip: str | None,
+    port: int,
+    timeout: float,
+    wait_seconds: float,
+) -> socket.socket:
+    deadline = time.monotonic() + max(0.0, wait_seconds)
+    last_error: OSError | None = None
+
+    while True:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(timeout)
+        try:
+            if source_ip:
+                sock.bind((source_ip, 0))
+            sock.connect((robot_ip, port))
+            return sock
+        except OSError as exc:
+            last_error = exc
+            sock.close()
+            if time.monotonic() >= deadline:
+                raise last_error
+            time.sleep(0.5)
+
+
 def diagnose(
     robot_ip: str,
     source_ip: str | None,
     port: int,
     timeout: float,
+    wait_seconds: float,
 ) -> int:
     print("TMflow 連線診斷（不會移動機械手臂）")
     print(f"機器人：{robot_ip}:{port}")
     print(f"來源 IP：{source_ip or '由 Windows 自動選擇'}")
+    if wait_seconds > 0:
+        print(f"等待 Listen 開啟：最多 {wait_seconds:g} 秒")
 
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.settimeout(timeout)
+    sock: socket.socket | None = None
     try:
-        if source_ip:
-            sock.bind((source_ip, 0))
-        sock.connect((robot_ip, port))
+        sock = connect_socket(robot_ip, source_ip, port, timeout, wait_seconds)
     except OSError as exc:
         print("\n[失敗] TCP 5890 無法連線")
         print(explain_socket_error(exc))
@@ -196,7 +229,8 @@ def diagnose(
         print(f"\n[異常] 通訊或封包解析失敗：{exc}")
         return 5
     finally:
-        sock.close()
+        if sock is not None:
+            sock.close()
 
 
 def parse_args() -> argparse.Namespace:
@@ -207,10 +241,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--source-ip",
         default=DEFAULT_SOURCE_IP,
-        help="強制使用乙太網路來源 IP；傳入空字串可由 Windows 自動選擇",
+        help='強制使用乙太網路來源 IP；傳入 "auto" 可由 Windows 自動選擇',
     )
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument("--timeout", type=float, default=3.0)
+    parser.add_argument("--wait-seconds", type=float, default=0.0, help="等待 Listen 開啟並重試連線")
     return parser.parse_args()
 
 
@@ -218,9 +253,10 @@ def main() -> int:
     args = parse_args()
     return diagnose(
         robot_ip=args.robot_ip,
-        source_ip=args.source_ip or None,
+        source_ip=normalize_source_ip(args.source_ip),
         port=args.port,
         timeout=args.timeout,
+        wait_seconds=args.wait_seconds,
     )
 
 

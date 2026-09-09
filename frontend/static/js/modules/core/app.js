@@ -10,7 +10,7 @@ import { socketClient } from '../websocket/socket_client.js';
 import { setupEventAdapter } from '../websocket/event_adapter.js';
 import { setupSocketStatus } from '../websocket/socket_status.js';
 import { UIRegistry } from '../ui/ui_registry.js';
-import { exportCsvReport, exportExcelReport } from './export_controller.js';
+import { exportCsvReport, exportExcelReport, exportReplayJson } from './export_controller.js';
 import {
     apiJson,
     clearAdminToken,
@@ -22,15 +22,27 @@ import {
     loginSetup,
 } from './api_client.js';
 
+const REPLAY_ALL_SESSIONS = '__all__';
+
 const ADMIN_ONLY_CONTROL_IDS = [
     'btn-export-excel',
     'btn-export-csv',
+    'btn-export-replay',
+    'btn-replay-refresh',
+    'btn-replay-prev',
+    'btn-replay-next',
+    'replay-session-select',
+    'replay-step-range',
     'btn-resume-overlay',
     'btn-session-start',
     'btn-session-end',
 ];
 
 let playerGameStarted = false;
+let playerStartPreflight = null;
+let robotPlayRequestActive = false;
+let robotPlayCooldownUntil = 0;
+let playerEndRequestActive = false;
 let videoReconnectAttempts = 0;
 let videoReconnectTimer = null;
 let videoStreamActive = false;
@@ -40,9 +52,53 @@ const setupWizardState = {
     preflight: null,
     commissioning: null,
 };
+const replayState = {
+    sessions: [],
+    steps: [],
+    sessionId: null,
+    step: 0,
+    currentPayload: null,
+    loaded: false,
+};
+const runtimeControlState = {
+    sessionActive: null,
+};
 const VIDEO_RECONNECT_BASE_MS = 5000;
 const VIDEO_RECONNECT_MAX_MS = 30000;
 const VISION_STALE_THRESHOLD_MS = 3000;
+const ROBOT_PLAY_CONFIRM_MESSAGE = '警告：即將送出機械手臂 Play 訊號，請勿靠近棋盤與手臂工作範圍。確認 TMflow 已在控制器端啟動、所有人員已離開後，才可以繼續。';
+const PLAYER_END_CONFIRM_MESSAGE = '確定要結束目前對局嗎？結束後玩家不能再送出棋步或啟動機械手臂；這不是實體急停。';
+const PLAYER_END_FINAL_CONFIRM_MESSAGE = '再次確認：你真的要結束對局嗎？若手臂正在動作，請保持距離並由工作人員處理急停。';
+const LIVE_HARDWARE_ACTIONS = new Set([
+    'gripper_open',
+    'gripper_close',
+    'write_pose',
+    'safe_z',
+    'origin',
+    'dead_zone',
+    'corner_a0',
+    'corner_i0',
+    'corner_a9',
+    'corner_i9',
+    'center_e4',
+    'grab_z',
+    'one_move',
+]);
+const LIVE_HARDWARE_ACTION_LABELS = {
+    gripper_open: '放開夾爪',
+    gripper_close: '夾取棋子',
+    write_pose: '寫入座標',
+    safe_z: '移到安全 Z',
+    origin: '移到原點',
+    dead_zone: '移到死棋區',
+    corner_a0: '移到 a0 安全 Z',
+    corner_i0: '移到 i0 安全 Z',
+    corner_a9: '移到 a9 安全 Z',
+    corner_i9: '移到 i9 安全 Z',
+    center_e4: '移到 e4 安全 Z',
+    grab_z: '移到 e4 夾取 Z',
+    one_move: '執行 a0a1 測試',
+};
 const LAB_ROBOT_DEFAULTS = {
     'robot.connection.adapter': 'tmflow_json',
     'robot.connection.ip': '192.168.10.10',
@@ -116,6 +172,8 @@ function setupUI() {
     bindClick('btn-role-player', () => switchView('view-player'));
     bindClick('btn-player-start', startPlayerGame);
     bindClick('btn-player-vision-capture', submitPlayerDone);
+    bindClick('btn-player-end-game', endPlayerGame);
+    bindClick('btn-start-tmflow', startRobotArmFlow);
     bindClick('btn-role-console', requestConsoleAccess);
     bindClick('btn-role-setup', requestSetupAccess);
     bindClick('btn-exit', () => switchView('view-landing'));
@@ -129,6 +187,7 @@ function setupUI() {
     bindClick('btn-resume-overlay', resumeFromOverlay);
     bindClick('btn-export-excel', exportExcelReport);
     bindClick('btn-export-csv', exportCsvReport);
+    bindClick('btn-export-replay', () => exportReplayJson(replayState.sessionId));
     bindClick('btn-auth-cancel', hideAuthOverlay);
     bindClick('btn-setup-auth-cancel', hideSetupAuthOverlay);
     bindSubmit('admin-login-form', submitAdminLogin);
@@ -140,6 +199,7 @@ function setupUI() {
     setupSettingsControls();
     setupPlayerGuide();
     setupSidebarTabs();
+    setupReplayControls();
     setupModeTabsKeyboard();
     installAuthorizationGuards();
 
@@ -177,7 +237,9 @@ function switchView(viewId) {
 
     if (viewId !== 'view-player') {
         playerGameStarted = false;
+        playerStartPreflight = null;
     }
+    updatePlayerStartPreflightAlert(playerStartPreflight);
     updatePlayerStartGate(viewId === 'view-player');
     if (viewId === 'view-setup') {
         startSetupRobotStatusRefresh();
@@ -189,6 +251,7 @@ function switchView(viewId) {
 function updatePlayerStartGate(isPlayerView) {
     const startPanel = document.getElementById('player-start-panel');
     const arena = document.getElementById('game-arena');
+    const showArena = playerGameStarted || isGameEnded(state.snapshot?.board || {});
 
     if (!isPlayerView) {
         startPanel?.classList.add('hidden');
@@ -196,8 +259,8 @@ function updatePlayerStartGate(isPlayerView) {
         return;
     }
 
-    startPanel?.classList.toggle('hidden', playerGameStarted);
-    arena?.classList.toggle('hidden', !playerGameStarted);
+    startPanel?.classList.toggle('hidden', showArena);
+    arena?.classList.toggle('hidden', !showArena);
 }
 
 async function startPlayerGame() {
@@ -210,13 +273,32 @@ async function startPlayerGame() {
             method: 'POST',
             body: JSON.stringify({ source: 'player_start_button' }),
         });
+        playerStartPreflight = normalizePlayerPreflight(payload.preflight);
+        updatePlayerStartPreflightAlert(playerStartPreflight);
+        if (playerPreflightBlocksStart(playerStartPreflight)) {
+            window.showAlert?.(playerPreflightMessage(playerStartPreflight), 'warning', 5200);
+            return;
+        }
+
         playerGameStarted = true;
         updatePlayerStartGate(true);
         applyRuntimeControlStatus(payload);
         updatePlayerGuide();
-        window.showAlert?.('對局已開始。', 'success');
+        if (playerPreflightHasWarnings(playerStartPreflight)) {
+            window.showAlert?.(playerPreflightMessage(playerStartPreflight), 'warning', 5200);
+        } else {
+            window.showAlert?.('對局已開始。', 'success');
+        }
         await loadInitialStateSnapshot();
     } catch (error) {
+        const preflight = normalizePlayerPreflight(error?.payload?.details?.preflight);
+        if (preflight) {
+            playerStartPreflight = preflight;
+            updatePlayerStartPreflightAlert(preflight);
+            window.showAlert?.(playerPreflightMessage(preflight), 'warning', 5200);
+            return;
+        }
+
         const message = String(error?.message || '');
         if (message.includes('Valid session') || message.includes('unauthorized') || message.includes('401')) {
             // Player mode is public; do not route player-start failures into admin auth.
@@ -227,6 +309,49 @@ async function startPlayerGame() {
     } finally {
         if (button) button.disabled = false;
     }
+}
+
+function normalizePlayerPreflight(preflight) {
+    if (!preflight || typeof preflight !== 'object') return null;
+    const failures = Array.isArray(preflight.failures) ? preflight.failures : [];
+    const warnings = Array.isArray(preflight.warnings) ? preflight.warnings : [];
+    return {
+        ...preflight,
+        ready: Boolean(preflight.ready ?? preflight.ok),
+        failures,
+        warnings,
+    };
+}
+
+function playerPreflightBlocksStart(preflight) {
+    return Boolean(preflight && preflight.ready === false && preflight.failures.length > 0);
+}
+
+function playerPreflightHasWarnings(preflight) {
+    return Boolean(preflight && preflight.warnings.length > 0);
+}
+
+function playerPreflightMessage(preflight) {
+    const item = preflight?.failures?.[0] || preflight?.warnings?.[0] || null;
+    return String(item?.message || '系統預檢尚未通過。');
+}
+
+function updatePlayerStartPreflightAlert(preflight) {
+    const alert = document.getElementById('player-start-preflight-alert');
+    if (!alert) return;
+    if (!preflight || (preflight.ready !== false && preflight.warnings.length === 0)) {
+        alert.classList.add('hidden');
+        alert.textContent = '';
+        alert.dataset.state = 'standby';
+        return;
+    }
+
+    const blocking = playerPreflightBlocksStart(preflight);
+    alert.classList.remove('hidden');
+    alert.dataset.state = blocking ? 'error' : 'warning';
+    alert.textContent = blocking
+        ? `無法開始：${playerPreflightMessage(preflight)}`
+        : `可開始，但需注意：${playerPreflightMessage(preflight)}`;
 }
 
 function requestConsoleAccess() {
@@ -268,8 +393,202 @@ function setupSidebarTabs() {
 
             const indicator = document.getElementById('tab-indicator');
             if (indicator) indicator.style.transform = `translateX(${index * 100}%)`;
+            if (tab === 'replay') {
+                void loadReplayBrowser({ quiet: true });
+            }
         });
     });
+}
+
+function setupReplayControls() {
+    bindClick('btn-replay-refresh', () => loadReplayBrowser({ quiet: false, force: true }));
+    bindClick('btn-replay-prev', () => showReplayStep(replayState.step - 1));
+    bindClick('btn-replay-next', () => showReplayStep(replayState.step + 1));
+
+    const sessionSelect = document.getElementById('replay-session-select');
+    if (sessionSelect) {
+        sessionSelect.addEventListener('change', () => {
+            replayState.sessionId = sessionSelect.value === REPLAY_ALL_SESSIONS ? null : sessionSelect.value;
+            replayState.step = 0;
+            void loadReplaySteps({ quiet: false });
+        });
+    }
+
+    const range = document.getElementById('replay-step-range');
+    if (range) {
+        range.addEventListener('change', () => showReplayStep(Number(range.value || 0)));
+    }
+
+    renderReplayStep();
+}
+
+async function loadReplayBrowser({ quiet = false, force = false } = {}) {
+    if (!hasAdminAccess()) {
+        setReplayStatus('請先解鎖主控台');
+        return false;
+    }
+    if (replayState.loaded && !force) {
+        return true;
+    }
+
+    setReplayStatus('載入場次中');
+    try {
+        const payload = await apiJson('/api/replay/sessions?limit=50', { method: 'GET' }, 8000);
+        replayState.sessions = Array.isArray(payload.sessions) ? payload.sessions : [];
+        replayState.loaded = true;
+        if (
+            replayState.sessionId !== null
+            && !replayState.sessions.some((item) => replaySessionId(item) === replayState.sessionId)
+        ) {
+            replayState.sessionId = null;
+        }
+        renderReplaySessions();
+        await loadReplaySteps({ quiet: true });
+        if (!quiet) window.showAlert?.('回放資料已更新。', 'success');
+        return true;
+    } catch (error) {
+        replayState.loaded = false;
+        replayState.steps = [];
+        replayState.currentPayload = null;
+        renderReplaySessions();
+        renderReplayStep();
+        setReplayStatus(error?.message || '回放資料無法載入');
+        if (!quiet) window.showAlert?.(error?.message || '回放資料無法載入。', 'error');
+        return false;
+    }
+}
+
+function renderReplaySessions() {
+    const select = document.getElementById('replay-session-select');
+    if (!select) return;
+    select.innerHTML = '';
+
+    const allOption = document.createElement('option');
+    allOption.value = REPLAY_ALL_SESSIONS;
+    allOption.textContent = '所有回放事件';
+    select.appendChild(allOption);
+
+    replayState.sessions.forEach((session) => {
+        const id = replaySessionId(session);
+        const option = document.createElement('option');
+        option.value = id;
+        option.textContent = `${session.label || id || '未分配回放事件'} (${session.event_count || 0})`;
+        select.appendChild(option);
+    });
+    select.value = replayState.sessionId === null ? REPLAY_ALL_SESSIONS : replayState.sessionId;
+}
+
+function replaySessionId(session = {}) {
+    if (Object.prototype.hasOwnProperty.call(session, 'session_id')) {
+        return String(session.session_id ?? '');
+    }
+    return String(session.id ?? '');
+}
+
+async function loadReplaySteps({ quiet = false } = {}) {
+    if (!hasAdminAccess()) {
+        setReplayStatus('請先解鎖主控台');
+        return false;
+    }
+    setReplayStatus('載入步驟中');
+    try {
+        const params = new URLSearchParams({ limit: '500' });
+        if (replayState.sessionId !== null) params.set('session', replayState.sessionId);
+        const payload = await apiJson(`/api/replay/steps?${params.toString()}`, { method: 'GET' }, 8000);
+        replayState.steps = Array.isArray(payload.steps) ? payload.steps : [];
+        replayState.step = replayState.steps.length
+            ? Math.min(Math.max(Number(replayState.step) || 0, 0), replayState.steps.length - 1)
+            : 0;
+        replayState.currentPayload = null;
+        if (!replayState.steps.length) {
+            renderReplayStep();
+            setReplayStatus('尚無可回放事件');
+            return true;
+        }
+        await showReplayStep(replayState.step, { quiet: true });
+        if (!quiet) window.showAlert?.('回放步驟已載入。', 'success');
+        return true;
+    } catch (error) {
+        replayState.steps = [];
+        replayState.currentPayload = null;
+        renderReplayStep();
+        setReplayStatus(error?.message || '回放步驟無法載入');
+        if (!quiet) window.showAlert?.(error?.message || '回放步驟無法載入。', 'error');
+        return false;
+    }
+}
+
+async function showReplayStep(step, { quiet = false } = {}) {
+    if (!replayState.steps.length) {
+        renderReplayStep();
+        return false;
+    }
+    const index = Math.min(Math.max(Number(step) || 0, 0), replayState.steps.length - 1);
+    replayState.step = index;
+    renderReplayStep();
+
+    try {
+        const params = new URLSearchParams();
+        if (replayState.sessionId !== null) params.set('session', replayState.sessionId);
+        const suffix = params.toString() ? `?${params.toString()}` : '';
+        replayState.currentPayload = await apiJson(`/api/replay/step/${index}${suffix}`, { method: 'GET' }, 8000);
+        renderReplayStep();
+        setReplayStatus('回放資料已載入');
+        return true;
+    } catch (error) {
+        replayState.currentPayload = null;
+        renderReplayStep();
+        setReplayStatus(error?.message || '回放步驟無法載入');
+        if (!quiet) window.showAlert?.(error?.message || '回放步驟無法載入。', 'error');
+        return false;
+    }
+}
+
+function renderReplayStep() {
+    const count = replayState.steps.length;
+    const index = count ? Math.min(Math.max(Number(replayState.step) || 0, 0), count - 1) : 0;
+    const item = replayState.steps[index] || {};
+    const payload = replayState.currentPayload || {};
+    const replay = payload._replay || {};
+    const board = payload.board || payload.game || {};
+    const fen = board.fen || item.fen || '--';
+
+    setTextById('replay-current-step', count ? `${index + 1} / ${count}` : '--');
+    setTextById('replay-event-type', replay.type || item.type || '--');
+    setTextById('replay-move', replayValue(item.move || board.last_move || board.move));
+    setTextById('replay-turn', replayValue(item.turn || board.turn || board.current_turn));
+    setTextById('replay-timestamp', replayTime(replay.timestamp || item.timestamp));
+    setTextById('replay-fen', fen);
+
+    const range = document.getElementById('replay-step-range');
+    if (range) {
+        range.max = String(Math.max(count - 1, 0));
+        range.value = String(index);
+        range.disabled = count === 0;
+    }
+    const prev = document.getElementById('btn-replay-prev');
+    const next = document.getElementById('btn-replay-next');
+    if (prev) prev.disabled = count === 0 || index <= 0;
+    if (next) next.disabled = count === 0 || index >= count - 1;
+    const exportButton = document.getElementById('btn-export-replay');
+    if (exportButton && canUseLiveAdminControls()) exportButton.disabled = count === 0;
+}
+
+function setReplayStatus(value) {
+    setTextById('replay-status', value);
+}
+
+function replayValue(value) {
+    if (value === undefined || value === null || value === '') return '--';
+    if (typeof value === 'object') return JSON.stringify(value);
+    return String(value);
+}
+
+function replayTime(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || numeric <= 0) return '--';
+    const ms = numeric > 1e12 ? numeric : numeric * 1000;
+    return new Date(ms).toLocaleString('zh-TW');
 }
 
 async function resumeFromOverlay() {
@@ -513,9 +832,19 @@ async function runSetupHardwareTest(action) {
     if (action === 'connect') setTextById('setup-init-result', '測試中');
     try {
         const liveHardwareTest = document.getElementById('setup-live-hardware-test')?.checked === true;
+        const body = { action, dry_run: !liveHardwareTest };
+        if (liveHardwareTest && LIVE_HARDWARE_ACTIONS.has(action)) {
+            if (!confirmLiveHardwareAction(action)) {
+                setTextById('setup-hardware-test-status', `${action}: 已取消`);
+                if (action === 'connect') renderSetupInitializationSummary({}, `${action}: 已取消`);
+                return false;
+            }
+            body.confirmed_action = action;
+            body.warning_acknowledged = true;
+        }
         const payload = await apiJson('/api/setup/hardware-test', {
             method: 'POST',
-            body: JSON.stringify({ action, dry_run: !liveHardwareTest }),
+            body: JSON.stringify(body),
         }, 12000);
         if (payload.status) {
             renderSetupRobotStatus(payload.status);
@@ -534,6 +863,12 @@ async function runSetupHardwareTest(action) {
         window.showAlert?.(error?.message || `${action} 失敗。`, 'error');
         return false;
     }
+}
+
+function confirmLiveHardwareAction(action) {
+    const label = LIVE_HARDWARE_ACTION_LABELS[action] || action;
+    const message = `警告：${label} 會讓機械手臂或夾爪實際動作。請確認所有人員遠離棋盤與手臂工作範圍後再繼續。`;
+    return typeof window.confirm === 'function' ? window.confirm(message) : false;
 }
 
 function startSetupRobotStatusRefresh() {
@@ -1204,7 +1539,6 @@ function installAuthorizationGuards() {
     document.querySelectorAll('[data-setup-admin="true"], [data-setup-field]').forEach((element) => {
         element.dataset.requiresSetup = 'true';
     });
-
     window.addEventListener('storage', refreshAuthorizationUI);
     window.addEventListener('smart:connection-status', refreshAuthorizationUI);
     window.addEventListener('keydown', (event) => {
@@ -1270,6 +1604,7 @@ function refreshAuthorizationUI() {
         element.setAttribute('aria-disabled', setupDisabled ? 'true' : 'false');
         element.dataset.authDisabled = setupDisabled ? 'true' : 'false';
     });
+    updateSessionControlButtons();
 }
 
 async function loadInitialStateSnapshot() {
@@ -1443,19 +1778,27 @@ function updatePlayerGuide() {
     const ui = snap.ui || {};
     const turn = normalizePlayerTurn(board.turn || board.fen);
     const turnLabel = turn === 'black' ? '黑方移動' : '紅方移動';
-    const aiLabel = ui.ai_mode_label || ui.ai_difficulty || '陪伴模式';
+    const aiLabel = ui.ai_mode_label || ui.ai_difficulty || '陪伴預設';
+    const gameEnded = isGameEnded(board);
 
     setTextById('player-guide-turn', turnLabel);
     setTextById('player-guide-ai', aiLabel);
 
     const visionStatus = playerVisionStatus(vision);
     const robotStatus = playerRobotStatus(robot, engine, turn);
-    updateVisionCaptureButton(vision);
+    updateVisionCaptureButton(vision, board);
+    updateRobotStartButton(robot, board, engine);
+    updatePlayerEndButton(board);
     setTextById('player-guide-vision', visionStatus.text);
     setGuideState('player-guide-vision-card', visionStatus.state);
     setTextById('player-guide-robot', robotStatus.text);
     setGuideState('player-guide-robot-card', robotStatus.state);
 
+    if (gameEnded) {
+        const result = board.game_result || {};
+        setPlayerGuideCopy('棋局結束', gameEndActionText(result), '請勿再移動棋子；這不是實體急停，如需重新開始或處理手臂，請由工作人員操作。');
+        return;
+    }
     if (!playerGameStarted) {
         setPlayerGuideCopy('等待開始', '請按下開始對局', '開始後，系統會提示輪到哪一方、辨識是否成功，以及機械手臂是否準備動作。');
         return;
@@ -1464,8 +1807,8 @@ function updatePlayerGuide() {
         setPlayerGuideCopy('機械手臂動作中', '請保持雙手離開棋盤', '等待機械手臂完成後，再依畫面提示繼續。');
         return;
     }
-    if (robotStatus.state === 'warning') {
-        setPlayerGuideCopy('機械手臂即將動作', '請保持雙手離開棋盤', 'AI 已產生走法，系統準備執行機械手臂動作。');
+    if (robotStatus.reason === 'ready_to_start') {
+        setPlayerGuideCopy('等待啟動手臂', '請按下啟動機械手臂流程', '啟動前請確認所有人員遠離棋盤與手臂工作範圍。');
         return;
     }
     if (engine.is_thinking) {
@@ -1533,13 +1876,28 @@ function isVisionCaptureActive(vision = {}) {
     return Boolean(vision.capture_active || capture.active);
 }
 
-function updateVisionCaptureButton(vision = {}) {
+function updateVisionCaptureButton(vision = {}, board = {}) {
     const button = document.getElementById('btn-player-vision-capture');
     if (!button) return;
     const active = isVisionCaptureActive(vision);
+    const ended = isGameEnded(board);
     button.classList.toggle('active', active);
-    button.textContent = active ? '辨識中...' : '我已下棋';
-    button.disabled = !playerGameStarted || active;
+    button.textContent = ended ? '棋局已結束' : (active ? '辨識中...' : '我已下棋');
+    button.disabled = !playerGameStarted || active || ended;
+}
+
+function updatePlayerEndButton(board = {}) {
+    const button = document.getElementById('btn-player-end-game');
+    if (!button) return;
+    const ended = isGameEnded(board);
+    button.disabled = !playerGameStarted || ended || playerEndRequestActive;
+    if (playerEndRequestActive) {
+        button.textContent = '結束中...';
+    } else if (ended) {
+        button.textContent = '對局已結束';
+    } else {
+        button.textContent = '結束對局';
+    }
 }
 
 async function submitPlayerDone() {
@@ -1565,17 +1923,187 @@ async function submitPlayerDone() {
         window.showAlert?.(error?.message || '送出玩家完成狀態失敗。', 'error');
     } finally {
         if (button) button.disabled = false;
-        updateVisionCaptureButton(state.snapshot.vision || {});
+        updateVisionCaptureButton(state.snapshot.vision || {}, state.snapshot.board || {});
     }
 }
 
 function playerRobotStatus(robot = {}, engine = {}, turn = 'red') {
+    const simulation = Boolean(robot.fake_robot || robot.simulation);
     if (robot.error) return { state: 'error', text: '需要工作人員確認' };
-    if (robot.busy) return { state: 'warning', text: '動作中，請勿靠近' };
-    if (turn === 'black' && (engine.best_move || engine.bestMove || engine.bestmove)) {
-        return { state: 'warning', text: '即將動作' };
+    if (robot.busy) return { state: 'warning', text: simulation ? '模擬動作中' : '動作中，請勿靠近' };
+    if (isRobotMoveReady(engine, { turn })) {
+        return { state: 'warning', text: simulation ? '模擬待啟動' : '等待啟動', reason: 'ready_to_start' };
     }
-    return { state: 'standby', text: '尚未動作' };
+    return { state: 'standby', text: simulation ? '模擬模式' : '尚未動作' };
+}
+
+function updateRobotStartButton(robot = {}, board = {}, engine = {}) {
+    const button = document.getElementById('btn-start-tmflow');
+    if (!button) return;
+    const ended = isGameEnded(board);
+    const busy = Boolean(robot.busy);
+    const coolingDown = Date.now() < robotPlayCooldownUntil;
+    const moveReady = isRobotMoveReady(engine, board);
+    button.disabled = !playerGameStarted || ended || busy || !moveReady || robotPlayRequestActive || coolingDown;
+    if (robotPlayRequestActive) {
+        button.textContent = '送出啟動中...';
+    } else if (busy) {
+        button.textContent = '手臂動作中...';
+    } else if (coolingDown) {
+        button.textContent = '啟動訊號已送出';
+    } else if (ended) {
+        button.textContent = '棋局已結束';
+    } else if (!moveReady) {
+        button.textContent = '等待 AI 招法';
+    } else {
+        button.textContent = '啟動機械手臂流程';
+    }
+}
+
+async function startRobotArmFlow() {
+    if (!playerGameStarted) {
+        window.showAlert?.('請先開始對局。', 'warning');
+        return;
+    }
+    if (isGameEnded(state.snapshot.board || {})) {
+        window.showAlert?.('棋局已結束，請勿再啟動機械手臂。', 'warning');
+        return;
+    }
+    if (!isRobotMoveReady(state.snapshot.engine || {}, state.snapshot.board || {})) {
+        window.showAlert?.('AI 尚未產生可執行招法，請等畫面提示後再啟動。', 'warning');
+        updateRobotStartButton(state.snapshot.robot || {}, state.snapshot.board || {}, state.snapshot.engine || {});
+        return;
+    }
+    if (!hasSetupAccess()) {
+        window.showAlert?.('請先由工作人員解鎖系統設定權限。', 'warning');
+        showSetupAuthOverlay();
+        return;
+    }
+    if (typeof window.confirm === 'function' && !window.confirm(ROBOT_PLAY_CONFIRM_MESSAGE)) {
+        window.showAlert?.('已取消啟動機械手臂。', 'info');
+        return;
+    }
+
+    robotPlayRequestActive = true;
+    updateRobotStartButton(state.snapshot.robot || {}, state.snapshot.board || {}, state.snapshot.engine || {});
+    try {
+        await apiJson('/api/robot/play', {
+            method: 'POST',
+            body: JSON.stringify({
+                source: 'player_web_robot_start_button',
+                confirmed_action: 'robot_play',
+                warning_acknowledged: true,
+            }),
+        }, 9000);
+        robotPlayCooldownUntil = Date.now() + 5000;
+        setTimeout(() => updateRobotStartButton(state.snapshot.robot || {}, state.snapshot.board || {}, state.snapshot.engine || {}), 5200);
+        commit('DIAGNOSTICS.UPDATED', {
+            ui: {
+                robot_play_requested_at: Date.now(),
+                robot_play_warning_acknowledged: true,
+            },
+        });
+        updatePlayerGuide();
+        window.showAlert?.('已送出機械手臂啟動訊號，請勿靠近。', 'warning', 5200);
+    } catch (error) {
+        window.showAlert?.(error?.message || '機械手臂啟動失敗。', 'error', 5200);
+    } finally {
+        robotPlayRequestActive = false;
+        updateRobotStartButton(state.snapshot.robot || {}, state.snapshot.board || {}, state.snapshot.engine || {});
+    }
+}
+
+async function endPlayerGame() {
+    if (!playerGameStarted && !isGameEnded(state.snapshot.board || {})) {
+        window.showAlert?.('尚未開始對局。', 'warning');
+        return;
+    }
+    if (isGameEnded(state.snapshot.board || {})) {
+        window.showAlert?.('對局已經結束。', 'info');
+        updatePlayerEndButton(state.snapshot.board || {});
+        return;
+    }
+    if (!confirmPlayerEndGame()) {
+        window.showAlert?.('已取消結束對局。', 'info');
+        return;
+    }
+
+    playerEndRequestActive = true;
+    updatePlayerEndButton(state.snapshot.board || {});
+    updateVisionCaptureButton(state.snapshot.vision || {}, state.snapshot.board || {});
+    updateRobotStartButton(state.snapshot.robot || {}, state.snapshot.board || {}, state.snapshot.engine || {});
+    try {
+        const payload = await apiJson('/api/player/end-game', {
+            method: 'POST',
+            body: JSON.stringify({
+                source: 'player_end_button',
+                confirmed_action: 'end_game',
+                final_confirmation: 'END_GAME_CONFIRMED',
+            }),
+        }, 7000);
+        if (payload.state) {
+            commit('GAME.STATE_APPLIED', payload.state);
+        } else {
+            const gameResult = payload.game_result || { ended: true, reason: 'player_ended', winner: null };
+            commit('GAME.STATE_APPLIED', {
+                board: {
+                    ...(state.snapshot.board || {}),
+                    game_status: 'GAME_OVER',
+                    game_phase: 'ENDED',
+                    game_result: gameResult,
+                    ended: true,
+                },
+                game: {
+                    ...(state.snapshot.game || {}),
+                    game_status: 'GAME_OVER',
+                    game_phase: 'ENDED',
+                    game_result: gameResult,
+                },
+                state: 'GAME_OVER',
+            });
+        }
+        updatePlayerStartGate(true);
+        updatePlayerGuide();
+        window.showAlert?.('對局已結束，請勿再移動棋子；這不是實體急停。', 'success', 5200);
+    } catch (error) {
+        window.showAlert?.(error?.message || '結束對局失敗。', 'error', 5200);
+    } finally {
+        playerEndRequestActive = false;
+        updatePlayerEndButton(state.snapshot.board || {});
+        updateVisionCaptureButton(state.snapshot.vision || {}, state.snapshot.board || {});
+        updateRobotStartButton(state.snapshot.robot || {}, state.snapshot.board || {}, state.snapshot.engine || {});
+    }
+}
+
+function confirmPlayerEndGame() {
+    if (typeof window.confirm !== 'function') return false;
+    if (!window.confirm(PLAYER_END_CONFIRM_MESSAGE)) return false;
+    return window.confirm(PLAYER_END_FINAL_CONFIRM_MESSAGE);
+}
+
+function isRobotMoveReady(engine = {}, board = {}) {
+    const turn = normalizePlayerTurn(board.turn || board.fen);
+    return turn === 'black' && Boolean(engine.best_move || engine.bestMove || engine.bestmove);
+}
+
+function isGameEnded(board = {}) {
+    const status = String(board.game_status || '').toUpperCase();
+    return Boolean(board.ended || status === 'GAME_OVER' || board.game_result?.ended);
+}
+
+function gameWinnerLabel(winner) {
+    const normalized = String(winner || '').toLowerCase();
+    if (normalized === 'red') return '紅方';
+    if (normalized === 'black') return '黑方';
+    return '棋局';
+}
+
+function gameEndActionText(result = {}) {
+    const reason = String(result.reason || '').toLowerCase();
+    if (reason === 'player_ended') return '玩家已結束對局';
+    const winner = String(result.winner || '').toLowerCase();
+    if (winner === 'red' || winner === 'black') return `${gameWinnerLabel(winner)}獲勝`;
+    return '對局已結束';
 }
 
 function setGuideState(id, stateName) {
@@ -1607,7 +2135,7 @@ async function setEngineDepth(depth) {
 }
 
 async function setAiMode(mode) {
-    await postRuntimeControl('/api/runtime/ai-mode', { mode }, '更新 AI 模式失敗。');
+    await postRuntimeControl('/api/runtime/ai-mode', { mode }, '更新 AI 難度預設失敗。');
 }
 
 function setupSafeModeControl() {
@@ -1698,8 +2226,32 @@ function applyRuntimeControlStatus(payload = {}) {
 
     if (snapshot.engine_depth !== undefined) setActiveDepthButton(snapshot.engine_depth);
     if (snapshot.ai_mode) setActiveAiModeButton(snapshot.ai_mode);
+    if (typeof session.active === 'boolean') {
+        runtimeControlState.sessionActive = session.active;
+        updateSessionControlButtons();
+    }
     commit('DIAGNOSTICS.UPDATED', { ui });
     updatePlayerGuide();
+}
+
+function updateSessionControlButtons() {
+    const canUse = canUseLiveAdminControls();
+    const active = runtimeControlState.sessionActive === true;
+    const known = typeof runtimeControlState.sessionActive === 'boolean';
+    const startDisabled = !canUse || (known && active);
+    const endDisabled = !canUse || !active;
+    const participantDisabled = !canUse || active;
+
+    setControlDisabled('btn-session-start', startDisabled);
+    setControlDisabled('btn-session-end', endDisabled);
+    setControlDisabled('session-participant-id', participantDisabled);
+}
+
+function setControlDisabled(id, disabled) {
+    const element = document.getElementById(id);
+    if (!element) return;
+    element.disabled = Boolean(disabled);
+    element.setAttribute('aria-disabled', disabled ? 'true' : 'false');
 }
 
 function setActiveDepthButton(depth) {

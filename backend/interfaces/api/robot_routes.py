@@ -3,8 +3,9 @@ from __future__ import annotations
 from flask import jsonify
 
 from backend.application.container import container
+from backend.application.services.system_preflight import build_preflight_report
 from backend.infrastructure.robot.tmflow_ingest_state import tmflow_ingest_state
-from backend.interfaces.api.shared import api_bp, error_response, json_object_payload
+from backend.interfaces.api.shared import api_bp, error_response, json_object_payload, optional_json_object_payload
 from backend.utils import config
 from backend.utils.kinematics import kinematics
 from backend.interfaces.api.setup_routes import current_setup_settings, normalize_setup_settings
@@ -223,3 +224,117 @@ def _coerce_float(value, field_name: str) -> float:
     if not math.isfinite(number):
         raise ValueError(f"{field_name} must be finite")
     return number
+
+
+@api_bp.route("/robot/play", methods=["POST"])
+def play_tmflow_project():
+    """Send the TM Robot Play register only when using direct Modbus client mode."""
+    try:
+        payload = optional_json_object_payload()
+        if not _robot_play_confirmed(payload):
+            return error_response(
+                "robot_play_confirmation_required",
+                "請先在網頁確認「請勿靠近」警告後，再啟動機械手臂流程。",
+                400,
+                details={
+                    "required": {
+                        "confirmed_action": "robot_play",
+                        "warning_acknowledged": True,
+                    }
+                },
+            )
+
+        preflight = build_preflight_report(require_auto_execute=False)
+        if not bool(preflight.get("ready", preflight.get("ok", False))):
+            return error_response(
+                "robot_preflight_failed",
+                "Robot preflight failed; Play was not sent.",
+                409,
+                details={
+                    "failures": preflight.get("failures", []),
+                    "warnings": preflight.get("warnings", []),
+                },
+            )
+
+        robot = container.get("robot")
+        if not robot:
+            return error_response("robot_unavailable", "Robot service is not initialized.", 503)
+
+        adapter = getattr(robot, "adapter", None)
+        if not adapter:
+            return error_response("robot_unavailable", "Robot adapter is not initialized.", 503)
+
+        if _is_modbus_server_mode(adapter):
+            return error_response(
+                "unsupported_robot_play_mode",
+                (
+                    "Modbus server mode cannot press the TMflow Play button. "
+                    "Start the TMflow project on the robot controller, then use square-command registers for moves."
+                ),
+                409,
+                details={
+                    "adapter": "modbus",
+                    "role": _adapter_role(adapter),
+                    "payload_mode": _adapter_payload_mode(adapter),
+                    "play_register": 7104,
+                },
+            )
+
+        write_register = getattr(adapter, "_write_register", None)
+        if not callable(write_register):
+            return error_response("unsupported_adapter", "Adapter does not support register writes.", 400)
+
+        # 7104 is the TM Robot standard Modbus register for Play/Pause/Stop
+        # 1 = Play
+        if not write_register(7104, 1):
+            return error_response("play_failed", "Failed to write play command to robot.", 500)
+
+        return jsonify({"ok": True, "message": "Play signal sent to robot."})
+    except Exception as exc:
+        return error_response("play_failed", str(exc), 500, recoverable=True)
+
+
+def _robot_play_confirmed(payload: dict) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    return (
+        str(payload.get("confirmed_action") or "").strip().lower() == "robot_play"
+        and _payload_bool(payload.get("warning_acknowledged", False))
+    )
+
+
+def _is_modbus_server_mode(adapter) -> bool:
+    adapter_name = str(getattr(config, "ROBOT_ADAPTER", "") or "").strip().lower()
+    return adapter_name == "modbus" and _adapter_role(adapter) == "server"
+
+
+def _adapter_role(adapter) -> str:
+    role_getter = getattr(adapter, "_role", None)
+    if callable(role_getter):
+        try:
+            role = role_getter()
+        except Exception:
+            role = None
+    else:
+        role = getattr(adapter, "role", None)
+    role = str(role or getattr(config, "ROBOT_MODBUS_ROLE", "client")).strip().lower()
+    return role if role in {"client", "server"} else "client"
+
+
+def _adapter_payload_mode(adapter) -> str:
+    mode_getter = getattr(adapter, "_payload_mode", None)
+    if callable(mode_getter):
+        try:
+            mode = mode_getter()
+        except Exception:
+            mode = None
+    else:
+        mode = getattr(adapter, "payload_mode", None)
+    mode = str(mode or getattr(config, "ROBOT_MODBUS_PAYLOAD_MODE", "pose")).strip().lower()
+    return mode if mode in {"pose", "square_command"} else "pose"
+
+
+def _payload_bool(value) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on", "confirmed"}
+    return bool(value)

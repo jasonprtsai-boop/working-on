@@ -26,14 +26,18 @@ def build_preflight_report(*, require_auto_execute: bool = False) -> Dict[str, A
     fake_robot = bool(getattr(config, "FAKE_ROBOT", True))
     auto_execute = bool(getattr(config, "AUTO_EXECUTE_ROBOT", False))
     adapter = str(getattr(config, "ROBOT_ADAPTER", "tmflow_json")).strip().lower()
+    robot_mode = _robot_mode_summary(
+        fake_robot=fake_robot,
+        adapter=adapter,
+        robot_status=robot_status,
+        auto_execute=auto_execute,
+    )
     add(
         "robot_mode_confirmed",
-        fake_robot or robot_status.get("connected"),
+        bool(robot_mode.get("ok")),
         "Robot Mode",
-        "Simulation robot is active." if fake_robot else (
-            "Real robot is connected." if robot_status.get("connected") else "Real robot mode is selected but robot is not connected."
-        ),
-        details={"fake_robot": fake_robot, "auto_execute_robot": auto_execute},
+        str(robot_mode.get("message") or "Robot mode is selected."),
+        details=robot_mode.get("details", {}),
     )
     add(
         "auto_execute_enabled",
@@ -110,6 +114,7 @@ def _robot_communication_summary(
     robot_status: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
     adapter_name = str(adapter or "tmflow_json").strip().lower()
+    status = robot_status or {}
     connected = bool((robot_status or {}).get("connected"))
     if fake_robot:
         return {
@@ -120,22 +125,42 @@ def _robot_communication_summary(
     if adapter_name == "modbus":
         role = str(getattr(config, "ROBOT_MODBUS_ROLE", "client")).strip().lower()
         payload_mode = str(getattr(config, "ROBOT_MODBUS_PAYLOAD_MODE", "pose")).strip().lower()
-        server_square_mode = role == "server" and payload_mode == "square_command"
+        details = {
+            "adapter": adapter_name,
+            "role": role,
+            "payload_mode": payload_mode,
+            "server_host": getattr(config, "ROBOT_MODBUS_SERVER_HOST", None),
+            "server_port": getattr(config, "ROBOT_MODBUS_SERVER_PORT", None),
+            "register_addressing": getattr(config, "ROBOT_MODBUS_REGISTER_ADDRESSING", "holding_40001"),
+        }
+        if role == "server":
+            tmflow_ready, tmflow_details = _tmflow_server_polling_ready(status)
+            details.update(tmflow_details)
+            if payload_mode != "square_command":
+                return {
+                    "ok": False,
+                    "message": "Modbus server mode requires square-command payload mode for TMflow polling.",
+                    "details": details,
+                }
+            if not connected:
+                return {
+                    "ok": False,
+                    "message": "Python Modbus server is not listening.",
+                    "details": details,
+                }
+            return {
+                "ok": bool(tmflow_ready),
+                "message": (
+                    "Python Modbus server is listening and TMflow heartbeat/ready signal has been observed."
+                    if tmflow_ready
+                    else "Python Modbus server is listening, but no TMflow heartbeat/ready signal has been observed."
+                ),
+                "details": details,
+            }
         return {
-            "ok": bool(server_square_mode or connected),
-            "message": (
-                "Python Modbus server square-command mode is selected for TMflow polling."
-                if server_square_mode
-                else "Modbus client mode is selected; confirm the robot register map before motion."
-            ),
-            "details": {
-                "adapter": adapter_name,
-                "role": role,
-                "payload_mode": payload_mode,
-                "server_host": getattr(config, "ROBOT_MODBUS_SERVER_HOST", None),
-                "server_port": getattr(config, "ROBOT_MODBUS_SERVER_PORT", None),
-                "register_addressing": getattr(config, "ROBOT_MODBUS_REGISTER_ADDRESSING", "holding_40001"),
-            },
+            "ok": connected,
+            "message": "Modbus client mode is selected; confirm the robot register map before motion.",
+            "details": {**details, "connected": connected},
         }
     if adapter_name == "techmanpy":
         return {
@@ -157,6 +182,76 @@ def _robot_communication_summary(
             "connected": connected,
         },
     }
+
+
+def _robot_mode_summary(
+    *,
+    fake_robot: bool,
+    adapter: str,
+    robot_status: Dict[str, Any] | None,
+    auto_execute: bool,
+) -> Dict[str, Any]:
+    adapter_name = str(adapter or "tmflow_json").strip().lower()
+    connected = bool((robot_status or {}).get("connected"))
+    details: Dict[str, Any] = {
+        "fake_robot": fake_robot,
+        "auto_execute_robot": auto_execute,
+        "adapter": adapter_name,
+    }
+    if fake_robot:
+        return {"ok": True, "message": "Simulation robot is active.", "details": details}
+    if adapter_name == "modbus":
+        role = str(getattr(config, "ROBOT_MODBUS_ROLE", "client")).strip().lower()
+        details.update({
+            "role": role,
+            "payload_mode": str(getattr(config, "ROBOT_MODBUS_PAYLOAD_MODE", "pose")).strip().lower(),
+        })
+        if role == "server":
+            return {
+                "ok": connected,
+                "message": (
+                    "Python Modbus server is listening; TMflow polling is checked separately."
+                    if connected
+                    else "Real robot mode is selected, but the Python Modbus server is not listening."
+                ),
+                "details": details,
+            }
+    return {
+        "ok": connected,
+        "message": "Real robot is connected." if connected else "Real robot mode is selected but robot is not connected.",
+        "details": details,
+    }
+
+
+def _tmflow_server_polling_ready(robot_status: Dict[str, Any]) -> tuple[bool, Dict[str, Any]]:
+    telemetry = robot_status.get("telemetry") if isinstance(robot_status.get("telemetry"), dict) else {}
+    connection = robot_status.get("connection") if isinstance(robot_status.get("connection"), dict) else {}
+    heartbeat = _optional_int(robot_status.get("heartbeat"))
+    robot_state = _optional_int(robot_status.get("robot_state_code"))
+    completed_command = _optional_int(robot_status.get("completed_command_id"))
+    heartbeat_seen = bool(robot_status.get("heartbeat_seen") or telemetry.get("heartbeat_seen"))
+    ready = bool(
+        heartbeat_seen
+        or (heartbeat is not None and heartbeat > 0)
+        or (robot_state is not None and robot_state > 0)
+        or (completed_command is not None and completed_command > 0)
+    )
+    return ready, {
+        "tmflow_heartbeat_seen": heartbeat_seen,
+        "modbus_heartbeat": heartbeat,
+        "robot_state_code": robot_state,
+        "completed_command_id": completed_command,
+        "telemetry_connected": bool(connection.get("telemetry_connected")),
+    }
+
+
+def _optional_int(value) -> int | None:
+    try:
+        if value is None or value == "":
+            return None
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _robot_status() -> Dict[str, Any]:

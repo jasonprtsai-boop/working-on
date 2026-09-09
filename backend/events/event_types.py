@@ -53,6 +53,7 @@ class EventType(str, Enum):
     GAME_RESET = "GAME_RESET"
     GAME_UNDO = "GAME_UNDO"
     GAME_PLAYER_MOVE = "GAME_PLAYER_MOVE"
+    GAME_OVER = "GAME_OVER"
 
 
 class GameEvents(str, Enum):

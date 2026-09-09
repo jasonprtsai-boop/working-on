@@ -1,6 +1,7 @@
 <aside class="sidebar-panel">
     <nav class="tab-nav" aria-label="主控台分頁">
         <button type="button" class="tab-btn active" data-tab="export">匯出</button>
+        <button type="button" class="tab-btn" data-tab="replay">回放</button>
         <button type="button" class="tab-btn" data-tab="logs">日誌</button>
         <div class="tab-indicator" id="tab-indicator"></div>
     </nav>
@@ -10,10 +11,43 @@
 
         <div class="tab-pane active" id="pane-export">
             <div class="stat-card-glass control-hub">
-                <h4 class="panel-title">棋局匯出</h4>
-                <button id="btn-export-excel" type="button" class="btn-remote success mt-12">匯出完整棋局 Excel</button>
-                <button id="btn-export-csv" type="button" class="btn-remote mt-8">匯出事件紀錄 CSV</button>
-                <p class="small-note mt-12">Excel 將彙整影像紀錄、YOLO 效能、辨識結果、玩家與 AI 棋步以及系統狀態。</p>
+                <h4 class="panel-title">現場報告</h4>
+                <button id="btn-export-excel" type="button" class="btn-remote success mt-12">下載現場報告 Excel</button>
+                <p class="small-note mt-12">Excel 聚焦比賽紀錄、錯誤紀錄與現場測試摘要；完整事件資料保留給工程支援。</p>
+                <details class="export-support-tools mt-12">
+                    <summary>工程支援匯出</summary>
+                    <button id="btn-export-csv" type="button" class="btn-remote mt-8">下載原始事件 CSV</button>
+                </details>
+            </div>
+        </div>
+
+        <div class="tab-pane" id="pane-replay">
+            <div class="stat-card-glass control-hub">
+                <h4 class="panel-title">棋局回放</h4>
+                <div class="replay-browser mt-12">
+                    <div class="replay-toolbar">
+                        <select id="replay-session-select" class="replay-select" aria-label="選擇回放場次">
+                            <option value="">所有回放事件</option>
+                        </select>
+                        <button id="btn-replay-refresh" type="button" class="btn-remote">刷新</button>
+                    </div>
+                    <div id="replay-status" class="small-note" role="status" aria-live="polite">尚未載入</div>
+                    <div class="replay-step-controls">
+                        <button id="btn-replay-prev" type="button" class="btn-remote" aria-label="上一個回放步驟">上一手</button>
+                        <input id="replay-step-range" class="replay-range" type="range" min="0" max="0" value="0" step="1" aria-label="回放步驟">
+                        <button id="btn-replay-next" type="button" class="btn-remote" aria-label="下一個回放步驟">下一手</button>
+                    </div>
+                    <div class="replay-summary-grid">
+                        <div><span>步驟</span><strong id="replay-current-step">--</strong></div>
+                        <div><span>事件</span><strong id="replay-event-type">--</strong></div>
+                        <div><span>走法</span><strong id="replay-move">--</strong></div>
+                        <div><span>回合</span><strong id="replay-turn">--</strong></div>
+                        <div><span>時間</span><strong id="replay-timestamp">--</strong></div>
+                    </div>
+                    <pre id="replay-fen" class="replay-fen">--</pre>
+                </div>
+                <button id="btn-export-replay" type="button" class="btn-remote mt-12">下載回放 JSON</button>
+                <p class="small-note mt-12">可先瀏覽事件步驟，再下載 JSON 供外部重建棋局狀態。</p>
             </div>
         </div>
 

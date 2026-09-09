@@ -1,13 +1,13 @@
 param(
   [switch]$SkipGitCleanCheck,
   [switch]$SkipRuntimeSmoke,
-  [switch]$SkipHtmlFunctionCheck
+  [switch]$SkipHtmlFunctionCheck,
+  [switch]$RequireHardwareReady
 )
 
 $ErrorActionPreference = "Stop"
 
 $root = Resolve-Path (Join-Path $PSScriptRoot "..")
-$python = Join-Path $root ".venv\Scripts\python.exe"
 $nodeHome = Join-Path $root ".tools\node-v24.18.0-win-x64"
 $baseUrl = "http://127.0.0.1:5000"
 $gitSafeDirectory = ($root.Path -replace "\\", "/")
@@ -34,6 +34,91 @@ function Assert-CommandSucceeded($exitCode, $name) {
   }
 }
 
+function Test-CommandPathExists($command) {
+  if ([System.IO.Path]::IsPathRooted($command) -or $command.Contains("\") -or $command.Contains("/")) {
+    return Test-Path -LiteralPath $command
+  }
+  return $true
+}
+
+function New-PythonCandidate($label, $command, [string[]]$prefixArgs = @()) {
+  return [pscustomobject]@{
+    Label = $label
+    Command = $command
+    PrefixArgs = $prefixArgs
+  }
+}
+
+function Test-PythonCandidate($candidate) {
+  if (-not (Test-CommandPathExists $candidate.Command)) {
+    return [pscustomobject]@{
+      Label = $candidate.Label
+      Command = $candidate.Command
+      PrefixArgs = $candidate.PrefixArgs
+      Ok = $false
+      Detail = "not found"
+    }
+  }
+
+  $versionArgs = @($candidate.PrefixArgs) + @("--version")
+  $output = ""
+  try {
+    $output = (& $candidate.Command @versionArgs 2>&1 | Out-String).Trim()
+    if ($LASTEXITCODE -eq 0) {
+      return [pscustomobject]@{
+        Label = $candidate.Label
+        Command = $candidate.Command
+        PrefixArgs = $candidate.PrefixArgs
+        Ok = $true
+        Detail = $output
+      }
+    }
+  } catch {
+    $output = $_.Exception.Message
+  }
+
+  return [pscustomobject]@{
+    Label = $candidate.Label
+    Command = $candidate.Command
+    PrefixArgs = $candidate.PrefixArgs
+    Ok = $false
+    Detail = $(if ($output) { $output } else { "not executable" })
+  }
+}
+
+function Resolve-ProjectPython {
+  $candidates = @()
+  $envPython = $env:SMART_CHESS_PYTHON
+  if (-not $envPython) {
+    $envPython = $env:PYTHON_EXE
+  }
+  if ($envPython) {
+    $candidates += New-PythonCandidate "environment override" $envPython
+  }
+  $candidates += New-PythonCandidate "project virtualenv" (Join-Path $root ".venv\Scripts\python.exe")
+  foreach ($version in @("3.11", "3.12", "3.10", "3.9")) {
+    $candidates += New-PythonCandidate "Python launcher $version" "py.exe" @("-$version")
+  }
+  $candidates += New-PythonCandidate "python on PATH" "python.exe"
+
+  $attempts = @()
+  foreach ($candidate in $candidates) {
+    $attempt = Test-PythonCandidate $candidate
+    $attempts += $attempt
+    if ($attempt.Ok) {
+      return $attempt
+    }
+  }
+
+  Write-Host "No usable Python runtime was found for this project." -ForegroundColor Red
+  Write-Host ""
+  Write-Host "Checked:"
+  foreach ($attempt in $attempts) {
+    Write-Host "- $($attempt.Label): $($attempt.Detail)"
+  }
+  throw "Run setup_env.ps1 after installing Python 3.11, or set SMART_CHESS_PYTHON to a working python.exe."
+}
+
 function Test-ServerReachable {
   try {
     $response = Invoke-WebRequest -UseBasicParsing "$baseUrl/api/ready" -TimeoutSec 2
@@ -57,11 +142,11 @@ function Wait-ServerReady($secondsTotal = 40) {
 
 function Start-BackendProcess {
   $info = [System.Diagnostics.ProcessStartInfo]::new()
-  $info.FileName = $python
+  $info.FileName = $script:python.Command
   $info.WorkingDirectory = $root.Path
   $info.UseShellExecute = $false
   $info.CreateNoWindow = $true
-  $info.Arguments = "main.py"
+  $info.Arguments = (@($script:python.PrefixArgs) + @("main.py")) -join " "
 
   $keys = @($info.Environment.Keys)
   if (($keys -contains "Path") -and ($keys -contains "PATH")) {
@@ -85,9 +170,8 @@ function Stop-BackendProcess($process) {
   $process.Dispose()
 }
 
-if (-not (Test-Path $python)) {
-  throw "Missing Python virtualenv at $python"
-}
+$script:python = Resolve-ProjectPython
+Write-Host "Python runtime: $($script:python.Label) $($script:python.Detail)"
 
 if (-not $SkipGitCleanCheck) {
   Invoke-Step "Git status" {
@@ -129,7 +213,8 @@ Invoke-Step "CSS integrity check" {
 }
 
 Invoke-Step "System diagnostic" {
-  & $python scripts\system_diagnostic.py
+  $pythonArgs = @($script:python.PrefixArgs) + @("scripts\system_diagnostic.py")
+  & $script:python.Command @pythonArgs
   Assert-CommandSucceeded $LASTEXITCODE "system diagnostic"
 }
 
@@ -151,11 +236,28 @@ if (-not $SkipRuntimeSmoke) {
       }
       Wait-ServerReady 40
 
-      & powershell.exe -ExecutionPolicy Bypass -File scripts\health_check.ps1
+      $healthArgs = @("-ExecutionPolicy", "Bypass", "-File", "scripts\health_check.ps1")
+      if ($RequireHardwareReady) {
+        $healthArgs += "-RequireHardwareReady"
+      }
+      & powershell.exe @healthArgs
       Assert-CommandSucceeded $LASTEXITCODE "health check"
 
-      & $python scripts\test\smoke_test.py
-      Assert-CommandSucceeded $LASTEXITCODE "HTTP smoke"
+      $previousHardwareReadyRequirement = $env:SMART_CHESS_REQUIRE_HARDWARE_READY
+      try {
+        if ($RequireHardwareReady) {
+          $env:SMART_CHESS_REQUIRE_HARDWARE_READY = "1"
+        }
+        $pythonArgs = @($script:python.PrefixArgs) + @("scripts\test\smoke_test.py")
+        & $script:python.Command @pythonArgs
+        Assert-CommandSucceeded $LASTEXITCODE "HTTP smoke"
+      } finally {
+        if ($null -eq $previousHardwareReadyRequirement) {
+          Remove-Item Env:\SMART_CHESS_REQUIRE_HARDWARE_READY -ErrorAction SilentlyContinue
+        } else {
+          $env:SMART_CHESS_REQUIRE_HARDWARE_READY = $previousHardwareReadyRequirement
+        }
+      }
 
       & npm.cmd run smoke:frontend
       Assert-CommandSucceeded $LASTEXITCODE "frontend smoke"
@@ -168,4 +270,8 @@ if (-not $SkipRuntimeSmoke) {
 }
 
 Write-Host ""
-Write-Host "System check completed successfully."
+if ($RequireHardwareReady) {
+  Write-Host "System check completed successfully with hardware readiness."
+} else {
+  Write-Host "System check completed successfully for software smoke. Hardware readiness is reported separately above."
+}

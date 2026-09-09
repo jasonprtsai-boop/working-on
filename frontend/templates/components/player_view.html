@@ -9,6 +9,7 @@
             <span class="player-start-kicker">玩家介面</span>
             <h1>準備開始對局</h1>
             <p class="player-start-copy">棋盤會是主要畫面，左側保留回合、辨識與安全狀態。</p>
+            <div id="player-start-preflight-alert" class="player-start-alert hidden" data-state="standby" role="status" aria-live="polite"></div>
             <button id="btn-player-start" type="button" class="btn-player-start">開始對局</button>
         </div>
     </div>
@@ -58,8 +59,8 @@
                         <strong id="player-guide-robot">尚未動作</strong>
                     </div>
                     <div class="player-guide-status" data-state="standby">
-                        <span>AI 模式</span>
-                        <strong id="player-guide-ai">陪伴模式</strong>
+                        <span>AI 難度</span>
+                        <strong id="player-guide-ai">陪伴預設</strong>
                     </div>
                 </div>
             </div>
@@ -69,7 +70,16 @@
                 <span id="player-turn-indicator" class="turn-indicator-pill red">紅方移動</span>
             </div>
             <div class="player-control-strip">
-                <button id="btn-player-vision-capture" type="button" class="btn-remote success">我已下棋</button>
+                <div class="player-main-actions">
+                    <button id="btn-player-vision-capture" type="button" class="btn-remote success">我已下棋</button>
+                    <button id="btn-player-end-game" type="button" class="btn-remote danger secondary">結束對局</button>
+                </div>
+                <div class="player-robot-start-group" aria-label="機械手臂啟動">
+                    <div id="player-robot-safety-warning" class="player-robot-safety-warning" role="alert">
+                        警告：機械手臂即將啟動，請勿靠近棋盤與手臂工作範圍。
+                    </div>
+                    <button id="btn-start-tmflow" type="button" class="btn-remote danger">啟動機械手臂流程</button>
+                </div>
             </div>
         </div>
     </div>

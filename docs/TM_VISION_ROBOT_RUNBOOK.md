@@ -1,6 +1,6 @@
 # TM Vision And Robot Runbook
 
-本文件是現場測 TMvision/EIH 與 TMflow/TM5-700 的主線。這一版的 TMflow 1.82.51 設計只驗證通訊與狀態握手：TMvision 把影像送到 Python，TMflow 透過 Modbus 讀到棋格命令，再用 Set 寫回 Busy/Done。暫時不做真實 Move、不做吸盤、不做安全檢查節點，也盡量不使用副流程或子流程。
+本文件保留作 TMvision/EIH 與舊 Modbus 測試參考。2026-09-01 現場中文介面已確認右側 `ModbusDev` 不能當流程節點，只能設定參數；目前 TMflow 建節點請改看 `TMFLOW_1_82_51_FULL_NODE_DESIGN.md` 與 `TMFLOW_1_82_51_FIELD_OPERATION_MANUAL.md` 的左側節點版。不要再依本文件建立 `Modbus Read / Modbus Write` 流程節點。
 
 Set-only 通過後，完整 Move、Point、吸盤、吃子區與子流程設計請接著看 `TMFLOW_1_82_51_FULL_NODE_DESIGN.md`。兩份文件不要混用：本文件用來縮小通訊測試問題範圍，完整動作版才用來建立真機移動流程。
 

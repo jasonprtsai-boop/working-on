@@ -79,6 +79,8 @@ def _player_state_payload(payload: dict) -> dict:
     public_robot = {
         "busy": bool(robot.get("busy", False)),
         "connected": bool(robot.get("connected") or robot.get("is_connected")),
+        "fake_robot": bool(robot.get("fake_robot", False)),
+        "simulation": bool(robot.get("simulation") or robot.get("fake_robot", False)),
     }
     public_vision = {
         "status": vision.get("status"),

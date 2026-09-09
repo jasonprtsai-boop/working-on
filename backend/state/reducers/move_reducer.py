@@ -13,11 +13,14 @@ class MoveReducer:
 
     @staticmethod
     def reduce(state: SystemState, event: BaseEvent) -> SystemState:
+        if state.game.game_status == "GAME_OVER":
+            return state
+
         payload = event.payload
         move = payload.get("move")
-        new_fen = payload.get("fen", state.game.fen)
+        new_fen = payload.get("fen") or payload.get("fen_after") or state.game.fen
 
-        if move and "fen" not in payload:
+        if move and "fen" not in payload and "fen_after" not in payload:
             try:
                 from backend.core.rules import ChessLogic
 
@@ -32,7 +35,7 @@ class MoveReducer:
 
         # 1. Update Board Matrix from FEN if provided
         new_board = state.game.board
-        if "fen" in payload:
+        if "fen" in payload or "fen_after" in payload:
             try:
                 # Synchronize the 10x9 board array with the FEN string
                 new_board = fen_to_board(new_fen)
@@ -50,19 +53,32 @@ class MoveReducer:
 
         # 3. Construct New Immutable Game State
         next_turn = "b" if state.game.current_turn == "w" else "w"
+        game_result = MoveReducer._game_result(new_fen)
+        ended = bool(game_result.get("ended", False))
         new_game = CoreGameState(
             board=new_board,
             fen=new_fen,
             move_history=state.game.move_history + [move] if move else state.game.move_history,
             current_turn=next_turn if move else state.game.current_turn,
-            game_phase=state.game.game_phase,
-            game_status="STABLE",
+            game_phase="ENDED" if ended else state.game.game_phase,
+            game_status="GAME_OVER" if ended else "STABLE",
             last_notation={
                 "move": move,
                 "chinese": notation_str,
                 "step": len(state.game.move_history) + 1
-            } if move else state.game.last_notation
+            } if move else state.game.last_notation,
+            game_result=game_result if ended else None,
         )
 
         # 4. Return new root state
         return dataclasses.replace(state, game=new_game, trace_id=event.trace_id)
+
+    @staticmethod
+    def _game_result(fen: str) -> dict:
+        try:
+            from backend.core.rules import ChessLogic
+
+            return ChessLogic.game_result(fen)
+        except Exception as exc:
+            logger.warning(f"[MoveReducer] game-end check failed: {exc}", exc_info=True)
+            return {"ended": False, "reason": "unavailable", "winner": None}

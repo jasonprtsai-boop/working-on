@@ -45,6 +45,7 @@ PROTECTED_ENDPOINTS = (
     ("/api/robot/calibration", "GET", "operator"),
     ("/api/robot/calibration", None, "admin"),
     ("/api/robot/vision-point", None, "operator"),
+    ("/api/robot/play", None, "setup"),
     ("/api/control", None, "admin"),
     ("/api/move", None, "admin"),
     ("/api/reset", None, "admin"),
@@ -67,6 +68,7 @@ STREAM_TOKEN_ENDPOINTS = (
 PUBLIC_CONTROL_ENDPOINTS = (
     ("/api/player/state", "GET"),
     ("/api/player/start", None),
+    ("/api/player/end-game", None),
     ("/api/player/move", None),
     ("/api/player/vision-capture", None),
     ("/api/player-done", None),

@@ -172,6 +172,7 @@ export async function apiFetch(url, options = {}, timeoutMs = DEFAULT_TIMEOUT_MS
         || path.startsWith('/api/vision')
         || path.startsWith('/api/video')
         || path.startsWith('/api/snapshot')
+        || path === '/api/robot/play'
         ? getSetupToken()
         : ''
     );
@@ -200,7 +201,10 @@ export async function apiJson(url, options = {}, timeoutMs = DEFAULT_TIMEOUT_MS)
     const response = await apiFetch(url, options, timeoutMs);
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || payload.ok === false) {
-        throw new Error(payload.message || payload.error || `HTTP ${response.status}`);
+        const error = new Error(payload.message || payload.error || `HTTP ${response.status}`);
+        error.status = response.status;
+        error.payload = payload;
+        throw error;
     }
     return payload;
 }

@@ -42,7 +42,7 @@ def unique_record_path(export_dir: str, filename: str) -> str:
 
 
 def _first_event_timestamp(event_store, session_id: Optional[str]) -> Optional[float]:
-    if not session_id:
+    if session_id is None:
         return None
     events = event_store.load_replay(session_id=session_id, limit=1)
     if not events:
@@ -58,6 +58,7 @@ def export_research_workbook(
     export_dir: str = os.path.join("logs", "exports"),
     event_limit: Optional[int] = None,
     started_at: Optional[float] = None,
+    profile: str = "research",
 ) -> ExcelExportResult:
     excel_exporter = get_excel_exporter(subscribe=False)
     from backend.events.store.event_store import event_store
@@ -70,7 +71,7 @@ def export_research_workbook(
     total = event_store.count_replay(session_id=session_id)
     offset = max(0, total - limit)
     events = event_store.load_replay(session_id=session_id, limit=limit, offset=offset)
-    excel_exporter.export_events(events, out_path, session_id=session_id)
+    excel_exporter.export_events(events, out_path, session_id=session_id, profile=profile)
     return ExcelExportResult(path=out_path, filename=os.path.basename(out_path))
 
 
@@ -87,4 +88,5 @@ def export_session_record(
         export_dir=export_dir or config.GAME_RECORD_EXPORT_DIR,
         event_limit=event_limit,
         started_at=started_at,
+        profile="field",
     )

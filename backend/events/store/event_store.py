@@ -87,9 +87,12 @@ class EventStore:
             sql = "SELECT sequence_id, session_id, trace_id, type, payload, timestamp, event_id, source, metadata FROM events"
             params: List[Any] = []
             clauses = []
-            if session_id:
-                clauses.append("session_id = ?")
-                params.append(session_id)
+            if session_id is not None:
+                if session_id:
+                    clauses.append("session_id = ?")
+                    params.append(session_id)
+                else:
+                    clauses.append("(session_id IS NULL OR session_id = '')")
             normalized_types = [str(item) for item in (event_types or []) if str(item)]
             if normalized_types:
                 placeholders = ",".join("?" for _ in normalized_types)

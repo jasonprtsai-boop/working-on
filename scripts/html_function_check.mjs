@@ -3,9 +3,10 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+import { formatPythonResolutionFailure, PROJECT_ROOT, resolvePythonCommand } from './python_resolver.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const ROOT = path.resolve(__dirname, '..');
+const ROOT = PROJECT_ROOT;
 const REPORT_DIR = path.join(ROOT, 'reports');
 const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..+/, '').replace('T', '-');
 const PORT = Number(process.env.HTML_CHECK_PORT || 5123);
@@ -64,7 +65,12 @@ async function waitForServer(server) {
 }
 
 function startServer() {
-  const pythonExe = path.join(ROOT, '.venv', 'Scripts', 'python.exe');
+  let python;
+  try {
+    python = resolvePythonCommand(ROOT);
+  } catch (error) {
+    throw new Error(formatPythonResolutionFailure(error));
+  }
   const env = {
     ...process.env,
     ADMIN_PASSWORD,
@@ -86,7 +92,8 @@ function startServer() {
     SYSTEM_MODE: 'simulation',
     TEST_MODE: 'true',
   };
-  const server = spawn(pythonExe, ['main.py'], {
+  serverLines.push(`[html-check] Python: ${python.label} ${python.version}`);
+  const server = spawn(python.command, [...python.argsPrefix, 'main.py'], {
     cwd: ROOT,
     env,
     windowsHide: true,
@@ -262,19 +269,51 @@ async function runBrowserChecks(token) {
     await click(page, '.tab-btn[data-tab="export"]');
     await page.locator('#pane-export.active').waitFor({ state: 'attached', timeout: 8000 });
     addResult('Sidebar', 'Export tab 可切換', true);
-    const csvDownload = await Promise.all([
-      page.waitForEvent('download', { timeout: 30000 }),
-      click(page, '#btn-export-csv'),
-    ]).then(([download]) => download);
-    const csvPath = await csvDownload.path();
-    addResult('匯出功能', 'CSV 按鈕下載', Boolean(csvPath), csvDownload.suggestedFilename());
-
+    await click(page, '.tab-btn[data-tab="replay"]');
+    await page.locator('#pane-replay.active').waitFor({ state: 'attached', timeout: 8000 });
+    addResult('Sidebar', 'Replay tab 可切換', true);
+    await click(page, '#btn-replay-refresh');
+    await page.waitForFunction(() => {
+      const step = document.querySelector('#replay-current-step')?.textContent?.trim() || '';
+      const status = document.querySelector('#replay-status')?.textContent?.trim() || '';
+      return step.includes('/') || status.includes('尚無');
+    }, { timeout: 8000 });
+    addResult('回放功能', 'Replay 匯出按鈕存在', await page.locator('#btn-export-replay').isVisible());
+    const replayStep = await text(page, '#replay-current-step');
+    const replayFen = await text(page, '#replay-fen');
+    const replayStatus = await text(page, '#replay-status');
+    addResult(
+      '回放功能',
+      'Replay 可載入步驟或明確顯示無資料',
+      replayStep.includes('/') || replayStatus.includes('尚無'),
+      replayStep || replayStatus,
+    );
+    addResult(
+      '回放功能',
+      'Replay FEN 可呈現',
+      !replayStep.includes('/') || (replayFen && replayFen !== '--'),
+      truncate(replayFen, 80),
+    );
+    await click(page, '.tab-btn[data-tab="export"]');
+    await page.locator('#pane-export.active').waitFor({ state: 'attached', timeout: 8000 });
     const excelDownload = await Promise.all([
       page.waitForEvent('download', { timeout: 30000 }),
       click(page, '#btn-export-excel'),
     ]).then(([download]) => download);
     const excelPath = await excelDownload.path();
     addResult('匯出功能', 'Excel 按鈕下載', Boolean(excelPath), excelDownload.suggestedFilename());
+
+    const supportDetails = page.locator('.export-support-tools');
+    if (await supportDetails.count() > 0) {
+      await click(page, '.export-support-tools summary');
+      await page.locator('#btn-export-csv').waitFor({ state: 'visible', timeout: 5000 });
+    }
+    const csvDownload = await Promise.all([
+      page.waitForEvent('download', { timeout: 30000 }),
+      click(page, '#btn-export-csv'),
+    ]).then(([download]) => download);
+    const csvPath = await csvDownload.path();
+    addResult('匯出功能', 'CSV 按鈕下載', Boolean(csvPath), csvDownload.suggestedFilename());
 
     await click(page, '.tab-btn[data-tab="logs"]');
     await page.locator('#pane-logs.active').waitFor({ state: 'attached', timeout: 8000 });
@@ -297,6 +336,7 @@ async function runBrowserChecks(token) {
     const frontend = await page.evaluate(() => ({
       boardFen: document.querySelector('#dashboard-board-fen')?.textContent?.trim() || '',
       engineDepth: document.querySelector('#dashboard-engine-depth')?.textContent?.trim() || '',
+      activeEngineDepth: document.querySelector('.depth-btn.active')?.dataset?.depth || '',
       safeMode: document.querySelector('#dashboard-safety-safe-mode')?.textContent?.trim() || '',
       participant: document.querySelector('#dashboard-exp-participant')?.textContent?.trim() || '',
       sessionStatus: document.querySelector('#dashboard-exp-session-status')?.textContent?.trim() || '',
@@ -306,9 +346,14 @@ async function runBrowserChecks(token) {
       stateStale: document.body?.dataset?.stateStale || '',
     }));
 
-    addComparison('ready', backend.ready.ready, 'Console loaded', backend.ready.ready === true);
+    addComparison(
+      'core_services_registered',
+      'engine + vision',
+      `engine=${backend.ready.engine_registered} / vision=${backend.ready.vision_registered}`,
+      backend.ready.engine_registered === true && backend.ready.vision_registered === true,
+    );
     addComparison('socket/state freshness', 'online / false', `${frontend.connectionStatus} / ${frontend.stateStale}`, frontend.connectionStatus === 'online' && frontend.stateStale === 'false');
-    addComparison('engine_depth', backend.runtime.engine_depth, frontend.engineDepth, Number(frontend.engineDepth) === Number(backend.runtime.engine_depth));
+    addComparison('runtime_engine_depth_control', backend.runtime.engine_depth, frontend.activeEngineDepth, Number(frontend.activeEngineDepth) === Number(backend.runtime.engine_depth));
     addComparison('safe_mode', backend.runtime.safe_mode ? '已啟用' : '已停用', frontend.safeMode, frontend.safeMode === (backend.runtime.safe_mode ? '已啟用' : '已停用'));
     addComparison('session_active', backend.runtime.session?.active ? '進行中' : '已結束', frontend.sessionStatus, frontend.sessionStatus === (backend.runtime.session?.active ? '進行中' : '已結束'));
     addComparison('participant_id', backend.runtime.session?.participant_id || '', frontend.participant, frontend.participant === (backend.runtime.session?.participant_id || ''));
@@ -420,8 +465,11 @@ async function main() {
     const report = markdownReport(browserResult);
     const reportPath = path.join(REPORT_DIR, `html-function-check-${stamp}.md`);
     await fs.writeFile(reportPath, report, 'utf8');
+    const ok = results.every((item) => item.ok)
+      && comparisons.every((item) => item.ok)
+      && consoleErrors.length === 0;
     console.log(JSON.stringify({
-      ok: results.every((item) => item.ok) && comparisons.every((item) => item.ok) && consoleErrors.length === 0,
+      ok,
       reportPath,
       resultCount: results.length,
       comparisonCount: comparisons.length,
@@ -429,6 +477,10 @@ async function main() {
       consoleWarnings: consoleWarnings.length,
       screenshots: browserResult.screenshots,
     }, null, 2));
+    if (!ok) {
+      console.error(`HTML function check failed; report: ${reportPath}`);
+      process.exitCode = 1;
+    }
   } finally {
     server.kill();
   }

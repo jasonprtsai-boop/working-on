@@ -10,6 +10,7 @@ from backend.interfaces.api.shared import (
     config,
     error_response,
     json_object_payload,
+    mark_deprecated_endpoint,
     runtime_vision_status,
     vision_system,
 )
@@ -446,6 +447,14 @@ def player_done():
 
     from backend.application.use_cases.coordinate_workflow import workflow_coordinator
 
+    if workflow_coordinator.is_game_over():
+        return error_response(
+            "game_already_over",
+            "棋局已結束，請重設後再開始新的對局。",
+            409,
+            details={"game_result": workflow_coordinator.current_game_result()},
+        )
+
     trace_id = workflow_coordinator.player_done(payload)
     payload = {**payload, "trace_id": trace_id}
 
@@ -633,7 +642,7 @@ def video_feed():
 
 @api_bp.route("/video_feed")
 def legacy_video_feed():
-    return video_feed()
+    return mark_deprecated_endpoint(video_feed(), "/api/vision/stream")
 
 
 @api_bp.route("/vision/snapshot", methods=["GET"])
@@ -682,10 +691,10 @@ def snapshot():
 
 @api_bp.route("/snapshot", methods=["GET"])
 def legacy_snapshot():
-    return snapshot()
+    return mark_deprecated_endpoint(snapshot(), "/api/vision/snapshot")
 
 
 @api_bp.route("/camera/latest", methods=["GET"])
 def camera_latest():
     """Minimal monitor API alias for the latest backend-provided camera image."""
-    return snapshot()
+    return mark_deprecated_endpoint(snapshot(), "/api/vision/snapshot")

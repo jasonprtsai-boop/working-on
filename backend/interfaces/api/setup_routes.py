@@ -26,6 +26,23 @@ from backend.utils.kinematics import kinematics
 from backend.utils.setup_settings import deep_merge, load_settings, save_settings
 
 
+CONFIRMED_LIVE_HARDWARE_ACTIONS = {
+    "gripper_open",
+    "gripper_close",
+    "write_pose",
+    "safe_z",
+    "origin",
+    "dead_zone",
+    "corner_a0",
+    "corner_i0",
+    "corner_a9",
+    "corner_i9",
+    "center_e4",
+    "grab_z",
+    "one_move",
+}
+
+
 def _apply_runtime_settings(settings: Mapping[str, Any]) -> list[str]:
     warnings: list[str] = []
 
@@ -218,9 +235,10 @@ def _robot_facade():
 
 
 def _hardware_test(action: str, payload: Mapping[str, Any]) -> dict[str, Any]:
+    dry_run = _bool(payload.get("dry_run", True), "dry_run")
+    _require_live_hardware_confirmation(action, payload, dry_run=dry_run)
     robot = _robot_facade()
     impl = getattr(robot, "_impl", robot)
-    dry_run = _bool(payload.get("dry_run", True), "dry_run")
 
     if action == "preflight":
         return build_preflight_report(require_auto_execute=False)
@@ -273,6 +291,17 @@ def _hardware_test(action: str, payload: Mapping[str, Any]) -> dict[str, Any]:
             return {"ok": True, "action": action, "dry_run": True, "move": move}
         return {"ok": bool(robot.execute_move(move, is_capture=False)), "action": action, "move": move}
     raise ValueError(f"Unsupported hardware test action: {action}")
+
+
+def _require_live_hardware_confirmation(action: str, payload: Mapping[str, Any], *, dry_run: bool) -> None:
+    if dry_run or action not in CONFIRMED_LIVE_HARDWARE_ACTIONS:
+        return
+    confirmed_action = str(payload.get("confirmed_action") or "").strip().lower()
+    acknowledged = _bool(payload.get("warning_acknowledged", False), "warning_acknowledged")
+    if confirmed_action != action or not acknowledged:
+        raise ValueError(
+            "Live hardware action requires confirmed_action matching the action and warning_acknowledged=true."
+        )
 
 
 def _hardware_test_target(action: str) -> dict[str, float]:

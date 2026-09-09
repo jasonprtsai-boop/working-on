@@ -16,9 +16,27 @@ from backend.interfaces.api.shared import (
     error_response,
     game_state,
     json_object_payload,
+    mark_deprecated_endpoint,
     publish_base_event,
 )
 from backend.utils import config
+
+
+def _requested_session_filter():
+    return request.args.get("session") if "session" in request.args else None
+
+
+def _csv_session_suffix(session_id):
+    if session_id is None:
+        return time.strftime("%Y%m%d_%H%M%S")
+    return session_id or "unassigned"
+
+
+def _requested_excel_profile():
+    profile = str(request.args.get("profile") or "field").strip().lower()
+    if profile not in {"field", "research"}:
+        raise ValueError("Excel profile must be 'field' or 'research'.")
+    return profile
 
 
 @api_bp.route("/snaplog", methods=["POST"])
@@ -38,7 +56,7 @@ def snaplog():
 
 @api_bp.route("/export_json", methods=["GET"])
 def export_json():
-    return jsonify(game_state.to_dict())
+    return mark_deprecated_endpoint(jsonify(game_state.to_dict()), "/api/state")
 
 
 @api_bp.route("/export_kpi", methods=["GET"])
@@ -47,23 +65,25 @@ def export_kpi():
     sync = snapshot.get("sync", {}) if isinstance(snapshot, dict) else {}
     engine = snapshot.get("engine", {}) if isinstance(snapshot, dict) else {}
     vision = snapshot.get("vision", {}) if isinstance(snapshot, dict) else {}
-    return jsonify({
+    return mark_deprecated_endpoint(jsonify({
         "sync": sync,
         "engine": engine,
         "vision": vision,
         "health": getattr(game_state, "health", {}),
-    })
+    }), "/api/runtime/metrics")
 
 
 @api_bp.route("/export/excel", methods=["GET"])
 def export_excel():
-    """Exports the experimental logs to Excel."""
+    """Export a field-focused report by default; research profile keeps full raw traces."""
     from backend.utils.serialization.excel_report_service import export_research_workbook
 
-    session_id = request.args.get("session")
+    session_id = _requested_session_filter()
     limit = bounded_int_arg("limit", config.EXCEL_EXPORT_EVENT_LIMIT, 1, 50000)
     try:
-        result = export_research_workbook(session_id, event_limit=limit)
+        result = export_research_workbook(session_id, event_limit=limit, profile=_requested_excel_profile())
+    except ValueError as exc:
+        return error_response("validation_failed", str(exc), 400)
     except Exception as exc:
         return error_response("export_failed", str(exc), 500, recoverable=False)
 
@@ -84,7 +104,7 @@ def export_csv():
     """Export persisted runtime events as a compact CSV file."""
     from backend.events.store.event_store import event_store
 
-    session_id = request.args.get("session") or None
+    session_id = _requested_session_filter()
     try:
         limit = min(max(int(request.args.get("limit", 10000) or 10000), 1), 50000)
     except (TypeError, ValueError):
@@ -139,7 +159,7 @@ def export_csv():
             current_app.logger.debug("Temporary CSV export cleanup failed: %s", path, exc_info=True)
         return resp
 
-    suffix = session_id or time.strftime("%Y%m%d_%H%M%S")
+    suffix = _csv_session_suffix(session_id)
     return send_file(
         path,
         as_attachment=True,

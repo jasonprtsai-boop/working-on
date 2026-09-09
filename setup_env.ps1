@@ -12,8 +12,17 @@ function Test-IncompatiblePythonVersion([string]$versionText) {
 # 1) Create or reuse venv
 $needsRecreate = $false
 if (Test-Path ".venv\Scripts\python.exe") {
-  $venvVersion = & ".\.venv\Scripts\python.exe" --version
-  if (Test-IncompatiblePythonVersion $venvVersion) {
+  try {
+    $venvVersion = (& ".\.venv\Scripts\python.exe" --version 2>&1 | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0) {
+      throw $venvVersion
+    }
+  } catch {
+    Write-Host "[setup] Existing .venv Python is not executable. Recreating..." -ForegroundColor Yellow
+    Remove-Item -Recurse -Force ".venv"
+    $needsRecreate = $true
+  }
+  if (-not $needsRecreate -and (Test-IncompatiblePythonVersion $venvVersion)) {
     Write-Host "[setup] Existing .venv uses $venvVersion (unsupported by this project). Recreating..." -ForegroundColor Yellow
     Remove-Item -Recurse -Force ".venv"
     $needsRecreate = $true

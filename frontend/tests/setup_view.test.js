@@ -30,6 +30,8 @@ test('setup initialization panel exposes editable robot endpoint once', () => {
 
   expect(countText('id="setup-live-hardware-test"')).toBe(1);
   expect(setupTemplate).toContain('id="setup-live-hardware-test" type="checkbox" data-setup-admin="true"');
+  expect(setupTemplate).toContain('勾選實機執行後');
+  expect(setupTemplate).toContain('遠離工作範圍');
 });
 
 test('setup camera panel exposes vision source switch controls once', () => {
@@ -61,7 +63,23 @@ test('setup view separates essential settings from live data', () => {
   expect(setupTemplate).toContain('data-setup-tab="essential"');
   expect(setupTemplate).toContain('data-setup-pane-target="essential"');
   expect(setupTemplate).toContain('data-setup-pane-target="live"');
+  expect(setupTemplate).toContain('現場設定');
+  expect(setupTemplate).toContain('工程模式');
   expect(setupTemplate).toContain('class="setup-section setup-section-essential"');
   expect(setupTemplate).toContain('class="setup-section setup-section-secondary"');
   expect(setupTemplate).toContain('class="setup-live-detail setup-channel-diagnostics"');
+});
+
+test('setup hardware tests keep common actions visible and advanced actions collapsed', () => {
+  expect(setupTemplate).toContain('setup-field-tests-panel');
+  expect(setupTemplate).toContain('class="setup-advanced-tests"');
+  expect(setupTemplate).toContain('<summary>進階硬體測試</summary>');
+
+  ['connect', 'status', 'safe_z', 'one_move'].forEach((action) => {
+    expect(setupTemplate).toContain(`data-setup-test="${action}"`);
+  });
+
+  ['write_pose', 'corner_a0', 'corner_i9', 'grab_z', 'gripper_open', 'dead_zone'].forEach((action) => {
+    expect(setupTemplate).toContain(`data-setup-test="${action}"`);
+  });
 });

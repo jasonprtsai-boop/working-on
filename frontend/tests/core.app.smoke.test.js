@@ -39,6 +39,7 @@ test('core app enters console directly and resumes overlay via control API', asy
     <section id="view-player" class="hidden"></section>
     <section id="view-console" class="hidden"></section>
     <div id="player-start-panel"></div>
+    <div id="player-start-preflight-alert" class="hidden"></div>
     <div id="game-arena" class="hidden"></div>
     <div id="analysis-container"></div>
     <div id="toast-container"></div>
@@ -80,26 +81,140 @@ test('core app enters console directly and resumes overlay via control API', asy
     <button class="depth-btn" data-depth="10"></button>
     <div class="tab-pane active" id="pane-status"></div>
     <div class="tab-pane" id="pane-export"></div>
+    <div class="tab-pane" id="pane-replay">
+      <select id="replay-session-select"></select>
+      <button id="btn-replay-refresh"></button>
+      <button id="btn-replay-prev"></button>
+      <input id="replay-step-range" type="range" />
+      <button id="btn-replay-next"></button>
+      <div id="replay-status"></div>
+      <div id="replay-current-step"></div>
+      <div id="replay-event-type"></div>
+      <div id="replay-move"></div>
+      <div id="replay-turn"></div>
+      <div id="replay-timestamp"></div>
+      <pre id="replay-fen"></pre>
+    </div>
     <button class="tab-btn active" data-tab="status"></button>
     <button class="tab-btn" data-tab="export"></button>
+    <button class="tab-btn" data-tab="replay"></button>
     <div id="tab-indicator"></div>
     <div id="admin-logs">boot log</div>
     ${[
-      'btn-role-player', 'btn-player-start', 'btn-role-console', 'btn-exit', 'btn-console-exit',
+      'btn-role-player', 'btn-player-start', 'btn-player-vision-capture', 'btn-player-end-game',
+      'btn-start-tmflow', 'btn-role-console', 'btn-exit', 'btn-console-exit',
       'btn-toggle-board', 'btn-toggle-video',
-      'btn-resume-overlay', 'btn-export-excel', 'btn-export-csv',
+      'btn-resume-overlay', 'btn-export-excel', 'btn-export-csv', 'btn-export-replay',
       'btn-session-start', 'btn-session-end'
     ].map((id) => `<button id="${id}"></button>`).join('')}
   `;
 
-  global.fetch = jest.fn(async () => ({
-    ok: true,
-    status: 200,
-    headers: new Headers({ 'content-disposition': 'attachment; filename="game.xlsx"' }),
-    json: async () => ({ ok: true }),
-    text: async () => '{"ok":true}',
-    blob: async () => new Blob(['excel'])
-  }));
+  global.fetch = jest.fn(async (url) => {
+    const path = String(url || '');
+    if (path.startsWith('/api/replay/sessions')) {
+      return {
+        ok: true,
+        status: 200,
+        headers: new Headers(),
+        json: async () => ({
+          ok: true,
+          sessions: [
+            { id: '', session_id: '', label: 'Unassigned session', event_count: 1 },
+            { id: 'session-a', session_id: 'session-a', label: 'session-a', event_count: 2 },
+          ],
+          total: 2,
+        }),
+        text: async () => '{"ok":true}',
+        blob: async () => new Blob(['']),
+      };
+    }
+    if (path.startsWith('/api/replay/steps')) {
+      return {
+        ok: true,
+        status: 200,
+        headers: new Headers(),
+        json: async () => ({
+          ok: true,
+          steps: [
+            { step: 0, type: 'STATE_UPDATED', fen: 'fen-0', move: 'a0a1', turn: 'red', timestamp: 1788750000 },
+            { step: 1, type: 'STATE_UPDATED', fen: 'fen-1', move: 'b0b1', turn: 'black', timestamp: 1788750001 },
+          ],
+          total: 2,
+        }),
+        text: async () => '{"ok":true}',
+        blob: async () => new Blob(['']),
+      };
+    }
+    if (path.startsWith('/api/replay/step/')) {
+      const step = path.includes('/1') ? 1 : 0;
+      return {
+        ok: true,
+        status: 200,
+        headers: new Headers(),
+        json: async () => ({
+          ok: true,
+          _replay: { step, total: 2, type: 'STATE_UPDATED', timestamp: 1788750000 + step },
+          board: { fen: `fen-${step}`, turn: step ? 'black' : 'red' },
+        }),
+        text: async () => '{"ok":true}',
+        blob: async () => new Blob(['']),
+      };
+    }
+    if (path === '/api/runtime/session/start') {
+      return {
+        ok: true,
+        status: 200,
+        headers: new Headers(),
+        json: async () => ({
+          ok: true,
+          safe_mode: true,
+          engine_depth: 15,
+          session: {
+            session_id: 'session-ui',
+            participant_id: 'E2E-SESSION',
+            active: true,
+            started_at: 1788750000,
+            ended_at: null,
+            duration_sec: 0,
+            move_count: 0,
+          },
+        }),
+        text: async () => '{"ok":true}',
+        blob: async () => new Blob(['']),
+      };
+    }
+    if (path === '/api/runtime/session/end') {
+      return {
+        ok: true,
+        status: 200,
+        headers: new Headers(),
+        json: async () => ({
+          ok: true,
+          safe_mode: true,
+          engine_depth: 15,
+          session: {
+            session_id: 'session-ui',
+            participant_id: 'E2E-SESSION',
+            active: false,
+            started_at: 1788750000,
+            ended_at: 1788750030,
+            duration_sec: 30,
+            move_count: 0,
+          },
+        }),
+        text: async () => '{"ok":true}',
+        blob: async () => new Blob(['']),
+      };
+    }
+    return {
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-disposition': 'attachment; filename="game.xlsx"' }),
+      json: async () => ({ ok: true }),
+      text: async () => '{"ok":true}',
+      blob: async () => new Blob(['excel'])
+    };
+  });
   window.open = jest.fn();
   URL.createObjectURL = jest.fn(() => 'blob:test');
   URL.revokeObjectURL = jest.fn();
@@ -123,6 +238,33 @@ test('core app enters console directly and resumes overlay via control API', asy
   expect(document.getElementById('game-arena').classList.contains('hidden')).toBe(true);
 
   global.fetch.mockClear();
+  global.fetch.mockImplementationOnce(async () => ({
+    ok: false,
+    status: 409,
+    headers: new Headers(),
+    json: async () => ({
+      ok: false,
+      message: 'Player mode is not ready to start.',
+      details: {
+        preflight: {
+          ok: false,
+          ready: false,
+          failures: [{ message: 'Vision is unavailable.' }],
+          warnings: [],
+        },
+      },
+    }),
+    text: async () => '{"ok":false}',
+    blob: async () => new Blob(['']),
+  }));
+  document.getElementById('btn-player-start').click();
+  await flushAsync();
+  expect(document.getElementById('player-start-panel').classList.contains('hidden')).toBe(false);
+  expect(document.getElementById('game-arena').classList.contains('hidden')).toBe(true);
+  expect(document.getElementById('player-start-preflight-alert').classList.contains('hidden')).toBe(false);
+  expect(document.getElementById('player-start-preflight-alert').textContent).toContain('Vision is unavailable.');
+
+  global.fetch.mockClear();
   document.getElementById('btn-player-start').click();
   await flushAsync();
   const playerStartCall = global.fetch.mock.calls.find(([url]) => url === '/api/player/start');
@@ -134,6 +276,26 @@ test('core app enters console directly and resumes overlay via control API', asy
   expect(playerStateCall?.[1]?.headers.has('Authorization')).toBe(false);
   expect(document.getElementById('player-start-panel').classList.contains('hidden')).toBe(true);
   expect(document.getElementById('game-arena').classList.contains('hidden')).toBe(false);
+
+  window.confirm = jest.fn()
+    .mockReturnValueOnce(true)
+    .mockReturnValueOnce(false)
+    .mockReturnValueOnce(true)
+    .mockReturnValueOnce(true);
+  global.fetch.mockClear();
+  document.getElementById('btn-player-end-game').click();
+  await flushAsync();
+  expect(global.fetch).not.toHaveBeenCalled();
+
+  document.getElementById('btn-player-end-game').click();
+  await flushAsync();
+  const playerEndCall = global.fetch.mock.calls.find(([url]) => url === '/api/player/end-game');
+  expect(playerEndCall?.[1]).toEqual(expect.objectContaining({ method: 'POST' }));
+  expect(JSON.parse(playerEndCall?.[1]?.body || '{}')).toEqual(expect.objectContaining({
+    source: 'player_end_button',
+    confirmed_action: 'end_game',
+    final_confirmation: 'END_GAME_CONFIRMED',
+  }));
 
   document.getElementById('btn-role-console').click();
   expect(document.getElementById('view-console').classList.contains('active')).toBe(false);
@@ -164,6 +326,22 @@ test('core app enters console directly and resumes overlay via control API', asy
   expect(document.getElementById('btn-export-excel').disabled).toBe(false);
 
   global.fetch.mockClear();
+  document.getElementById('session-participant-id').value = 'E2E-SESSION';
+  document.getElementById('btn-session-start').click();
+  await flushAsync();
+  expect(global.fetch.mock.calls.map(([url]) => url)).toContain('/api/runtime/session/start');
+  expect(document.getElementById('btn-session-start').disabled).toBe(true);
+  expect(document.getElementById('btn-session-end').disabled).toBe(false);
+  expect(document.getElementById('session-participant-id').disabled).toBe(true);
+
+  document.getElementById('btn-session-end').click();
+  await flushAsync();
+  expect(global.fetch.mock.calls.map(([url]) => url)).toContain('/api/runtime/session/end');
+  expect(document.getElementById('btn-session-start').disabled).toBe(false);
+  expect(document.getElementById('btn-session-end').disabled).toBe(true);
+  expect(document.getElementById('session-participant-id').disabled).toBe(false);
+
+  global.fetch.mockClear();
   document.getElementById('btn-resume-overlay').click();
   await flushAsync();
   const resumeCall = global.fetch.mock.calls.find(([url]) => url === '/api/control');
@@ -177,12 +355,49 @@ test('core app enters console directly and resumes overlay via control API', asy
   await flushAsync();
 
   const urls = global.fetch.mock.calls.map(([url]) => url);
-  expect(urls).toContain('/api/export/excel');
+  expect(urls.some((url) => String(url).startsWith('/api/export/excel'))).toBe(true);
+  expect(urls).toContain('/api/export/excel?profile=field');
   expect(URL.createObjectURL).toHaveBeenCalled();
 
   document.getElementById('btn-export-csv').click();
   await flushAsync();
   expect(global.fetch.mock.calls.map(([url]) => url)).toContain('/api/export/csv');
+
+  document.querySelector('.tab-btn[data-tab="replay"]').click();
+  await flushAsync();
+  await flushAsync();
+  await flushAsync();
+  expect(global.fetch.mock.calls.map(([url]) => url)).toContain('/api/replay/sessions?limit=50');
+  expect(global.fetch.mock.calls.map(([url]) => url)).toContain('/api/replay/steps?limit=500');
+  expect(global.fetch.mock.calls.map(([url]) => url)).toContain('/api/replay/step/0');
+  expect(document.getElementById('replay-current-step').textContent).toBe('1 / 2');
+  expect(document.getElementById('replay-fen').textContent).toBe('fen-0');
+  const replaySessionSelect = document.getElementById('replay-session-select');
+  expect(Array.from(replaySessionSelect.options).map((option) => option.value)).toEqual(
+    expect.arrayContaining(['__all__', '', 'session-a'])
+  );
+
+  document.getElementById('btn-replay-next').click();
+  await flushAsync();
+  await flushAsync();
+  expect(global.fetch.mock.calls.map(([url]) => url)).toContain('/api/replay/step/1');
+  expect(document.getElementById('replay-current-step').textContent).toBe('2 / 2');
+  expect(document.getElementById('replay-fen').textContent).toBe('fen-1');
+
+  document.getElementById('btn-export-replay').click();
+  await flushAsync();
+  expect(global.fetch.mock.calls.map(([url]) => url)).toContain('/api/replay/export');
+
+  replaySessionSelect.value = '';
+  replaySessionSelect.dispatchEvent(new Event('change'));
+  await flushAsync();
+  await flushAsync();
+  expect(global.fetch.mock.calls.map(([url]) => url)).toContain('/api/replay/steps?limit=500&session=');
+  expect(global.fetch.mock.calls.map(([url]) => url)).toContain('/api/replay/step/0?session=');
+
+  document.getElementById('btn-export-replay').click();
+  await flushAsync();
+  expect(global.fetch.mock.calls.map(([url]) => url)).toContain('/api/replay/export?session=');
 
   expect(global.fetch.mock.calls.find(([url]) => url === '/api/player/move')).toBeUndefined();
 });

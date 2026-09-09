@@ -60,6 +60,16 @@ def accepted(action: str, trace_id=None, **extra):
     return jsonify(accepted_payload(action, trace_id=trace_id, **extra))
 
 
+def mark_deprecated_endpoint(response, replacement: str):
+    if isinstance(response, tuple):
+        body = mark_deprecated_endpoint(response[0], replacement)
+        return (body, *response[1:])
+    response.headers["Deprecation"] = "true"
+    response.headers["X-Deprecated-Endpoint"] = "true"
+    response.headers["X-Replacement-Endpoint"] = replacement
+    return response
+
+
 def error_response(code: str, message: str, status: int, *, trace_id=None, recoverable=True, details=None):
     if status >= 500 or recoverable is False:
         try:

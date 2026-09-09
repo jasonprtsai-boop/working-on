@@ -181,9 +181,12 @@ class EventStore:
             )
             clauses = []
             params: List[Any] = []
-            if session_id:
-                clauses.append("session_id = ?")
-                params.append(session_id)
+            if session_id is not None:
+                if session_id:
+                    clauses.append("session_id = ?")
+                    params.append(session_id)
+                else:
+                    clauses.append("(session_id IS NULL OR session_id = '')")
             if trace_id:
                 clauses.append("trace_id = ?")
                 params.append(trace_id)
@@ -237,9 +240,12 @@ class EventStore:
             sql = "SELECT COUNT(*) FROM events"
             clauses = []
             params: List[Any] = []
-            if session_id:
-                clauses.append("session_id = ?")
-                params.append(session_id)
+            if session_id is not None:
+                if session_id:
+                    clauses.append("session_id = ?")
+                    params.append(session_id)
+                else:
+                    clauses.append("(session_id IS NULL OR session_id = '')")
             normalized_types = [str(item) for item in (event_types or []) if str(item)]
             if normalized_types:
                 placeholders = ",".join("?" for _ in normalized_types)

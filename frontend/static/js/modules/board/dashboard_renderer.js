@@ -90,18 +90,45 @@ function renderRobot(snapshot) {
     const connected = Boolean(robot.connected || robot.is_connected);
     const busy = Boolean(robot.busy);
     const error = robot.error || '';
+    const endpoint = formatEndpoint(robot);
 
     setStatus('dashboardRobotStatus', connected ? '已連線' : '離線', connected ? 'status-ok' : 'status-error');
     setStatus('dashboardRobotBusy', busy ? '忙碌' : '待命', busy ? 'status-warning' : 'status-ok');
     setStatus('dashboardRobotError', error || '--', error ? 'status-error' : 'status-ok');
     setText('dashboardRobotQueue', hasValue(robot.queue_size) ? robot.queue_size : '--');
-    setStatus('dashboardRobotIp', formatEndpoint(robot), connected ? 'status-ok' : 'status-error');
+    setStatus('dashboardRobotIp', endpoint, connected ? 'status-ok' : 'status-error');
     setText('dashboardRobotPosition', formatPosition(robot.position || robot.robot_position));
     setText('dashboardRobotOrientation', formatOrientation(robot.orientation || robot.telemetry?.orientation));
     setText('dashboardRobotJoints', formatJoints(robot.joint_angles || robot.joints || robot.angles || robot.telemetry?.joint_angles));
     setText('dashboardRobotSpeed', formatSpeed(robot.speed ?? robot.telemetry?.speed));
     const telemetry = telemetrySource(robot.telemetry || {});
     setStatus('dashboardRobotTelemetrySource', telemetry.label, telemetry.className);
+    renderRobotReadinessAlert(robot, { connected, endpoint, error });
+}
+
+function renderRobotReadinessAlert(robot, { connected, endpoint, error }) {
+    const alert = UIRegistry.get('consoleRobotReadinessAlert');
+    if (!alert) return;
+
+    const fakeRobot = Boolean(robot.fake_robot || robot.fakeRobot || robot.simulation);
+    if (connected || fakeRobot) {
+        alert.classList.add('hidden');
+        alert.dataset.state = fakeRobot ? 'simulation' : 'ready';
+        return;
+    }
+
+    const title = UIRegistry.get('consoleRobotReadinessTitle');
+    const detail = UIRegistry.get('consoleRobotReadinessDetail');
+    const connection = robot.connection && typeof robot.connection === 'object' ? robot.connection : {};
+    const adapter = firstText(robot.adapter, robot.mode, connection.adapter);
+    const target = endpoint && endpoint !== '--' ? `目標 ${endpoint}` : '尚未取得手臂 IP/Port';
+    const adapterText = adapter ? `，通訊 ${adapter}` : '';
+    const reason = error ? `錯誤：${error}` : '尚未收到真機連線。';
+
+    alert.classList.remove('hidden');
+    alert.dataset.state = 'error';
+    setElementText(title, '真機未連線，請先處理手臂網路');
+    setElementText(detail, `${target}${adapterText}。${reason}`);
 }
 
 function renderSafety(snapshot) {
@@ -172,28 +199,32 @@ function updateSessionTime() {
         setText('dashboardExpSessionTime', formatDuration(Number(durationSec) * 1000));
         return;
     }
-    setText('dashboardExpSessionTime', formatDuration(Date.now() - SESSION_STARTED_AT));
+    setText('dashboardExpSessionTime', formatDuration(0));
 }
 
 function setText(key, value) {
     const element = UIRegistry.get(key);
-    if (!element) return;
-    const newText = String(value ?? '--');
-    if (element.textContent !== newText) {
-        element.textContent = newText;
-    }
+    setElementText(element, value);
 }
 
 function setStatus(key, value, className) {
     const element = UIRegistry.get(key);
     if (!element) return;
+    setElementText(element, value);
+    const newClass = className || '';
+    if (element.className !== newClass) {
+        element.className = newClass;
+    }
+}
+
+function setElementText(element, value) {
+    if (!element) return;
     const newText = String(value ?? '--');
     if (element.textContent !== newText) {
         element.textContent = newText;
     }
-    const newClass = className || '';
-    if (element.className !== newClass) {
-        element.className = newClass;
+    if ('title' in element) {
+        element.title = newText;
     }
 }
 

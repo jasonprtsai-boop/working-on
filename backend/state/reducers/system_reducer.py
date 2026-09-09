@@ -26,6 +26,21 @@ class SystemReducer:
             )
             return dataclasses.replace(state, game=new_game, trace_id=event.trace_id)
 
+        elif event.event_type == EventType.GAME_OVER:
+            result = payload.get("game_result") if isinstance(payload.get("game_result"), dict) else {}
+            new_game = dataclasses.replace(
+                state.game,
+                game_status="GAME_OVER",
+                game_phase="ENDED",
+                game_result={
+                    "ended": True,
+                    "reason": result.get("reason", payload.get("reason", "game_over")),
+                    "winner": result.get("winner", payload.get("winner")),
+                    "legal_moves_count": result.get("legal_moves_count", 0),
+                },
+            )
+            return dataclasses.replace(state, game=new_game, trace_id=event.trace_id)
+
         elif event.event_type == EventType.DIAGNOSTICS_UPDATED:
             vision_payload = payload.get("vision", {}) if isinstance(payload.get("vision"), dict) else {}
             new_vision = state.vision

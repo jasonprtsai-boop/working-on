@@ -17,9 +17,10 @@
         </header>
 
         <div class="setup-pane-switch" role="tablist" aria-label="設定畫面切換">
-            <button type="button" class="setup-pane-tab active" data-setup-pane-target="essential" role="tab" aria-selected="true">必要設定</button>
-            <button type="button" class="setup-pane-tab" data-setup-pane-target="live" role="tab" aria-selected="false">即時資料</button>
+            <button type="button" class="setup-pane-tab active" data-setup-pane-target="essential" role="tab" aria-selected="true">現場設定</button>
+            <button type="button" class="setup-pane-tab" data-setup-pane-target="live" role="tab" aria-selected="false">工程模式</button>
         </div>
+        <p class="setup-mode-note">預設只保留現場啟動會用到的設定；暫存器、細部速度與進階硬體測試集中在工程模式。</p>
 
         <section class="setup-section setup-commissioning">
             <div class="setup-section-head">
@@ -80,6 +81,15 @@
                 <div><span>通訊協定</span><strong id="setup-init-protocol">--</strong></div>
                 <div><span>連線結果</span><strong id="setup-init-result">--</strong></div>
             </div>
+            <div class="setup-live-warning" role="alert">
+                勾選實機執行後，移動、夾爪與寫入座標都可能讓手臂動作；執行前請確認所有人員遠離工作範圍。
+            </div>
+            <div class="setup-inline-actions mt-12 setup-primary-tests setup-field-tests-panel">
+                <button type="button" class="admin-btn mini" data-setup-test="connect">測試連線</button>
+                <button type="button" class="admin-btn mini" data-setup-test="status">讀取狀態</button>
+                <button type="button" class="admin-btn mini" data-setup-test="safe_z">驗證安全 Z</button>
+                <button type="button" class="admin-btn mini" data-setup-test="one_move">驗證 a0a1</button>
+            </div>
         </section>
 
         <div class="setup-workbench">
@@ -122,18 +132,18 @@
             <div class="setup-parameter-panel">
                 <div class="setup-parameter-head">
                     <h3>後台設定與資料</h3>
-                    <span>必要設定保留日常會調整的欄位，其餘集中到即時資料頁</span>
+                    <span>現場設定保留日常會調整的欄位，其餘集中到工程模式</span>
                 </div>
                 <div class="setup-grid">
             <section class="setup-section setup-section-essential">
                 <div class="setup-section-head">
-                    <h3>系統模式</h3>
+                    <h3>現場模式</h3>
                     <div class="setup-inline-actions">
                         <button type="button" class="admin-btn mini" id="btn-setup-preflight" data-setup-admin="true">執行預檢</button>
                     </div>
                 </div>
                 <div class="setup-field-grid two">
-                    <label class="setup-field"><span>模擬機械手臂</span><input type="checkbox" data-setup-field="robot.runtime.fake_robot"></label>
+                    <label class="setup-field"><span>模擬機械手臂（非真機）</span><input type="checkbox" data-setup-field="robot.runtime.fake_robot"></label>
                     <label class="setup-field"><span>自動執行手臂</span><input type="checkbox" data-setup-field="robot.runtime.auto_execute_robot"></label>
                     <label class="setup-field"><span>連線時驗證狀態暫存器</span><input type="checkbox" data-setup-field="robot.modbus.verify_status_on_connect"></label>
                     <label class="setup-field"><span>影像最大有效秒數</span><input type="number" step="0.1" min="0.1" data-setup-field="vision.result_max_age_sec"></label>
@@ -255,7 +265,7 @@
             </section>
 
             <section class="setup-section setup-section-secondary">
-                <div class="setup-section-head"><h3>進階通訊參數</h3></div>
+                <div class="setup-section-head"><h3>工程通訊參數</h3></div>
                 <div class="setup-field-grid two">
                     <label class="setup-field"><span>連線逾時秒數</span><input type="number" min="0.1" step="0.1" data-setup-field="robot.connection.timeout_sec"></label>
                     <label class="setup-field"><span>TMflow 版本</span><input type="text" maxlength="32" data-setup-field="robot.connection.tmflow_version"></label>
@@ -309,23 +319,22 @@
                     <label class="setup-field"><span>夾爪錯誤值</span><input type="number" min="0" max="65535" step="1" data-setup-field="robot.modbus.gripper_error_value"></label>
                     <label class="setup-field"><span>夾爪回饋逾時</span><input type="number" min="0.01" step="0.01" data-setup-field="robot.modbus.gripper_feedback_timeout_sec"></label>
                 </div>
-                <div class="setup-inline-actions mt-12">
-                    <button type="button" class="admin-btn mini" data-setup-test="connect">測試連線</button>
-                    <button type="button" class="admin-btn mini" data-setup-test="status">讀取狀態</button>
-                    <button type="button" class="admin-btn mini" data-setup-test="write_pose">寫入座標</button>
-                    <button type="button" class="admin-btn mini" data-setup-test="corner_a0">a0 安全 Z</button>
-                    <button type="button" class="admin-btn mini" data-setup-test="corner_i0">i0 安全 Z</button>
-                    <button type="button" class="admin-btn mini" data-setup-test="corner_a9">a9 安全 Z</button>
-                    <button type="button" class="admin-btn mini" data-setup-test="corner_i9">i9 安全 Z</button>
-                    <button type="button" class="admin-btn mini" data-setup-test="center_e4">e4 安全 Z</button>
-                    <button type="button" class="admin-btn mini" data-setup-test="grab_z">e4 夾取 Z</button>
-                    <button type="button" class="admin-btn mini" data-setup-test="gripper_open">測試放開</button>
-                    <button type="button" class="admin-btn mini" data-setup-test="gripper_close">測試夾取</button>
-                    <button type="button" class="admin-btn mini" data-setup-test="safe_z">驗證安全 Z</button>
-                    <button type="button" class="admin-btn mini" data-setup-test="origin">驗證原點</button>
-                    <button type="button" class="admin-btn mini" data-setup-test="dead_zone">驗證死棋區</button>
-                    <button type="button" class="admin-btn mini" data-setup-test="one_move">驗證 a0a1</button>
-                </div>
+                <details class="setup-advanced-tests">
+                    <summary>進階硬體測試</summary>
+                    <div class="setup-inline-actions setup-advanced-test-grid">
+                        <button type="button" class="admin-btn mini" data-setup-test="write_pose">寫入座標</button>
+                        <button type="button" class="admin-btn mini" data-setup-test="corner_a0">a0 安全 Z</button>
+                        <button type="button" class="admin-btn mini" data-setup-test="corner_i0">i0 安全 Z</button>
+                        <button type="button" class="admin-btn mini" data-setup-test="corner_a9">a9 安全 Z</button>
+                        <button type="button" class="admin-btn mini" data-setup-test="corner_i9">i9 安全 Z</button>
+                        <button type="button" class="admin-btn mini" data-setup-test="center_e4">e4 安全 Z</button>
+                        <button type="button" class="admin-btn mini" data-setup-test="grab_z">e4 夾取 Z</button>
+                        <button type="button" class="admin-btn mini" data-setup-test="gripper_open">測試放開</button>
+                        <button type="button" class="admin-btn mini" data-setup-test="gripper_close">測試夾取</button>
+                        <button type="button" class="admin-btn mini" data-setup-test="origin">驗證原點</button>
+                        <button type="button" class="admin-btn mini" data-setup-test="dead_zone">驗證死棋區</button>
+                    </div>
+                </details>
                 <div class="setup-status-line">
                     <span>硬體測試</span>
                     <strong id="setup-hardware-test-status">--</strong>

@@ -157,7 +157,11 @@ def bootstrap_system():
         robot_connected = bool(robot.connect())
         bootstrap_status["robot_connected"] = robot_connected
         if not robot_connected and not getattr(config, "FAKE_ROBOT", False):
-            record_bootstrap_error("robot.connect", ComponentDegradedError("Robot connection failed in real hardware mode."), level="error")
+            record_bootstrap_error(
+                "robot.connect",
+                ComponentDegradedError(_robot_connection_failure_message(config)),
+                level="error",
+            )
     except Exception as exc:
         record_bootstrap_error("robot.connect", exc)
 
@@ -282,3 +286,16 @@ def bootstrap_system():
     bootstrap_status["booted"] = True
     bootstrap_system._booted = True
     logger.info("[Bootstrap] System bootstrap complete.")
+
+
+def _robot_connection_failure_message(config_module) -> str:
+    adapter = str(getattr(config_module, "ROBOT_ADAPTER", "unknown") or "unknown")
+    host = str(getattr(config_module, "ROBOT_IP", "unknown") or "unknown")
+    port = str(getattr(config_module, "ROBOT_PORT", "unknown") or "unknown")
+    pc_ip = str(getattr(config_module, "ROBOT_PC_IP", "") or "").strip()
+    pc_hint = f" PC IP is configured as {pc_ip};" if pc_ip else ""
+    return (
+        "Robot connection failed in real hardware mode "
+        f"(adapter={adapter}, endpoint={host}:{port})."
+        f"{pc_hint} verify the PC/TM robot network, robot IP, port, and selected adapter before enabling motion."
+    )

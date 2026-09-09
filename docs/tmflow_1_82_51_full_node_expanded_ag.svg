@@ -1,0 +1,325 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="3900" height="2450" viewBox="0 0 3900 2450" role="img" aria-labelledby="title desc">
+  <title id="title">TMflow 1.82.51 現場修正版節點展開圖</title>
+  <desc id="desc">依照 2026-09-02 現場卡關結果：先測安全假流程，再加回 If、Network、Listen、真取放。</desc>
+  <defs>
+    <marker id="arrow" markerWidth="14" markerHeight="14" refX="11" refY="7" orient="auto" markerUnits="strokeWidth"><path d="M 2 2 L 12 7 L 2 12 Z" fill="#32455f" /></marker>
+    <marker id="arrow-green" markerWidth="14" markerHeight="14" refX="11" refY="7" orient="auto" markerUnits="strokeWidth"><path d="M 2 2 L 12 7 L 2 12 Z" fill="#158a4d" /></marker>
+    <marker id="arrow-red" markerWidth="14" markerHeight="14" refX="11" refY="7" orient="auto" markerUnits="strokeWidth"><path d="M 2 2 L 12 7 L 2 12 Z" fill="#cf3030" /></marker>
+    <filter id="shadow" x="-8%" y="-8%" width="116%" height="124%"><feDropShadow dx="0" dy="6" stdDeviation="6" flood-color="#10223f" flood-opacity="0.11"/></filter>
+  </defs>
+  <style>
+    :root{--bg:#f5f7fb;--ink:#142033;--muted:#5b6b83;--border:#c6d3e5;--blue:#2f7cf6;--blue-soft:#e7f1ff;--cyan:#0891b2;--cyan-soft:#e7fbff;--green:#169b55;--green-soft:#e8f8ef;--orange:#ef7b22;--orange-soft:#fff3e3;--red:#d43b3b;--red-soft:#ffe9e9;--purple:#7c3aed;--purple-soft:#f1eaff;--yellow:#c99400;--yellow-soft:#fff7d1}
+    .bg{fill:var(--bg)} .title{fill:var(--ink);font:600 44px "Microsoft JhengHei","Noto Sans TC",Arial,sans-serif}.subtitle{fill:var(--muted);font:400 24px "Microsoft JhengHei","Noto Sans TC",Arial,sans-serif}.body{fill:var(--ink);font:400 21px "Microsoft JhengHei","Noto Sans TC",Arial,sans-serif}.small{fill:var(--muted);font:400 18px "Microsoft JhengHei","Noto Sans TC",Arial,sans-serif}
+    .lane-box,.node-box,.panel{fill:#fff;stroke:var(--border);stroke-width:2.2;filter:url(#shadow)}.lane-head,.lane-head-cover{fill:var(--blue-soft)}.lane.orange .lane-head,.lane.orange .lane-head-cover{fill:var(--orange-soft)}.lane.green .lane-head,.lane.green .lane-head-cover{fill:var(--green-soft)}.lane.cyan .lane-head,.lane.cyan .lane-head-cover{fill:var(--cyan-soft)}.lane.red .lane-head,.lane.red .lane-head-cover{fill:var(--red-soft)}.lane-title{fill:var(--ink);font:600 24px "Microsoft JhengHei","Noto Sans TC",Arial,sans-serif}
+    .node-id{fill:var(--ink);font:600 24px "Microsoft JhengHei","Noto Sans TC",Arial,sans-serif}.node-body{fill:#273853;font:400 19px "Microsoft JhengHei","Noto Sans TC",Arial,sans-serif}.node-strip{fill:var(--blue)}.node.orange .node-strip{fill:var(--orange)}.node.green .node-strip{fill:var(--green)}.node.cyan .node-strip{fill:var(--cyan)}.node.red .node-strip{fill:var(--red)}.type-pill{fill:#edf3fa;stroke:#d8e2ee;stroke-width:1}.type-text{fill:var(--muted);font:600 15px "Microsoft JhengHei","Noto Sans TC",Arial,sans-serif}
+    .label-bg{fill:var(--bg);stroke:#c7d3e4;stroke-width:1.2}.edge-label{fill:#40506a;font:600 17px "Microsoft JhengHei","Noto Sans TC",Arial,sans-serif}.warn{fill:#b91c1c;font:600 21px "Microsoft JhengHei","Noto Sans TC",Arial,sans-serif}.ok{fill:#166534;font:600 21px "Microsoft JhengHei","Noto Sans TC",Arial,sans-serif}
+  </style>
+  <rect class="bg" width="3900" height="2450"/>
+  <text class="title" text-anchor="start" font-weight="600"><tspan x="60" y="70">TMflow 1.82.51 現場修正版節點展開圖</tspan></text>
+  <text class="subtitle" text-anchor="start"><tspan x="60" y="110">依照 2026-09-02 現場卡關結果：先測安全假流程，再加回 If、Network、Listen、真取放。</tspan></text>
+  <text class="warn" text-anchor="start"><tspan x="60" y="155">節點名稱只填 A1、A2...；用途寫在手冊，不寫進 TMflow 名稱。</tspan></text><g class="lane blue">
+    <rect class="lane-box" x="60" y="190" width="610" height="2060" rx="16"/>
+    <rect class="lane-head" x="60" y="190" width="610" height="68" rx="16"/>
+    <path class="lane-head-cover" d="M 60 240 H 670 V 258 H 60 Z"/>
+    <text class="lane-title" text-anchor="start" font-weight="600"><tspan x="82" y="232">A 初始化 / 通訊暫跳</tspan></text>
+  </g><g class="node blue">
+    <rect class="node-box" x="84" y="282" width="562" height="128" rx="12"/>
+    <rect class="node-strip" x="84" y="282" width="12" height="128" rx="6"/>
+    <text class="node-id" text-anchor="start" font-weight="600"><tspan x="108" y="320">A1</tspan></text>
+    <rect class="type-pill" x="508" y="297" width="116" height="30" rx="15"/>
+    <text class="type-text" text-anchor="middle"><tspan x="566" y="319">Start</tspan></text>
+    <text class="node-body" text-anchor="start"><tspan x="108" y="354">流程入口；專案速度 3-5%</tspan></text>
+  </g><g class="node blue">
+    <rect class="node-box" x="84" y="428" width="562" height="128" rx="12"/>
+    <rect class="node-strip" x="84" y="428" width="12" height="128" rx="6"/>
+    <text class="node-id" text-anchor="start" font-weight="600"><tspan x="108" y="466">A2</tspan></text>
+    <rect class="type-pill" x="508" y="443" width="116" height="30" rx="15"/>
+    <text class="type-text" text-anchor="middle"><tspan x="566" y="465">Set</tspan></text>
+    <text class="node-body" text-anchor="start"><tspan x="108" y="500">初始化 status/error/heartbeat 等</tspan><tspan x="108" y="524">變數</tspan></text>
+  </g><g class="node blue">
+    <rect class="node-box" x="84" y="574" width="562" height="128" rx="12"/>
+    <rect class="node-strip" x="84" y="574" width="12" height="128" rx="6"/>
+    <text class="node-id" text-anchor="start" font-weight="600"><tspan x="108" y="612">A3</tspan></text>
+    <rect class="type-pill" x="508" y="589" width="116" height="30" rx="15"/>
+    <text class="type-text" text-anchor="middle"><tspan x="566" y="611">Set</tspan></text>
+    <text class="node-body" text-anchor="start"><tspan x="108" y="646">has_piece=false；吸盤 DO 已確認</tspan><tspan x="108" y="670">才 OFF</tspan></text>
+  </g><g class="node blue">
+    <rect class="node-box" x="84" y="720" width="562" height="128" rx="12"/>
+    <rect class="node-strip" x="84" y="720" width="12" height="128" rx="6"/>
+    <text class="node-id" text-anchor="start" font-weight="600"><tspan x="108" y="758">A4</tspan></text>
+    <rect class="type-pill" x="508" y="735" width="116" height="30" rx="15"/>
+    <text class="type-text" text-anchor="middle"><tspan x="566" y="757">Point</tspan></text>
+    <text class="node-body" text-anchor="start"><tspan x="108" y="792">移到 P_READY_SAFE 安全等待點</tspan></text>
+  </g><g class="node blue">
+    <rect class="node-box" x="84" y="866" width="562" height="128" rx="12"/>
+    <rect class="node-strip" x="84" y="866" width="12" height="128" rx="6"/>
+    <text class="node-id" text-anchor="start" font-weight="600"><tspan x="108" y="904">A5</tspan></text>
+    <rect class="type-pill" x="508" y="881" width="116" height="30" rx="15"/>
+    <text class="type-text" text-anchor="middle"><tspan x="566" y="903">Network</tspan></text>
+    <text class="node-body" text-anchor="start"><tspan x="108" y="938">正式送 READY；測試版先跳過</tspan></text>
+  </g><g class="node blue">
+    <rect class="node-box" x="84" y="1012" width="562" height="128" rx="12"/>
+    <rect class="node-strip" x="84" y="1012" width="12" height="128" rx="6"/>
+    <text class="node-id" text-anchor="start" font-weight="600"><tspan x="108" y="1050">Listen1</tspan></text>
+    <rect class="type-pill" x="508" y="1027" width="116" height="30" rx="15"/>
+    <text class="type-text" text-anchor="middle"><tspan x="566" y="1049">Listen</tspan></text>
+    <text class="node-body" text-anchor="start"><tspan x="108" y="1084">正式等 Python 指令；測試版先跳過</tspan></text>
+  </g><g class="lane orange">
+    <rect class="lane-box" x="698" y="190" width="610" height="2060" rx="16"/>
+    <rect class="lane-head" x="698" y="190" width="610" height="68" rx="16"/>
+    <path class="lane-head-cover" d="M 698 240 H 1308 V 258 H 698 Z"/>
+    <text class="lane-title" text-anchor="start" font-weight="600"><tspan x="720" y="232">B 測試主線 / 防呆</tspan></text>
+  </g><g class="node orange">
+    <rect class="node-box" x="722" y="282" width="562" height="104" rx="12"/>
+    <rect class="node-strip" x="722" y="282" width="12" height="104" rx="6"/>
+    <text class="node-id" text-anchor="start" font-weight="600"><tspan x="746" y="320">B1</tspan></text>
+    <rect class="type-pill" x="1146" y="297" width="116" height="30" rx="15"/>
+    <text class="type-text" text-anchor="middle"><tspan x="1204" y="319">Set</tspan></text>
+    <text class="node-body" text-anchor="start"><tspan x="746" y="354">heartbeat = heartbeat + 1</tspan></text>
+  </g><g class="node orange">
+    <rect class="node-box" x="722" y="404" width="562" height="104" rx="12"/>
+    <rect class="node-strip" x="722" y="404" width="12" height="104" rx="6"/>
+    <text class="node-id" text-anchor="start" font-weight="600"><tspan x="746" y="442">B2</tspan></text>
+    <rect class="type-pill" x="1146" y="419" width="116" height="30" rx="15"/>
+    <text class="type-text" text-anchor="middle"><tspan x="1204" y="441">Set</tspan></text>
+    <text class="node-body" text-anchor="start"><tspan x="746" y="476">robot_state = 1</tspan></text>
+  </g><g class="node orange">
+    <rect class="node-box" x="722" y="526" width="562" height="104" rx="12"/>
+    <rect class="node-strip" x="722" y="526" width="12" height="104" rx="6"/>
+    <text class="node-id" text-anchor="start" font-weight="600"><tspan x="746" y="564">B3</tspan></text>
+    <rect class="type-pill" x="1146" y="541" width="116" height="30" rx="15"/>
+    <text class="type-text" text-anchor="middle"><tspan x="1204" y="563">Network</tspan></text>
+    <text class="node-body" text-anchor="start"><tspan x="746" y="598">正式送 HB；測試版先跳過</tspan></text>
+  </g><g class="node orange">
+    <rect class="node-box" x="722" y="648" width="562" height="104" rx="12"/>
+    <rect class="node-strip" x="722" y="648" width="12" height="104" rx="6"/>
+    <text class="node-id" text-anchor="start" font-weight="600"><tspan x="746" y="686">B4</tspan></text>
+    <rect class="type-pill" x="1146" y="663" width="116" height="30" rx="15"/>
+    <text class="type-text" text-anchor="middle"><tspan x="1204" y="685">Set</tspan></text>
+    <text class="node-body" text-anchor="start"><tspan x="746" y="720">固定測試命令 active_from/to/acti</tspan><tspan x="746" y="744">on</tspan></text>
+  </g><g class="node orange">
+    <rect class="node-box" x="722" y="770" width="562" height="104" rx="12"/>
+    <rect class="node-strip" x="722" y="770" width="12" height="104" rx="6"/>
+    <text class="node-id" text-anchor="start" font-weight="600"><tspan x="746" y="808">B5</tspan></text>
+    <rect class="type-pill" x="1146" y="785" width="116" height="30" rx="15"/>
+    <text class="type-text" text-anchor="middle"><tspan x="1204" y="807">Network</tspan></text>
+    <text class="node-body" text-anchor="start"><tspan x="746" y="842">正式送 BUSY；測試版先跳過</tspan></text>
+  </g><g class="node orange">
+    <rect class="node-box" x="722" y="892" width="562" height="104" rx="12"/>
+    <rect class="node-strip" x="722" y="892" width="12" height="104" rx="6"/>
+    <text class="node-id" text-anchor="start" font-weight="600"><tspan x="746" y="930">B6</tspan></text>
+    <rect class="type-pill" x="1146" y="907" width="116" height="30" rx="15"/>
+    <text class="type-text" text-anchor="middle"><tspan x="1204" y="929">If</tspan></text>
+    <text class="node-body" text-anchor="start"><tspan x="746" y="964">active_from 範圍；主線通過後加回</tspan></text>
+  </g><g class="node orange">
+    <rect class="node-box" x="722" y="1014" width="562" height="104" rx="12"/>
+    <rect class="node-strip" x="722" y="1014" width="12" height="104" rx="6"/>
+    <text class="node-id" text-anchor="start" font-weight="600"><tspan x="746" y="1052">B7</tspan></text>
+    <rect class="type-pill" x="1146" y="1029" width="116" height="30" rx="15"/>
+    <text class="type-text" text-anchor="middle"><tspan x="1204" y="1051">If</tspan></text>
+    <text class="node-body" text-anchor="start"><tspan x="746" y="1086">active_to 範圍；今日卡關點，重建</tspan></text>
+  </g><g class="node orange">
+    <rect class="node-box" x="722" y="1136" width="562" height="104" rx="12"/>
+    <rect class="node-strip" x="722" y="1136" width="12" height="104" rx="6"/>
+    <text class="node-id" text-anchor="start" font-weight="600"><tspan x="746" y="1174">B8</tspan></text>
+    <rect class="type-pill" x="1146" y="1151" width="116" height="30" rx="15"/>
+    <text class="type-text" text-anchor="middle"><tspan x="1204" y="1173">If</tspan></text>
+    <text class="node-body" text-anchor="start"><tspan x="746" y="1208">active_action 合法；主線通過後加</tspan><tspan x="746" y="1232">回</tspan></text>
+  </g><g class="node orange">
+    <rect class="node-box" x="722" y="1258" width="562" height="104" rx="12"/>
+    <rect class="node-strip" x="722" y="1258" width="12" height="104" rx="6"/>
+    <text class="node-id" text-anchor="start" font-weight="600"><tspan x="746" y="1296">B9</tspan></text>
+    <rect class="type-pill" x="1146" y="1273" width="116" height="30" rx="15"/>
+    <text class="type-text" text-anchor="middle"><tspan x="1204" y="1295">Set</tspan></text>
+    <text class="node-body" text-anchor="start"><tspan x="746" y="1330">設定 src/dst/cap 的安全 X/Y</tspan></text>
+  </g><g class="node orange">
+    <rect class="node-box" x="722" y="1380" width="562" height="104" rx="12"/>
+    <rect class="node-strip" x="722" y="1380" width="12" height="104" rx="6"/>
+    <text class="node-id" text-anchor="start" font-weight="600"><tspan x="746" y="1418">B10</tspan></text>
+    <rect class="type-pill" x="1146" y="1395" width="116" height="30" rx="15"/>
+    <text class="type-text" text-anchor="middle"><tspan x="1204" y="1417">If</tspan></text>
+    <text class="node-body" text-anchor="start"><tspan x="746" y="1452">active_action==1 走 C；否則走 B</tspan><tspan x="746" y="1476">11</tspan></text>
+  </g><g class="lane green">
+    <rect class="lane-box" x="1336" y="190" width="610" height="2060" rx="16"/>
+    <rect class="lane-head" x="1336" y="190" width="610" height="68" rx="16"/>
+    <path class="lane-head-cover" d="M 1336 240 H 1946 V 258 H 1336 Z"/>
+    <text class="lane-title" text-anchor="start" font-weight="600"><tspan x="1358" y="232">B11-B14 一般假移動</tspan></text>
+  </g><g class="node green">
+    <rect class="node-box" x="1360" y="282" width="562" height="128" rx="12"/>
+    <rect class="node-strip" x="1360" y="282" width="12" height="128" rx="6"/>
+    <text class="node-id" text-anchor="start" font-weight="600"><tspan x="1384" y="320">B11</tspan></text>
+    <rect class="type-pill" x="1784" y="297" width="116" height="30" rx="15"/>
+    <text class="type-text" text-anchor="middle"><tspan x="1842" y="319">Set</tspan></text>
+    <text class="node-body" text-anchor="start"><tspan x="1384" y="354">move = src；卡住時先只留 move_x/</tspan><tspan x="1384" y="378">y</tspan></text>
+  </g><g class="node green">
+    <rect class="node-box" x="1360" y="428" width="562" height="128" rx="12"/>
+    <rect class="node-strip" x="1360" y="428" width="12" height="128" rx="6"/>
+    <text class="node-id" text-anchor="start" font-weight="600"><tspan x="1384" y="466">B12</tspan></text>
+    <rect class="type-pill" x="1784" y="443" width="116" height="30" rx="15"/>
+    <text class="type-text" text-anchor="middle"><tspan x="1842" y="465">Move</tspan></text>
+    <text class="node-body" text-anchor="start"><tspan x="1384" y="500">到來源安全座標；不下降 Z</tspan></text>
+  </g><g class="node green">
+    <rect class="node-box" x="1360" y="574" width="562" height="128" rx="12"/>
+    <rect class="node-strip" x="1360" y="574" width="12" height="128" rx="6"/>
+    <text class="node-id" text-anchor="start" font-weight="600"><tspan x="1384" y="612">B13</tspan></text>
+    <rect class="type-pill" x="1784" y="589" width="116" height="30" rx="15"/>
+    <text class="type-text" text-anchor="middle"><tspan x="1842" y="611">Set</tspan></text>
+    <text class="node-body" text-anchor="start"><tspan x="1384" y="646">move = dst；Z/R 姿態保持 safe</tspan></text>
+  </g><g class="node green">
+    <rect class="node-box" x="1360" y="720" width="562" height="128" rx="12"/>
+    <rect class="node-strip" x="1360" y="720" width="12" height="128" rx="6"/>
+    <text class="node-id" text-anchor="start" font-weight="600"><tspan x="1384" y="758">B14</tspan></text>
+    <rect class="type-pill" x="1784" y="735" width="116" height="30" rx="15"/>
+    <text class="type-text" text-anchor="middle"><tspan x="1842" y="757">Move</tspan></text>
+    <text class="node-body" text-anchor="start"><tspan x="1384" y="792">到目標安全座標；不開吸盤</tspan></text>
+  </g><g class="lane green">
+    <rect class="lane-box" x="1974" y="190" width="610" height="2060" rx="16"/>
+    <rect class="lane-head" x="1974" y="190" width="610" height="68" rx="16"/>
+    <path class="lane-head-cover" d="M 1974 240 H 2584 V 258 H 1974 Z"/>
+    <text class="lane-title" text-anchor="start" font-weight="600"><tspan x="1996" y="232">C 吃子假流程</tspan></text>
+  </g><g class="node green">
+    <rect class="node-box" x="1998" y="282" width="562" height="128" rx="12"/>
+    <rect class="node-strip" x="1998" y="282" width="12" height="128" rx="6"/>
+    <text class="node-id" text-anchor="start" font-weight="600"><tspan x="2022" y="320">C1</tspan></text>
+    <rect class="type-pill" x="2422" y="297" width="116" height="30" rx="15"/>
+    <text class="type-text" text-anchor="middle"><tspan x="2480" y="319">Set</tspan></text>
+    <text class="node-body" text-anchor="start"><tspan x="2022" y="354">move = dst；到被吃棋位置上方</tspan></text>
+  </g><g class="node green">
+    <rect class="node-box" x="1998" y="428" width="562" height="128" rx="12"/>
+    <rect class="node-strip" x="1998" y="428" width="12" height="128" rx="6"/>
+    <text class="node-id" text-anchor="start" font-weight="600"><tspan x="2022" y="466">C2</tspan></text>
+    <rect class="type-pill" x="2422" y="443" width="116" height="30" rx="15"/>
+    <text class="type-text" text-anchor="middle"><tspan x="2480" y="465">Move</tspan></text>
+    <text class="node-body" text-anchor="start"><tspan x="2022" y="500">到目標格安全高度</tspan></text>
+  </g><g class="node green">
+    <rect class="node-box" x="1998" y="574" width="562" height="128" rx="12"/>
+    <rect class="node-strip" x="1998" y="574" width="12" height="128" rx="6"/>
+    <text class="node-id" text-anchor="start" font-weight="600"><tspan x="2022" y="612">C3</tspan></text>
+    <rect class="type-pill" x="2422" y="589" width="116" height="30" rx="15"/>
+    <text class="type-text" text-anchor="middle"><tspan x="2480" y="611">Set</tspan></text>
+    <text class="node-body" text-anchor="start"><tspan x="2022" y="646">move = cap；死棋盒 X/Y</tspan></text>
+  </g><g class="node green">
+    <rect class="node-box" x="1998" y="720" width="562" height="128" rx="12"/>
+    <rect class="node-strip" x="1998" y="720" width="12" height="128" rx="6"/>
+    <text class="node-id" text-anchor="start" font-weight="600"><tspan x="2022" y="758">C4</tspan></text>
+    <rect class="type-pill" x="2422" y="735" width="116" height="30" rx="15"/>
+    <text class="type-text" text-anchor="middle"><tspan x="2480" y="757">Move</tspan></text>
+    <text class="node-body" text-anchor="start"><tspan x="2022" y="792">到死棋盒安全高度</tspan></text>
+  </g><g class="node green">
+    <rect class="node-box" x="1998" y="866" width="562" height="128" rx="12"/>
+    <rect class="node-strip" x="1998" y="866" width="12" height="128" rx="6"/>
+    <text class="node-id" text-anchor="start" font-weight="600"><tspan x="2022" y="904">C5</tspan></text>
+    <rect class="type-pill" x="2422" y="881" width="116" height="30" rx="15"/>
+    <text class="type-text" text-anchor="middle"><tspan x="2480" y="903">Set</tspan></text>
+    <text class="node-body" text-anchor="start"><tspan x="2022" y="938">dead_slot_index = dead_slot_ind</tspan><tspan x="2022" y="962">ex + 1</tspan></text>
+  </g><g class="node green">
+    <rect class="node-box" x="1998" y="1012" width="562" height="128" rx="12"/>
+    <rect class="node-strip" x="1998" y="1012" width="12" height="128" rx="6"/>
+    <text class="node-id" text-anchor="start" font-weight="600"><tspan x="2022" y="1050">Goto</tspan></text>
+    <rect class="type-pill" x="2422" y="1027" width="116" height="30" rx="15"/>
+    <text class="type-text" text-anchor="middle"><tspan x="2480" y="1049">Goto</tspan></text>
+    <text class="node-body" text-anchor="start"><tspan x="2022" y="1084">回 B11 搬來源棋</tspan></text>
+  </g><g class="lane cyan">
+    <rect class="lane-box" x="2612" y="190" width="610" height="2060" rx="16"/>
+    <rect class="lane-head" x="2612" y="190" width="610" height="68" rx="16"/>
+    <path class="lane-head-cover" d="M 2612 240 H 3222 V 258 H 2612 Z"/>
+    <text class="lane-title" text-anchor="start" font-weight="600"><tspan x="2634" y="232">F 完成 / 回等待</tspan></text>
+  </g><g class="node cyan">
+    <rect class="node-box" x="2636" y="282" width="562" height="128" rx="12"/>
+    <rect class="node-strip" x="2636" y="282" width="12" height="128" rx="6"/>
+    <text class="node-id" text-anchor="start" font-weight="600"><tspan x="2660" y="320">F1</tspan></text>
+    <rect class="type-pill" x="3060" y="297" width="116" height="30" rx="15"/>
+    <text class="type-text" text-anchor="middle"><tspan x="3118" y="319">Point</tspan></text>
+    <text class="node-body" text-anchor="start"><tspan x="2660" y="354">回 P_READY_SAFE</tspan></text>
+  </g><g class="node cyan">
+    <rect class="node-box" x="2636" y="428" width="562" height="128" rx="12"/>
+    <rect class="node-strip" x="2636" y="428" width="12" height="128" rx="6"/>
+    <text class="node-id" text-anchor="start" font-weight="600"><tspan x="2660" y="466">F2</tspan></text>
+    <rect class="type-pill" x="3060" y="443" width="116" height="30" rx="15"/>
+    <text class="type-text" text-anchor="middle"><tspan x="3118" y="465">Set</tspan></text>
+    <text class="node-body" text-anchor="start"><tspan x="2660" y="500">status=2；completed_cmd_id=acti</tspan><tspan x="2660" y="524">ve_cmd_id</tspan></text>
+  </g><g class="node cyan">
+    <rect class="node-box" x="2636" y="574" width="562" height="128" rx="12"/>
+    <rect class="node-strip" x="2636" y="574" width="12" height="128" rx="6"/>
+    <text class="node-id" text-anchor="start" font-weight="600"><tspan x="2660" y="612">F3</tspan></text>
+    <rect class="type-pill" x="3060" y="589" width="116" height="30" rx="15"/>
+    <text class="type-text" text-anchor="middle"><tspan x="3118" y="611">Network</tspan></text>
+    <text class="node-body" text-anchor="start"><tspan x="2660" y="646">正式送 DONE；測試版先跳過</tspan></text>
+  </g><g class="node cyan">
+    <rect class="node-box" x="2636" y="720" width="562" height="128" rx="12"/>
+    <rect class="node-strip" x="2636" y="720" width="12" height="128" rx="6"/>
+    <text class="node-id" text-anchor="start" font-weight="600"><tspan x="2660" y="758">F4</tspan></text>
+    <rect class="type-pill" x="3060" y="735" width="116" height="30" rx="15"/>
+    <text class="type-text" text-anchor="middle"><tspan x="3118" y="757">Wait for</tspan></text>
+    <text class="node-body" text-anchor="start"><tspan x="2660" y="792">等待 100 ms</tspan></text>
+  </g><g class="node cyan">
+    <rect class="node-box" x="2636" y="866" width="562" height="128" rx="12"/>
+    <rect class="node-strip" x="2636" y="866" width="12" height="128" rx="6"/>
+    <text class="node-id" text-anchor="start" font-weight="600"><tspan x="2660" y="904">F5</tspan></text>
+    <rect class="type-pill" x="3060" y="881" width="116" height="30" rx="15"/>
+    <text class="type-text" text-anchor="middle"><tspan x="3118" y="903">Set</tspan></text>
+    <text class="node-body" text-anchor="start"><tspan x="2660" y="938">清 status/robot_state/action</tspan></text>
+  </g><g class="node cyan">
+    <rect class="node-box" x="2636" y="1012" width="562" height="128" rx="12"/>
+    <rect class="node-strip" x="2636" y="1012" width="12" height="128" rx="6"/>
+    <text class="node-id" text-anchor="start" font-weight="600"><tspan x="2660" y="1050">Goto</tspan></text>
+    <rect class="type-pill" x="3060" y="1027" width="116" height="30" rx="15"/>
+    <text class="type-text" text-anchor="middle"><tspan x="3118" y="1049">Goto</tspan></text>
+    <text class="node-body" text-anchor="start"><tspan x="2660" y="1084">測試可 Stop；正式回 Listen1</tspan></text>
+  </g><g class="lane red">
+    <rect class="lane-box" x="3250" y="190" width="610" height="2060" rx="16"/>
+    <rect class="lane-head" x="3250" y="190" width="610" height="68" rx="16"/>
+    <path class="lane-head-cover" d="M 3250 240 H 3860 V 258 H 3250 Z"/>
+    <text class="lane-title" text-anchor="start" font-weight="600"><tspan x="3272" y="232">G 後續正式化</tspan></text>
+  </g><g class="node red">
+    <rect class="node-box" x="3274" y="282" width="562" height="128" rx="12"/>
+    <rect class="node-strip" x="3274" y="282" width="12" height="128" rx="6"/>
+    <text class="node-id" text-anchor="start" font-weight="600"><tspan x="3298" y="320">IF</tspan></text>
+    <rect class="type-pill" x="3698" y="297" width="116" height="30" rx="15"/>
+    <text class="type-text" text-anchor="middle"><tspan x="3756" y="319">If</tspan></text>
+    <text class="node-body" text-anchor="start"><tspan x="3298" y="354">重建 B6/B7/B8，No 先接 Stop</tspan></text>
+  </g><g class="node red">
+    <rect class="node-box" x="3274" y="428" width="562" height="128" rx="12"/>
+    <rect class="node-strip" x="3274" y="428" width="12" height="128" rx="6"/>
+    <text class="node-id" text-anchor="start" font-weight="600"><tspan x="3298" y="466">NET</tspan></text>
+    <rect class="type-pill" x="3698" y="443" width="116" height="30" rx="15"/>
+    <text class="type-text" text-anchor="middle"><tspan x="3756" y="465">Network</tspan></text>
+    <text class="node-body" text-anchor="start"><tspan x="3298" y="500">Python 9001 開啟後加回 A5/B3/B</tspan><tspan x="3298" y="524">5/F3</tspan></text>
+  </g><g class="node red">
+    <rect class="node-box" x="3274" y="574" width="562" height="128" rx="12"/>
+    <rect class="node-strip" x="3274" y="574" width="12" height="128" rx="6"/>
+    <text class="node-id" text-anchor="start" font-weight="600"><tspan x="3298" y="612">LISTEN</tspan></text>
+    <rect class="type-pill" x="3698" y="589" width="116" height="30" rx="15"/>
+    <text class="type-text" text-anchor="middle"><tspan x="3756" y="611">Listen</tspan></text>
+    <text class="node-body" text-anchor="start"><tspan x="3298" y="646">確認 Listen1 收命令欄位</tspan></text>
+  </g><g class="node red">
+    <rect class="node-box" x="3274" y="720" width="562" height="128" rx="12"/>
+    <rect class="node-strip" x="3274" y="720" width="12" height="128" rx="6"/>
+    <text class="node-id" text-anchor="start" font-weight="600"><tspan x="3298" y="758">Z</tspan></text>
+    <rect class="type-pill" x="3698" y="735" width="116" height="30" rx="15"/>
+    <text class="type-text" text-anchor="middle"><tspan x="3756" y="757">Move</tspan></text>
+    <text class="node-body" text-anchor="start"><tspan x="3298" y="792">加入 pick_z/place_z/drop_z</tspan></text>
+  </g><g class="node red">
+    <rect class="node-box" x="3274" y="866" width="562" height="128" rx="12"/>
+    <rect class="node-strip" x="3274" y="866" width="12" height="128" rx="6"/>
+    <text class="node-id" text-anchor="start" font-weight="600"><tspan x="3298" y="904">IO</tspan></text>
+    <rect class="type-pill" x="3698" y="881" width="116" height="30" rx="15"/>
+    <text class="type-text" text-anchor="middle"><tspan x="3756" y="903">Set</tspan></text>
+    <text class="node-body" text-anchor="start"><tspan x="3298" y="938">確認 DO 後才做吸盤 ON/OFF</tspan></text>
+  </g><g class="node red">
+    <rect class="node-box" x="3274" y="1012" width="562" height="128" rx="12"/>
+    <rect class="node-strip" x="3274" y="1012" width="12" height="128" rx="6"/>
+    <text class="node-id" text-anchor="start" font-weight="600"><tspan x="3298" y="1050">ERR</tspan></text>
+    <rect class="type-pill" x="3698" y="1027" width="116" height="30" rx="15"/>
+    <text class="type-text" text-anchor="middle"><tspan x="3756" y="1049">Set/Stop</tspan></text>
+    <text class="node-body" text-anchor="start"><tspan x="3298" y="1084">最後補 G 區錯誤流程</tspan></text>
+  </g><g><path d="M 670 720 L 698 720" fill="none" stroke="#32455f" stroke-width="4" marker-end="url(#arrow)" /><rect class="label-bg" x="564" y="694" width="240" height="34" rx="17"/><text class="edge-label" text-anchor="middle"><tspan x="684" y="717">測試：A4 -&gt; B1</tspan></text></g><g><path d="M 1308 1510 L 1336 520" fill="none" stroke="#158a4d" stroke-width="4" marker-end="url(#arrow-green)" stroke-dasharray="14 10"/><rect class="label-bg" x="1202" y="989" width="240" height="34" rx="17"/><text class="edge-label" text-anchor="middle"><tspan x="1322" y="1012">action=0</tspan></text></g><g><path d="M 1308 1510 L 1974 520" fill="none" stroke="#158a4d" stroke-width="4" marker-end="url(#arrow-green)" stroke-dasharray="14 10"/><rect class="label-bg" x="1521" y="989" width="240" height="34" rx="17"/><text class="edge-label" text-anchor="middle"><tspan x="1641" y="1012">action=1</tspan></text></g><g><path d="M 2584 990 L 1336 520" fill="none" stroke="#158a4d" stroke-width="4" marker-end="url(#arrow-green)" stroke-dasharray="14 10"/><rect class="label-bg" x="1840" y="729" width="240" height="34" rx="17"/><text class="edge-label" text-anchor="middle"><tspan x="1960" y="752">C 後回 B11</tspan></text></g><g><path d="M 1946 1040 L 2612 520" fill="none" stroke="#32455f" stroke-width="4" marker-end="url(#arrow)" /><rect class="label-bg" x="2159" y="754" width="240" height="34" rx="17"/><text class="edge-label" text-anchor="middle"><tspan x="2279" y="777">完成</tspan></text></g><g><path d="M 3222 1050 L 380 2310" fill="none" stroke="#32455f" stroke-width="4" marker-end="url(#arrow)" stroke-dasharray="14 10"/><rect class="label-bg" x="1681" y="1654" width="240" height="34" rx="17"/><text class="edge-label" text-anchor="middle"><tspan x="1801" y="1677">正式回 Listen1</tspan></text></g><g><path d="M 1420 500 L 3250 500" fill="none" stroke="#cf3030" stroke-width="4" marker-end="url(#arrow-red)" stroke-dasharray="14 10"/><rect class="label-bg" x="2215" y="474" width="240" height="34" rx="17"/><text class="edge-label" text-anchor="middle"><tspan x="2335" y="497">防呆/錯誤最後補</tspan></text></g><g class="node red">
+    <rect class="node-box" x="760" y="2275" width="2420" height="110" rx="12"/>
+    <rect class="node-strip" x="760" y="2275" width="12" height="110" rx="6"/>
+    <text class="node-id" text-anchor="start" font-weight="600"><tspan x="784" y="2313">測試規則</tspan></text>
+    <rect class="type-pill" x="3042" y="2290" width="116" height="30" rx="15"/>
+    <text class="type-text" text-anchor="middle"><tspan x="3100" y="2312">Rule</tspan></text>
+    <text class="node-body" text-anchor="start"><tspan x="784" y="2347">先跳過 A5/Listen1/B3/B5/B6/B7/B8/F3；安全假流程跑通後再逐一加回。</tspan></text>
+  </g>
+</svg>

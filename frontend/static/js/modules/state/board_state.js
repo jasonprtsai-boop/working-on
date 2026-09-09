@@ -3,7 +3,11 @@ export const boardState = {
     turn: "red",
     pieces: [],
     move_count: 0,
-    last_move: null
+    last_move: null,
+    game_phase: "OPENING",
+    game_status: "IDLE",
+    game_result: null,
+    ended: false
 };
 
 export function updateBoard(payload) {
@@ -13,6 +17,10 @@ export function updateBoard(payload) {
     boardState.pieces = payload.pieces || boardState.pieces;
     boardState.move_count = payload.move_count ?? boardState.move_count;
     boardState.last_move = payload.last_move ?? payload.lastMove ?? boardState.last_move;
+    boardState.game_phase = payload.game_phase || boardState.game_phase;
+    boardState.game_status = payload.game_status || boardState.game_status;
+    boardState.game_result = payload.game_result === undefined ? boardState.game_result : payload.game_result;
+    boardState.ended = Boolean(payload.ended || payload.game_status === "GAME_OVER");
 }
 
 function normalizeBoardTurn(value) {

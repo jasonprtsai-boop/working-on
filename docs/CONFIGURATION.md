@@ -67,16 +67,16 @@ TMFLOW_INGEST_SERVER_HOST=0.0.0.0
 TMFLOW_INGEST_SERVER_PORT=9001
 TMFLOW_INGEST_KEY=replace-with-shared-telemetry-key
 
-ROBOT_ADAPTER=modbus
-ROBOT_MODBUS_ROLE=server
-ROBOT_MODBUS_SERVER_HOST=192.168.10.50
-ROBOT_MODBUS_SERVER_PORT=1502
-ROBOT_MODBUS_PAYLOAD_MODE=square_command
+ROBOT_ADAPTER=techmanpy
+ROBOT_IP=192.168.10.10
+ROBOT_PORT=5890
 ```
 
 注意：只要 `VISION_SOURCE=tmvision_http` 且是 real/shared network，就必須設定 `VISION_TMFLOW_INGEST_KEY`。這是避免任何同網段裝置都能任意 POST 圖片進後端。
 
-`TMFLOW_INGEST_KEY` 只影響 `9001` telemetry ingest，不影響 Modbus `1502`。若 `TMFLOW_INGEST_KEY` 有值，TMflow Network Node 不能送純 `HB,0` 這種 CSV，必須送 JSON 並帶 key；若只是實驗室快速測 CSV，可暫時不設定 telemetry key。
+`TMFLOW_INGEST_KEY` 只影響 `9001` telemetry ingest。2026-09-01 現場中文介面確認右側 `ModbusDev` 不能當流程節點，因此目前 TMflow 建置主線不再依賴 Modbus Read/Write 節點。
+
+2026-09-02 的 TMflow 現場測試先不要把 Network 放在安全假移動主線。若 `TMFLOW_INGEST_KEY` 有值，TMflow Network Node 不能送純 `READY`、`HB`、`BUSY`、`DONE` 這種文字，必須送 JSON 並帶 key；若只是實驗室快速測純文字 Network，可暫時不設定 telemetry key，或先只用 Python 端的無 key 測試接收器。
 
 ## Production 必要條件
 
@@ -117,4 +117,4 @@ ROBOT_MODBUS_PAYLOAD_MODE=square_command
 
 ### `AUTO_EXECUTE_ROBOT=false` 是目前最重要的保護之一
 
-即使 AI 算出走法，也不會自動送手臂。要打開前必須完成 TMvision、Modbus、點位、吸盤、安全高度、急停等現場測試。
+即使 AI 算出走法，也不會自動送手臂。要打開前必須完成 TMvision、Listen/Network、點位、吸盤、安全高度、急停等現場測試。

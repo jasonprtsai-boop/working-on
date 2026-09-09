@@ -14,10 +14,26 @@ from backend.utils.logger import logger
 
 
 AI_MODES = {
-    "companionship": {"label": "陪伴模式", "depth": 6},
-    "training": {"label": "訓練模式", "depth": 10},
-    "demo": {"label": "展示模式", "depth": 18},
-    "adaptive": {"label": "自適應模式", "depth": 8},
+    "companionship": {"label": "陪伴預設", "depth": 6},
+    "training": {"label": "訓練預設", "depth": 10},
+    "demo": {"label": "展示預設", "depth": 18},
+    "adaptive": {"label": "自適應預設", "depth": 8},
+}
+
+MIN_ENGINE_DEPTH = 1
+MAX_ENGINE_DEPTH = 60
+
+AI_MODE_ALIASES = {
+    "companion": "companionship",
+    "care": "companionship",
+    "陪伴": "companionship",
+    "train": "training",
+    "訓練": "training",
+    "show": "demo",
+    "展示": "demo",
+    "auto": "adaptive",
+    "adaptive_mode": "adaptive",
+    "自適應": "adaptive",
 }
 
 
@@ -104,7 +120,7 @@ class RuntimeControl:
         }
 
     def set_engine_depth(self, depth: int) -> Dict[str, Any]:
-        depth_value = max(1, min(60, int(depth)))
+        depth_value = max(MIN_ENGINE_DEPTH, min(MAX_ENGINE_DEPTH, int(depth)))
         with self._lock:
             self.engine_depth = depth_value
             self.ai_mode = self._mode_from_depth(depth_value) or "custom"
@@ -276,24 +292,25 @@ class RuntimeControl:
         return f"自訂 Depth {depth_value}"
 
     @staticmethod
-    def _normalize_ai_mode(mode: str) -> str:
+    def resolve_ai_mode(mode: str) -> Optional[str]:
         normalized = str(mode or "").strip().lower().replace("-", "_")
-        aliases = {
-            "companion": "companionship",
-            "care": "companionship",
-            "陪伴": "companionship",
-            "train": "training",
-            "訓練": "training",
-            "show": "demo",
-            "展示": "demo",
-            "auto": "adaptive",
-            "adaptive_mode": "adaptive",
-            "自適應": "adaptive",
+        normalized = AI_MODE_ALIASES.get(normalized, normalized)
+        return normalized if normalized in AI_MODES else None
+
+    @staticmethod
+    def supported_ai_modes() -> Dict[str, Dict[str, Any]]:
+        return {
+            key: {"label": str(value["label"]), "depth": int(value["depth"])}
+            for key, value in AI_MODES.items()
         }
-        normalized = aliases.get(normalized, normalized)
-        if normalized not in AI_MODES:
-            return "companionship"
-        return normalized
+
+    @staticmethod
+    def supported_engine_depth_range() -> Dict[str, int]:
+        return {"min": MIN_ENGINE_DEPTH, "max": MAX_ENGINE_DEPTH}
+
+    @staticmethod
+    def _normalize_ai_mode(mode: str) -> str:
+        return RuntimeControl.resolve_ai_mode(mode) or "companionship"
 
     @staticmethod
     def _depth_for_mode(mode: str) -> int:

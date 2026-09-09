@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from enum import Enum
 
 class SystemPhase(Enum):
@@ -19,3 +19,4 @@ class CoreGameState:
     game_phase: str = "OPENING"
     game_status: str = "IDLE"
     last_notation: Optional[dict] = None
+    game_result: Optional[Dict[str, Any]] = None

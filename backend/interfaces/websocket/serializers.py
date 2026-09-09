@@ -97,6 +97,7 @@ class StateSerializer:
             if key in robot:
                 robot_payload[key] = robot.get(key)
 
+        game_status = str(game.get("game_status", ""))
         return {
             "board": {
                 "fen": fen,
@@ -104,6 +105,10 @@ class StateSerializer:
                 "turn": _frontend_turn(game.get("current_turn", "w")),
                 "move_count": len(game.get("move_history", []) or []),
                 "last_move": (game.get("move_history") or [None])[-1],
+                "game_phase": game.get("game_phase", ""),
+                "game_status": game_status,
+                "game_result": game.get("game_result") or None,
+                "ended": game_status.upper() == "GAME_OVER",
             },
             "engine": EngineInfoSerializer.serialize(engine),
             "robot": robot_payload,

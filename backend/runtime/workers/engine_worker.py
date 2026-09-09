@@ -35,6 +35,7 @@ class EnginePollingWorker:
         bus.subscribe(EventType.ENGINE_ANALYSIS_REQUESTED, self.on_analysis_requested)
         bus.subscribe(EventType.GAME_PAUSE, self.on_pause_requested)
         bus.subscribe(EventType.GAME_RESET, self.on_reset_requested)
+        bus.subscribe(EventType.GAME_OVER, self.on_game_over)
 
     def on_analysis_requested(self, event: BaseEvent):
         payload = event.payload or {}
@@ -60,6 +61,11 @@ class EnginePollingWorker:
     def on_reset_requested(self, event: BaseEvent):
         logger.info("[EngineWorker] Analysis reset via event.")
         self.enable()
+
+    def on_game_over(self, event: BaseEvent):
+        logger.info("[EngineWorker] Analysis stopped because the game ended.")
+        self.disable()
+        self.status = "IDLE"
 
     def start(self):
         if self._task and not self._task.done():
@@ -121,6 +127,11 @@ class EnginePollingWorker:
                 # Get current FEN from SSOT
                 raw = state_store.to_dict()
                 game = raw.get("game", {})
+                if str(game.get("game_status") or "").upper() == "GAME_OVER":
+                    self.disable()
+                    self.status = "IDLE"
+                    await asyncio.sleep(0.5)
+                    continue
                 fen = game.get("fen", "")
 
                 now = asyncio.get_running_loop().time()

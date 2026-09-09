@@ -47,6 +47,25 @@
     font-weight: 700;
 }
 
+.player-start-alert {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #f59e0b;
+    border-radius: 8px;
+    background: #fffbeb;
+    color: #92400e;
+    font-size: 0.84rem;
+    font-weight: 800;
+    line-height: 1.45;
+    text-align: left;
+}
+
+.player-start-alert[data-state="error"] {
+    border-color: #ef4444;
+    background: #fef2f2;
+    color: #991b1b;
+}
+
 .btn-player-start {
     min-width: 176px;
     min-height: 52px;
@@ -244,6 +263,47 @@
     margin: 14px auto 0;
 }
 
+.player-main-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(116px, 0.5fr);
+    gap: 10px;
+    width: min(100%, 360px);
+}
+
+.player-main-actions .btn-remote {
+    min-width: 0;
+}
+
+.player-control-strip .btn-remote.secondary {
+    border: 1px solid rgba(220, 38, 38, 0.34);
+    background: #ffffff;
+    color: #991b1b;
+}
+
+.player-control-strip .btn-remote.secondary:hover:not(:disabled) {
+    background: #fef2f2;
+}
+
+.player-robot-start-group {
+    display: grid;
+    gap: 8px;
+    min-width: min(100%, 260px);
+}
+
+.player-robot-safety-warning {
+    min-height: 42px;
+    padding: 8px 10px;
+    border: 1px solid rgba(239, 68, 68, 0.38);
+    border-left: 4px solid #dc2626;
+    border-radius: 8px;
+    background: #fef2f2;
+    color: #991b1b;
+    font-size: 0.76rem;
+    font-weight: 900;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+
 .player-move-field {
     display: grid;
     gap: 6px;
@@ -418,6 +478,14 @@
     justify-self: stretch;
     width: 100%;
     margin: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+}
+
+.view-player .player-main-actions {
+    width: 100%;
+    grid-template-columns: minmax(0, 1.1fr) minmax(112px, 0.7fr);
 }
 
 .view-player .player-control-strip .btn-remote {
@@ -518,4 +586,15 @@
 .view-player .player-control-strip .btn-remote {
     min-height: 48px;
     border-radius: 8px;
+}
+
+.view-player .player-robot-start-group {
+    width: 100%;
+}
+
+@media (max-width: 760px) {
+    .view-player .player-main-actions {
+        grid-template-columns: 1fr 1fr;
+        gap: 6px;
+    }
 }

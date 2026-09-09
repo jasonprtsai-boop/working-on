@@ -15,6 +15,7 @@ from backend.interfaces.api.shared import (
     error_response,
     idempotency_key,
     json_object_payload,
+    mark_deprecated_endpoint,
     optional_json_object_payload,
     publish_base_event,
     remember_idempotent_response,
@@ -22,7 +23,12 @@ from backend.interfaces.api.shared import (
 )
 from backend.application.services.system_preflight import build_preflight_report
 from backend.application.services.runtime_control import runtime_control
+from backend.application.use_cases.coordinate_workflow import workflow_coordinator
+from backend.interfaces.websocket.serializers import StateSerializer
 from backend.state.store.manager.state_manager import state_manager
+
+
+PLAYER_END_FINAL_CONFIRMATION = "END_GAME_CONFIRMED"
 
 
 def _dispatch_control_command(data: ControlRequest) -> str | None:
@@ -81,6 +87,49 @@ def _public_player_start_payload(raw: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "mode": "start",
         "source": _public_text(raw.get("source"), "player_start"),
+    }
+
+
+def _public_player_end_payload(raw: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "source": _public_text(raw.get("source"), "player_end_button"),
+        "trace_id": _public_trace_id(raw),
+    }
+
+
+def _player_end_game_confirmed(raw: Mapping[str, Any]) -> bool:
+    confirmed_action = str(raw.get("confirmed_action") or "").strip().lower()
+    final_confirmation = str(raw.get("final_confirmation") or "").strip().upper()
+    return confirmed_action == "end_game" and final_confirmation == PLAYER_END_FINAL_CONFIRMATION
+
+
+def _player_end_state_payload(game_result: Mapping[str, Any]) -> dict[str, Any]:
+    raw_state = state_manager.current.to_dict()
+    frontend_state = StateSerializer.serialize(raw_state)
+    result = dict(game_result or {})
+    result["ended"] = True
+
+    game = dict(raw_state.get("game", {}) if isinstance(raw_state.get("game"), Mapping) else {})
+    game.update({
+        "game_status": "GAME_OVER",
+        "game_phase": "ENDED",
+        "game_result": result,
+    })
+
+    board = dict(frontend_state.get("board", {}) if isinstance(frontend_state.get("board"), Mapping) else {})
+    board.update({
+        "game_status": "GAME_OVER",
+        "game_phase": "ENDED",
+        "game_result": result,
+        "ended": True,
+    })
+
+    return {
+        **raw_state,
+        **frontend_state,
+        "game": game,
+        "board": board,
+        "state": "GAME_OVER",
     }
 
 
@@ -168,11 +217,11 @@ def control_action(action: str):
         key = idempotency_key(data)
         cached = replay_idempotent_response(key)
         if cached:
-            return cached
+            return mark_deprecated_endpoint(cached, "/api/control")
         trace_id = _dispatch_control_command(data)
         body = accepted_payload(data.action, trace_id=trace_id)
         remember_idempotent_response(key, body)
-        return jsonify(body)
+        return mark_deprecated_endpoint(jsonify(body), "/api/control")
     except ValidationError as exc:
         return error_response(
             "validation_failed",
@@ -209,6 +258,15 @@ def player_start():
     except ValueError as exc:
         return error_response("validation_failed", str(exc), 400)
     preflight = build_preflight_report(require_auto_execute=False)
+    public_preflight = _public_preflight_report(preflight)
+    if public_preflight["failures"]:
+        return error_response(
+            "player_preflight_failed",
+            "Player mode is not ready to start.",
+            409,
+            details={"preflight": public_preflight},
+        )
+
     trace_id = publish_base_event(
         EventType.ENGINE_ANALYSIS_REQUESTED,
         payload=_public_player_start_payload(payload),
@@ -216,7 +274,40 @@ def player_start():
     )
     body = accepted_payload("player_start", trace_id=trace_id)
     body["runtime_control"] = _public_runtime_control_snapshot(runtime_control.snapshot())
-    body["preflight"] = _public_preflight_report(preflight)
+    body["preflight"] = public_preflight
+    return jsonify(body)
+
+
+@api_bp.route("/player/end-game", methods=["POST"])
+def player_end_game():
+    """End the public player-mode game after explicit two-step confirmation."""
+    try:
+        payload = optional_json_object_payload()
+    except ValueError as exc:
+        return error_response("validation_failed", str(exc), 400)
+    if not _player_end_game_confirmed(payload):
+        return error_response(
+            "player_end_confirmation_required",
+            "Ending the game requires explicit player confirmation.",
+            400,
+            trace_id=_public_trace_id(payload),
+            details={
+                "required": {
+                    "confirmed_action": "end_game",
+                    "final_confirmation": PLAYER_END_FINAL_CONFIRMATION,
+                }
+            },
+        )
+
+    result = workflow_coordinator.end_game_by_player(_public_player_end_payload(payload))
+    game_result = result.get("game_result") or {}
+    body = accepted_payload(
+        "player_end_game",
+        trace_id=result.get("trace_id"),
+        message="對局已結束。",
+        game_result=game_result,
+        state=_player_end_state_payload(game_result),
+    )
     return jsonify(body)
 
 

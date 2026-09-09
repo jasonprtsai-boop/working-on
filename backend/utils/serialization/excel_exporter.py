@@ -40,6 +40,7 @@ class ExcelExporter:
     PIPELINE_SHEET = "Pipeline_Log"
     REPORT_SHEETS = [
         "Overview",
+        "Action Items",
         "Session Summary",
         "Collection Health",
         "Trace Timeline",
@@ -151,6 +152,7 @@ class ExcelExporter:
     )
     TAB_COLORS = {
         "Overview": "2563EB",
+        "Action Items": "B91C1C",
         "Session Summary": "0F766E",
         "Collection Health": "0891B2",
         "Trace Timeline": "4F46E5",
@@ -798,50 +800,66 @@ class ExcelExporter:
         except Exception as exc:
             logger.error("[ExcelExporter] log_event failed: %s", exc, exc_info=True)
 
-    def export_session(self, session_id: Optional[str], target_filename: str) -> None:
+    def export_session(self, session_id: Optional[str], target_filename: str, profile: str = "research") -> None:
         """Build a multi-sheet research workbook for one session or all sessions."""
         try:
             self._flush_queue(timeout=2.0)
             with self._lock:
                 records = self._load_records(session_id)
-                self._write_report_workbook(records, session_id, target_filename)
+                self._write_report_workbook(records, session_id, target_filename, profile=profile)
         except Exception as exc:
             logger.error("[ExcelExporter] export_session failed: %s", exc, exc_info=True)
             raise
 
-    def export_events(self, events: Iterable[Dict[str, Any]], target_filename: str, session_id: Optional[str] = None) -> None:
+    def export_events(
+        self,
+        events: Iterable[Dict[str, Any]],
+        target_filename: str,
+        session_id: Optional[str] = None,
+        profile: str = "research",
+    ) -> None:
         """Build a research workbook from canonical SQLite event-store rows."""
         try:
             records = self._records_from_events(events)
             if session_id:
                 records = [row for row in records if str(row.get("session_id", "")) == str(session_id)]
-            self._write_report_workbook(records, session_id, target_filename)
+            self._write_report_workbook(records, session_id, target_filename, profile=profile)
         except Exception as exc:
             logger.error("[ExcelExporter] export_events failed: %s", exc, exc_info=True)
             raise
 
-    def _write_report_workbook(self, records: List[Dict[str, Any]], session_id: Optional[str], target_filename: str) -> None:
+    def _write_report_workbook(
+        self,
+        records: List[Dict[str, Any]],
+        session_id: Optional[str],
+        target_filename: str,
+        profile: str = "research",
+    ) -> None:
+        field_profile = str(profile or "research").lower() == "field"
         wb = Workbook()
         default = wb.active
         wb.remove(default)
 
-        self._write_overview(wb, records, session_id)
+        self._write_overview(wb, records, session_id, profile="field" if field_profile else "research")
+        self._write_action_items(wb, records)
         self._write_session_summary(wb, records)
-        self._write_collection_health(wb, records)
         self._write_trace_timeline(wb, records)
-        self._write_pipeline(wb, records)
+        self._write_field_test_report(wb, records)
         self._write_game_moves(wb, records)
-        self._write_vision_yolo(wb, records)
-        self._write_vision_fen(wb, records)
-        self._write_vision_detections(wb, records)
-        self._write_vision_mode_comparison(wb, records)
-        self._write_ucci_trace(wb, records)
         self._write_engine_ai(wb, records)
         self._write_robot_control(wb, records)
-        self._write_system_events(wb, records)
         self._write_errors(wb, records)
         self._write_data_quality(wb, records)
-        self._write_raw_payload(wb, records)
+        if not field_profile:
+            self._write_collection_health(wb, records)
+            self._write_pipeline(wb, records)
+            self._write_vision_yolo(wb, records)
+            self._write_vision_fen(wb, records)
+            self._write_vision_detections(wb, records)
+            self._write_vision_mode_comparison(wb, records)
+            self._write_ucci_trace(wb, records)
+            self._write_system_events(wb, records)
+            self._write_raw_payload(wb, records)
 
         self._style_workbook(wb)
         self._save_and_close(wb, target_filename)
@@ -945,9 +963,19 @@ class ExcelExporter:
             output.append(record)
         return output
 
-    def _write_overview(self, wb: Workbook, records: List[Dict[str, Any]], session_id: Optional[str]) -> None:
+    def _write_overview(
+        self,
+        wb: Workbook,
+        records: List[Dict[str, Any]],
+        session_id: Optional[str],
+        profile: str = "research",
+    ) -> None:
         ws = wb.create_sheet("Overview")
-        ws["A1"] = "S.M.A.R.T Chess Robot Research Report"
+        ws["A1"] = (
+            "S.M.A.R.T Chess Robot Field Report"
+            if str(profile or "").lower() == "field"
+            else "S.M.A.R.T Chess Robot Research Report"
+        )
         ws["A1"].font = Font(bold=True, size=14, color="111827")
         self._append_safe(ws, [])
 
@@ -959,22 +987,29 @@ class ExcelExporter:
         quality_rows = self._data_quality_rows(records)
         trace_count = len({row.get("trace_id") for row in records if row.get("trace_id")})
         session_count = len({row.get("session_id") or "unassigned" for row in records}) if records else 0
+        first_timestamp, last_timestamp = self._timestamp_bounds(records)
 
         self._append_safe(ws, ["Metric", "Value"])
         metrics = [
             ("Generated At", self._timestamp_text()),
+            ("Report Verdict", self._report_verdict(records)),
+            ("Next Action", self._next_report_action(records)),
             ("Session Filter", session_id or "all"),
+            ("Event Range", self._event_range_text(first_timestamp, last_timestamp)),
             ("Sessions", session_count),
             ("Trace IDs", trace_count),
             ("Total Events", len(records)),
             ("Game Moves", len(move_records)),
             ("Vision Events", len(vision_records)),
-            ("YOLO Avg Confidence", self._average(records, "avg_confidence")),
-            ("YOLO Min Confidence", self._minimum(records, "min_confidence")),
-            ("YOLO Avg Latency ms", self._average(records, "yolo_latency_ms")),
-            ("YOLO P95 Latency ms", self._p95_records(records, "yolo_latency_ms")),
+            ("YOLO Avg Confidence", self._average(vision_records, "avg_confidence")),
+            ("YOLO Min Confidence", self._minimum(vision_records, "min_confidence")),
+            ("YOLO Avg Latency ms", self._average(vision_records, "yolo_latency_ms")),
+            ("YOLO P95 Latency ms", self._p95_records(vision_records, "yolo_latency_ms")),
             ("AI Avg Decision ms", self._average(engine_records, "engine_ms")),
             ("Robot Avg Execution ms", self._average(robot_records, "robot_ms")),
+            ("Final Robot", self._final_robot_summary(records)),
+            ("Final Vision", self._final_vision_summary(records)),
+            ("Final Engine", self._final_engine_summary(records)),
             ("Errors / Warnings", len(warnings)),
             ("Data Quality Issues", len(quality_rows)),
             ("Collection Score", self._collection_score(records)),
@@ -986,6 +1021,217 @@ class ExcelExporter:
         self._append_safe(ws, ["Event Type", "Count"])
         for event_type, count in Counter(row.get("event_type", "") for row in records).most_common():
             self._append_safe(ws, [event_type, count])
+
+    def _write_action_items(self, wb: Workbook, records: List[Dict[str, Any]]) -> None:
+        headers = [
+            "priority",
+            "area",
+            "issue",
+            "evidence",
+            "recommendation",
+            "confidence",
+        ]
+        self._write_rows(wb, "Action Items", headers, self._action_item_rows(records))
+
+    def _action_item_rows(self, records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        if not records:
+            return [
+                {
+                    "priority": "P2",
+                    "area": "Data",
+                    "issue": "沒有可匯出的事件資料",
+                    "evidence": "Workbook was generated with zero normalized events.",
+                    "recommendation": "先開始一個實驗場次或執行一次流程，再重新匯出 Excel。",
+                    "confidence": "CONFIRMED",
+                }
+            ]
+
+        rows: List[Dict[str, Any]] = []
+        robot = self._latest_matching_record(records, self._is_robot)
+        if robot:
+            connected = self._robot_connected(robot)
+            if connected is False:
+                rows.append(
+                    {
+                        "priority": "P0",
+                        "area": "Robot",
+                        "issue": "真機未連線，完整產品流程不能完成",
+                        "evidence": self._robot_evidence(robot),
+                        "recommendation": "先確認 PC/TM5 網段、Robot IP、Port、adapter 與 TMflow/Modbus 是否正在等待連線，再跑硬體 readiness 檢查。",
+                        "confidence": "CONFIRMED",
+                    }
+                )
+
+        robot_issue_present = any(row.get("area") == "Robot" for row in rows)
+        warning_counts = Counter()
+        for warning in self._warning_rows(records):
+            reason = str(warning.get("reason") or "runtime warning")
+            area = self._issue_area(
+                " ".join(str(warning.get(key) or "") for key in ("reason", "event_type", "source", "metric"))
+            )
+            if robot_issue_present and area == "Robot":
+                continue
+            warning_counts[(area, reason)] += 1
+        for (area, reason), count in warning_counts.most_common(5):
+            rows.append(
+                {
+                    "priority": "P1" if "error" in reason.lower() or "robot" in reason.lower() else "P2",
+                    "area": area,
+                    "issue": reason,
+                    "evidence": f"{count} event(s) in Errors & Warnings.",
+                    "recommendation": "查看 Errors & Warnings 和 Trace Timeline，先處理重複次數最多或影響流程完成的項目。",
+                    "confidence": "CONFIRMED",
+                }
+            )
+
+        score = self._to_float(self._collection_score(records))
+        if score is not None and score < 80:
+            rows.append(
+                {
+                    "priority": "P2",
+                    "area": "Data Quality",
+                    "issue": "資料收集品質偏低",
+                    "evidence": f"Collection Score = {score}.",
+                    "recommendation": "優先補齊 session_id、trace_id 與關鍵流程事件，避免實驗紀錄難以重播或比對。",
+                    "confidence": "CONFIRMED",
+                }
+            )
+
+        if not rows:
+            rows.append(
+                {
+                    "priority": "P4",
+                    "area": "Report",
+                    "issue": "沒有偵測到阻塞匯出的高風險項目",
+                    "evidence": "No current action items were derived from the exported events.",
+                    "recommendation": "從 Session Summary 開始檢查整體結果，再用 Trace Timeline 追單次流程。",
+                    "confidence": "LIKELY",
+                }
+            )
+        return rows
+
+    def _report_verdict(self, records: List[Dict[str, Any]]) -> str:
+        if not records:
+            return "NO DATA"
+        robot = self._latest_matching_record(records, self._is_robot)
+        if robot and self._robot_connected(robot) is False:
+            return "NOT READY - robot disconnected"
+        if any(str(row.get("severity", "")).lower() == "critical" for row in self._warning_rows(records)):
+            return "REVIEW REQUIRED - critical warning present"
+        score = self._to_float(self._collection_score(records))
+        if score is not None and score < 80:
+            return "USABLE WITH DATA QUALITY ISSUES"
+        return "USABLE"
+
+    def _next_report_action(self, records: List[Dict[str, Any]]) -> str:
+        if not records:
+            return "Run a workflow or start a session, then export again."
+        robot = self._latest_matching_record(records, self._is_robot)
+        if robot and self._robot_connected(robot) is False:
+            return "Fix robot network/adapter readiness before treating this run as complete."
+        if self._warning_rows(records):
+            return "Review Action Items, then inspect Trace Timeline for the affected trace_id."
+        return "Review Session Summary first; use Raw Payload only when debugging."
+
+    def _event_range_text(self, first_timestamp: Any, last_timestamp: Any) -> str:
+        if not first_timestamp and not last_timestamp:
+            return ""
+        if first_timestamp == last_timestamp:
+            return str(first_timestamp)
+        return f"{first_timestamp} -> {last_timestamp}"
+
+    def _final_robot_summary(self, records: List[Dict[str, Any]]) -> str:
+        record = self._latest_matching_record(records, self._is_robot)
+        if not record:
+            return ""
+        connected = self._robot_connected(record)
+        status = "connected" if connected is True else ("disconnected" if connected is False else "unknown")
+        evidence = self._robot_evidence(record)
+        return f"{status}; {evidence}" if evidence else status
+
+    def _final_vision_summary(self, records: List[Dict[str, Any]]) -> str:
+        record = self._latest_matching_record(records, self._is_vision)
+        if not record:
+            return ""
+        parts = [
+            str(record.get("camera_status") or "vision event"),
+            f"detections={record.get('detections_count')}" if record.get("detections_count") not in ("", None) else "",
+            f"confidence={record.get('avg_confidence')}" if record.get("avg_confidence") not in ("", None) else "",
+        ]
+        return "; ".join(part for part in parts if part)
+
+    def _final_engine_summary(self, records: List[Dict[str, Any]]) -> str:
+        record = self._latest_matching_record(records, self._is_engine)
+        if not record:
+            return ""
+        parts = [
+            f"move={record.get('ai_move') or record.get('move')}" if record.get("ai_move") or record.get("move") else "",
+            f"score={record.get('engine_score')}" if record.get("engine_score") not in ("", None) else "",
+            f"depth={record.get('engine_depth')}" if record.get("engine_depth") not in ("", None) else "",
+        ]
+        return "; ".join(part for part in parts if part)
+
+    def _latest_matching_record(self, records: List[Dict[str, Any]], predicate) -> Optional[Dict[str, Any]]:
+        matched = [row for row in records if predicate(row)]
+        if not matched:
+            return None
+        return max(
+            matched,
+            key=lambda row: (
+                self._timestamp_seconds(row.get("timestamp")) or float("-inf"),
+                self._to_float(row.get("_sequence_id")) or 0.0,
+            ),
+        )
+
+    def _robot_connected(self, record: Dict[str, Any]) -> Optional[bool]:
+        raw = self._load_json(record.get("raw_payload"))
+        candidates = [
+            raw.get("connected") if isinstance(raw, dict) else None,
+            raw.get("is_connected") if isinstance(raw, dict) else None,
+        ]
+        if isinstance(raw, dict):
+            robot = self._dict_child(raw, "robot")
+            connection = self._dict_child(raw, "connection") or self._dict_child(robot, "connection")
+            candidates.extend([robot.get("connected"), robot.get("is_connected"), connection.get("connected")])
+        for value in candidates:
+            if isinstance(value, bool):
+                return value
+            if isinstance(value, str) and value.strip().lower() in ("true", "false", "1", "0", "yes", "no"):
+                return value.strip().lower() in ("true", "1", "yes")
+        status = str(record.get("robot_status") or "").strip().lower()
+        if status in ("connected", "ready", "idle", "ok"):
+            return True
+        if status in ("offline", "disconnected", "error", "fault"):
+            return False
+        return None
+
+    def _robot_evidence(self, record: Dict[str, Any]) -> str:
+        raw = self._load_json(record.get("raw_payload"))
+        raw = raw if isinstance(raw, dict) else {}
+        robot = self._dict_child(raw, "robot")
+        connection = self._dict_child(raw, "connection") or self._dict_child(robot, "connection")
+        host = self._first_from_sources([raw, robot, connection], "ip", "host", default="")
+        port = self._first_from_sources([raw, robot, connection], "port", default="")
+        adapter = self._first_from_sources([raw, robot, connection], "adapter", "mode", default="")
+        error = self._first_from_sources([raw, robot], "error", "last_error", default="")
+        parts = []
+        if host or port:
+            parts.append(f"endpoint={host or '--'}:{port or '--'}")
+        if adapter:
+            parts.append(f"adapter={adapter}")
+        if error:
+            parts.append(f"error={error}")
+        return "; ".join(parts)
+
+    def _issue_area(self, reason: str) -> str:
+        lowered = reason.lower()
+        if "robot" in lowered:
+            return "Robot"
+        if "yolo" in lowered or "confidence" in lowered or "vision" in lowered:
+            return "Vision"
+        if "engine" in lowered or "ai" in lowered:
+            return "Engine"
+        return "Runtime"
 
     def _write_session_summary(self, wb: Workbook, records: List[Dict[str, Any]]) -> None:
         headers = [
@@ -1140,6 +1386,77 @@ class ExcelExporter:
     def _write_game_moves(self, wb: Workbook, records: List[Dict[str, Any]]) -> None:
         headers = ["event_id", "timestamp", "actor", "move", "player_move", "ai_move", "fen_before", "fen_after", "system_status", "trace_id"]
         self._write_rows(wb, "Game Moves", headers, [row for row in records if self._is_move(row)])
+
+    def _write_field_test_report(self, wb: Workbook, records: List[Dict[str, Any]]) -> None:
+        headers = [
+            "timestamp",
+            "area",
+            "event_type",
+            "status",
+            "message",
+            "move",
+            "trace_id",
+            "evidence",
+        ]
+        self._write_rows(wb, "Field Test Report", headers, self._field_test_rows(records))
+
+    def _field_test_rows(self, records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        rows: List[Dict[str, Any]] = []
+        for record in records:
+            event_type = str(record.get("event_type") or "").upper()
+            is_field_record = (
+                self._is_move(record)
+                or self._is_robot(record)
+                or self._is_vision(record)
+                or "DIAGNOSTIC" in event_type
+                or "ERROR" in event_type
+                or "WARNING" in event_type
+                or "GAME_OVER" in event_type
+                or "SESSION" in event_type
+            )
+            if not is_field_record:
+                continue
+            raw = self._load_json(record.get("raw_payload"))
+            message = self._first_value(raw, "message", "error", "reason", default="") if isinstance(raw, dict) else ""
+            rows.append(
+                {
+                    "timestamp": record.get("timestamp", ""),
+                    "area": self._module_for_record(record),
+                    "event_type": record.get("event_type", ""),
+                    "status": self._status_for_record(record),
+                    "message": message,
+                    "move": record.get("move") or record.get("player_move") or record.get("ai_move") or "",
+                    "trace_id": record.get("trace_id", ""),
+                    "evidence": self._field_evidence(record, raw),
+                }
+            )
+        if not rows:
+            rows.append(
+                {
+                    "timestamp": "",
+                    "area": "Report",
+                    "event_type": "",
+                    "status": "NO DATA",
+                    "message": "沒有可彙整的比賽、錯誤或現場測試事件。",
+                    "move": "",
+                    "trace_id": "",
+                    "evidence": "Start a session or run a field test, then export again.",
+                }
+            )
+        return rows
+
+    def _field_evidence(self, record: Dict[str, Any], raw: Any) -> str:
+        parts = []
+        for key in ("system_status", "camera_status", "robot_status", "engine_ms", "robot_ms", "yolo_latency_ms"):
+            value = record.get(key)
+            if value not in ("", None):
+                parts.append(f"{key}={value}")
+        if isinstance(raw, dict):
+            for key in ("action", "dry_run", "source", "status", "severity", "error"):
+                value = raw.get(key)
+                if value not in ("", None, {}, []):
+                    parts.append(f"{key}={value}")
+        return "; ".join(str(part) for part in parts)[:1000]
 
     def _write_vision_yolo(self, wb: Workbook, records: List[Dict[str, Any]]) -> None:
         headers = [
@@ -1308,7 +1625,7 @@ class ExcelExporter:
         headers = ["event_id", "timestamp", "ucci_position", "ai_move", "engine_score", "engine_depth", "engine_ms", "fen_after", "trace_id"]
         rows = []
         for row in records:
-            if row.get("ucci_position") or self._is_engine(row) or row.get("ai_move"):
+            if row.get("ucci_position") or self._is_engine(row):
                 rows.append(row)
         self._write_rows(wb, "UCCI Trace", headers, rows)
 
@@ -1394,27 +1711,41 @@ class ExcelExporter:
             upper_type = str(record.get("event_type", "")).upper()
             raw = self._load_json(record.get("raw_payload"))
             error_text = ""
+            message = ""
+            raw_severity = ""
             if isinstance(raw, dict):
-                error_text = self._first_value(raw, "error", "exception", "message", default="")
+                error_text = self._first_value(raw, "error", "exception", default="")
+                message = self._first_value(raw, "message", default="")
+                raw_severity = str(self._first_value(raw, "severity", default="")).strip().lower()
 
-            if "ERROR" in upper_type or "WARNING" in upper_type or error_text:
-                rows.append(self._warning_row(record, "Critical" if "ERROR" in upper_type else "Warning", error_text or upper_type, "event", record.get("event_type", "")))
+            has_error_event = "ERROR" in upper_type
+            has_warning_event = "WARNING" in upper_type or raw_severity in ("warning", "warn")
+            has_critical_severity = raw_severity in ("error", "critical", "fatal")
+            if not error_text and (has_warning_event or has_critical_severity):
+                error_text = message
 
-            min_conf = self._to_float(record.get("min_confidence") or record.get("avg_confidence"))
-            if min_conf is not None and min_conf < 0.5:
-                rows.append(self._warning_row(record, "Warning", "Low YOLO confidence", "confidence", min_conf))
+            if error_text and (has_error_event or has_warning_event or has_critical_severity or self._is_robot(record)):
+                severity = "Critical" if has_error_event or has_critical_severity or self._is_robot(record) else "Warning"
+                rows.append(self._warning_row(record, severity, error_text or upper_type, "event", record.get("event_type", "")))
 
-            latency = self._to_float(record.get("yolo_latency_ms"))
-            if latency is not None and latency > 1000:
-                rows.append(self._warning_row(record, "Warning", "High YOLO latency", "yolo_latency_ms", latency))
+            if self._is_vision(record):
+                min_conf = self._to_float(record.get("min_confidence") or record.get("avg_confidence"))
+                if min_conf is not None and min_conf < 0.5:
+                    rows.append(self._warning_row(record, "Warning", "Low YOLO confidence", "confidence", min_conf))
 
-            engine_ms = self._to_float(record.get("engine_ms"))
-            if engine_ms is not None and engine_ms > 5000:
-                rows.append(self._warning_row(record, "Warning", "High engine decision time", "engine_ms", engine_ms))
+                latency = self._to_float(record.get("yolo_latency_ms"))
+                if latency is not None and latency > 1000:
+                    rows.append(self._warning_row(record, "Warning", "High YOLO latency", "yolo_latency_ms", latency))
 
-            robot_status = str(record.get("robot_status", "")).lower()
-            if robot_status in ("error", "fault", "offline", "disconnected"):
-                rows.append(self._warning_row(record, "Critical", "Robot abnormal status", "robot_status", robot_status))
+            if self._is_engine(record):
+                engine_ms = self._to_float(record.get("engine_ms"))
+                if engine_ms is not None and engine_ms > 5000:
+                    rows.append(self._warning_row(record, "Warning", "High engine decision time", "engine_ms", engine_ms))
+
+            if self._is_robot(record):
+                robot_status = str(record.get("robot_status", "")).lower()
+                if robot_status in ("error", "fault", "offline", "disconnected"):
+                    rows.append(self._warning_row(record, "Critical", "Robot abnormal status", "robot_status", robot_status))
         return rows
 
     def _warning_row(self, record: Dict[str, Any], severity: str, reason: str, metric: str, value: Any) -> Dict[str, Any]:
@@ -1430,9 +1761,13 @@ class ExcelExporter:
             "raw_payload": record.get("raw_payload", ""),
         }
 
+    def _is_state_snapshot(self, row: Dict[str, Any]) -> bool:
+        event_type = str(row.get("event_type", "")).upper()
+        return event_type in ("STATE_UPDATED", "STATE_SNAPSHOT", "STATE_STORE_UPDATED")
+
     def _is_vision(self, row: Dict[str, Any]) -> bool:
         event_type = str(row.get("event_type", "")).upper()
-        if event_type == "VISION_BENCHMARK_RESULT":
+        if event_type == "VISION_BENCHMARK_RESULT" or self._is_state_snapshot(row):
             return False
         return "VISION" in event_type or row.get("detections_count") not in ("", None) or row.get("yolo_latency_ms") not in ("", None)
 
@@ -1444,15 +1779,34 @@ class ExcelExporter:
 
     def _is_engine(self, row: Dict[str, Any]) -> bool:
         event_type = str(row.get("event_type", "")).upper()
-        return "ENGINE" in event_type or row.get("engine_ms") not in ("", None) or row.get("ai_move") not in ("", None)
+        if self._is_state_snapshot(row):
+            return False
+        return "ENGINE" in event_type or row.get("engine_ms") not in ("", None) or row.get("engine_score") not in ("", None) or row.get("engine_depth") not in ("", None)
 
     def _is_robot(self, row: Dict[str, Any]) -> bool:
         event_type = str(row.get("event_type", "")).upper()
+        if self._is_state_snapshot(row):
+            return False
         return "ROBOT" in event_type or row.get("robot_status") not in ("", None) or row.get("robot_ms") not in ("", None)
 
     def _is_move(self, row: Dict[str, Any]) -> bool:
         event_type = str(row.get("event_type", "")).upper()
-        return "MOVE" in event_type or bool(row.get("move") or row.get("player_move") or row.get("ai_move"))
+        if self._is_state_snapshot(row):
+            return False
+        has_move = bool(row.get("move") or row.get("player_move") or row.get("ai_move"))
+        if not has_move:
+            return False
+        if row.get("player_move"):
+            return True
+        if "ENGINE" in event_type and "MOVE" not in event_type:
+            return False
+        if "DIAGNOSTIC" in event_type and "MOVE" not in event_type:
+            return False
+        if "GAME_MOVE" in event_type or "PLAYER" in event_type or "MOVE_APPLIED" in event_type:
+            return True
+        if "MOVE" in event_type and "REQUEST" not in event_type:
+            return True
+        return False
 
     def _average(self, records: List[Dict[str, Any]], key: str) -> Any:
         values = [self._to_float(row.get(key)) for row in records]
@@ -1743,6 +2097,15 @@ class ExcelExporter:
             if label and value not in (None, "") and row > 3:
                 ws.cell(row=row, column=1).font = Font(bold=True, color="334155")
                 ws.cell(row=row, column=2).font = Font(bold=True, color="0F172A")
+            if label in ("Report Verdict", "Next Action"):
+                text = str(value).upper()
+                fill = (
+                    self.ORANGE_FILL
+                    if any(token in text for token in ("NOT READY", "REVIEW", "ISSUES", "FIX", "NO DATA"))
+                    else self.BLUE_FILL
+                )
+                ws.cell(row=row, column=1).fill = fill
+                ws.cell(row=row, column=2).fill = fill
             if label == "Event Type":
                 for cell in ws[row]:
                     cell.fill = self.SECTION_FILL
@@ -1817,6 +2180,12 @@ class ExcelExporter:
             ws = wb["Errors & Warnings"]
             self._text_rule(ws, "severity", "Critical", self.RED_FILL)
             self._text_rule(ws, "severity", "Warning", self.ORANGE_FILL)
+
+        if "Action Items" in wb.sheetnames:
+            ws = wb["Action Items"]
+            self._text_rule(ws, "priority", "P0", self.RED_FILL)
+            self._text_rule(ws, "priority", "P1", self.ORANGE_FILL)
+            self._text_rule(ws, "priority", "P2", self.BLUE_FILL)
 
         if "Data Quality" in wb.sheetnames:
             ws = wb["Data Quality"]

@@ -28,6 +28,9 @@ export const Normalizer = {
     systemState(data) {
         const board = data.board || {};
         const fen = board.fen || "";
+        const game = data.game && typeof data.game === 'object' ? data.game : {};
+        const gameResult = board.game_result || game.game_result || null;
+        const gameStatus = String(board.game_status || game.game_status || data.state || "");
 
         // Ensure standard structure for full state updates
         return {
@@ -36,14 +39,18 @@ export const Normalizer = {
                 pieces: board.pieces || [],
                 turn: normalizeBoardTurn(board.turn) || turnFromFen(fen) || "red",
                 move_count: board.move_count || 0,
-                last_move: board.last_move || null
+                last_move: board.last_move || null,
+                game_phase: board.game_phase || game.game_phase || "",
+                game_status: gameStatus,
+                game_result: gameResult,
+                ended: Boolean(board.ended || gameStatus.toUpperCase() === "GAME_OVER" || gameResult?.ended)
             },
             engine: this.engineInfo(data.engine || {}),
             robot: this.robotStatus(data.robot || {}),
             vision: data.vision || {},
             sync: this.syncData(data.sync || {}),
             ui: data.ui || {},
-            notation: data.game?.last_notation || data.notation || null
+            notation: game.last_notation || data.notation || null
         };
     },
 
