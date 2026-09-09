@@ -5,9 +5,13 @@ function Test-SupportedPythonVersion([string]$versionText) {
 }
 
 if (Test-Path ".\\.venv\\Scripts\\python.exe") {
-  $venvVersion = & .\\.venv\\Scripts\\python.exe --version
-  if (-not (Test-SupportedPythonVersion $venvVersion)) {
-    throw "Existing .venv uses $venvVersion. Recreate it with Python 3.9, 3.10, 3.11, or 3.12."
+  try {
+    $venvVersion = (& ".\.venv\Scripts\python.exe" --version 2>&1 | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0 -or (-not (Test-SupportedPythonVersion $venvVersion))) {
+      throw "Existing .venv uses unsupported or broken Python ($venvVersion). Recreate it with setup_env.ps1."
+    }
+  } catch {
+    Write-Host "[run_dev] Warning: .venv python is not functioning properly: $_" -ForegroundColor Yellow
   }
 } else {
   Write-Host "Missing .venv. Creating venv with Python 3.11 preferred..." -ForegroundColor Yellow
