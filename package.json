@@ -26,9 +26,6 @@
     "smoke:frontend": "node scripts/playwright_smoke.mjs",
     "dev": "echo \"Frontend is served by Flask. Run: python .\\\\main.py\""
   },
-  "dependencies": {
-    "socket.io": "^4.7.2"
-  },
   "devDependencies": {
     "jest": "^30.4.1",
     "jest-environment-jsdom": "^30.4.1",

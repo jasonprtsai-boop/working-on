@@ -156,6 +156,7 @@ Events -> SQLite event store -> replay/export/diagnostics
 - Impact：認證、網路、影像解析與 ML 檔案載入都有已知安全債；CI 每次可能取得不同版本。另一方面，直接大幅升級 Torch/Ultralytics 也可能破壞模型與硬體相容性。
 - Recommendation：先移除未使用的 npm `socket.io` server dependency；為 Python 建立真正可安裝的 lock（含 hashes），CI/deployment 都從它安裝。依 code path 與 advisory 前置條件逐項分流，優先更新 PyJWT、Socket.IO stack、requests/urllib3、Pillow，再在獨立環境驗證 ML stack。
 - Verification：`pip-audit`/`npm audit --omit=dev` 無未接受的 high issue；每一個暫不修的 advisory 有 owner、理由、期限與補償控制。
+- 2026-10-07 處理紀錄：已移除未使用的 npm `socket.io` server dependency，並更新相容範圍內的鎖定版本；`npm audit --omit=dev` 為 0。開發依賴仍有一條源自 Jest/Istanbul 的 `sprintf-js` advisory；npm 沒有可用的相容修正版，`--force` 會把 Jest 30 降為 25，因此依專題範圍接受此「只在本機測試工具、需惡意輸入才可觸發」的風險，不做破壞性降版。
 
 ### AUD-009 — P1 / HIGH：對外發佈缺少專案與第三方授權、資產來源證據
 
