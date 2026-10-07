@@ -46,6 +46,7 @@ PROTECTED_ENDPOINTS = (
     ("/api/robot/calibration", None, "admin"),
     ("/api/robot/vision-point", None, "operator"),
     ("/api/robot/play", None, "setup"),
+    ("/api/robot/execute-ready-move", None, "setup"),
     ("/api/control", None, "admin"),
     ("/api/move", None, "admin"),
     ("/api/reset", None, "admin"),

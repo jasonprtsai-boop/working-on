@@ -24,6 +24,8 @@ _CONTROL_ACTION_ALIASES = {
     "SYNC": ControlAction.SYNC_VISION.value,
     "SYNC_VISION": ControlAction.SYNC_VISION.value,
     "VISION_SYNC": ControlAction.SYNC_VISION.value,
+    "FORCE_SYNC": ControlAction.SYNC_VISION.value,
+    "FORCE_CALIBRATE": ControlAction.SYNC_VISION.value,
     "RESET": ControlAction.RESET.value,
     "PAUSE": ControlAction.PAUSE.value,
     "UNDO": ControlAction.UNDO.value,

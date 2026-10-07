@@ -1,7 +1,13 @@
 <section id="view-player" class="view-player hidden">
     <nav class="top-nav">
         <div class="logo">玩家 <span>對局</span></div>
-        <button id="btn-exit" type="button" class="btn-exit" aria-label="返回主畫面">返回主畫面</button>
+        <div class="nav-actions">
+            <button id="btn-voice-toggle" type="button" class="btn-voice-toggle" aria-label="語音播報開關" title="開啟或靜音語音提示">
+                <span class="voice-icon">🔊</span>
+                <span class="voice-label">語音播報: 開</span>
+            </button>
+            <button id="btn-exit" type="button" class="btn-exit" aria-label="返回主畫面">返回主畫面</button>
+        </div>
     </nav>
 
     <div id="player-start-panel" class="player-start-panel">
@@ -78,7 +84,7 @@
                     <div id="player-robot-safety-warning" class="player-robot-safety-warning" role="alert">
                         警告：機械手臂即將啟動，請勿靠近棋盤與手臂工作範圍。
                     </div>
-                    <button id="btn-start-tmflow" type="button" class="btn-remote danger">啟動機械手臂流程</button>
+                    <button id="btn-start-tmflow" type="button" class="btn-remote danger">確認執行 AI 招法</button>
                 </div>
             </div>
         </div>

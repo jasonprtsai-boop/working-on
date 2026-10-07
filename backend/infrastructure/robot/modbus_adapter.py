@@ -139,19 +139,12 @@ class ModbusAdapter:
             self.server = ModbusServer(host=bind_host, port=bind_port, no_block=True, data_bank=self.data_bank)
             self.server.start()
         except Exception as exc:
-            if bind_host not in {"0.0.0.0", "127.0.0.1"}:
-                logger.warning(
-                    "[Modbus] Failed to bind to %s:%s (%s); falling back to 0.0.0.0:%s",
-                    bind_host,
-                    bind_port,
-                    exc,
-                    bind_port,
-                )
-                bind_host = "0.0.0.0"
-                self.server = ModbusServer(host=bind_host, port=bind_port, no_block=True, data_bank=self.data_bank)
-                self.server.start()
-            else:
-                raise
+            self.server = None
+            self.data_bank = None
+            self.connected = False
+            self.last_error = self._server_start_error(bind_host, bind_port, exc)
+            logger.error("[Modbus] %s", self.last_error)
+            return False
         self.connected = True
         logger.info(
             "Robot command Modbus server listening on %s:%s. Configure TMflow Modbus Device to this endpoint.",
@@ -159,6 +152,18 @@ class ModbusAdapter:
             bind_port,
         )
         return True
+
+    @staticmethod
+    def _server_start_error(bind_host, bind_port, exc) -> str:
+        reason = str(exc) or exc.__class__.__name__
+        message = (
+            f"Failed to start Python Modbus server on {bind_host}:{bind_port}: {reason}. "
+            "Set ROBOT_MODBUS_SERVER_HOST to an IPv4 address owned by this PC, or explicitly use 0.0.0.0 "
+            "only on an isolated lab network."
+        )
+        if "10049" in reason:
+            message += " Windows reported that the requested address is not valid in this context."
+        return message
 
     def _initialize_server_registers(self):
         if self.data_bank is None:

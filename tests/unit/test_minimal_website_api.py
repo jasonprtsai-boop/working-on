@@ -37,6 +37,16 @@ class MinimalWebsiteApiTest(unittest.TestCase):
         self.assertTrue(payload["capture_session"]["active"])
         self.assertEqual(payload["capture_session"]["source"], "player_done")
 
+    def test_player_move_is_disabled_for_one_pipeline_flow(self):
+        with patch.object(control_routes.config, "PLAYER_MANUAL_MOVE_ENABLED", False):
+            response = self.client.post("/api/player/move", json={"move": "a0a1"})
+
+        self.assertEqual(response.status_code, 409)
+        payload = response.get_json()
+        self.assertFalse(payload["ok"])
+        self.assertEqual(payload["code"], "player_manual_move_disabled")
+        self.assertEqual(payload["details"]["replacement"], "/api/player-done")
+
     def test_stop_alias_publishes_pause_event(self):
         with patch.object(control_routes, "publish_base_event", return_value="trace-pause") as publish:
             response = self.client.post("/api/stop", json={"reason": "test_stop"})
@@ -132,6 +142,17 @@ class MinimalWebsiteApiTest(unittest.TestCase):
         self.assertEqual(response.data, b"jpg")
         self.assertEqual(response.headers["X-Deprecated-Endpoint"], "true")
         self.assertEqual(response.headers["X-Replacement-Endpoint"], "/api/vision/snapshot")
+
+    def test_vision_stream_token_uses_short_default_ttl(self):
+        with patch.object(auth_guard.config, "CONTROL_AUTH_REQUIRED", False, create=True):
+            with patch.object(vision_routes.config, "VISION_STREAM_TOKEN_TTL_SEC", None, create=True):
+                response = self.client.post("/api/vision/stream-token")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["expires_in"], 300)
+        self.assertIsInstance(payload["stream_token"], str)
 
     def test_legacy_export_aliases_advertise_replacements(self):
         with patch.object(auth_guard.config, "CONTROL_AUTH_REQUIRED", False, create=True):

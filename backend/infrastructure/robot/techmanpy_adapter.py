@@ -42,6 +42,8 @@ class TechmanPyAdapter:
         self._loop_lock = threading.Lock()
         self._last_async_timeout_at = None
         self._cancelled_operations = 0
+        self.last_vision_cycle_at = None
+        self.last_vision_cycle_error = None
 
     def connect(self) -> bool:
         self.last_checked_at = time.time()
@@ -112,7 +114,7 @@ class TechmanPyAdapter:
     def send_move(self, coordinates):
         return self.send_motion(coordinates)
 
-    def send_motion(self, coordinates, speed=None, acceleration=None, timeout=None) -> bool:
+    def send_motion(self, coordinates, speed=None, acceleration=None, timeout=None, motion_mode=None) -> bool:
         if not self.connected and not self.connect():
             return False
         if not TECHMANPY_AVAILABLE:
@@ -129,14 +131,24 @@ class TechmanPyAdapter:
                 raise ValueError("TechmanPy motion coordinates must contain x,y,z,rx,ry,rz.")
             speed_perc = self._speed_to_percent(speed if speed is not None else getattr(config, "ROBOT_TRAVEL_SPEED", 30.0))
             accel_ms = self._acceleration_duration_ms(acceleration)
-            self._run_async(self._send_motion_script(pose, speed_perc, accel_ms), timeout=timeout)
+            self._run_async(
+                self._send_motion_script(pose, speed_perc, accel_ms, motion_mode=motion_mode),
+                timeout=timeout,
+            )
             return True
         except Exception as exc:
             self.last_error = str(exc)
             logger.error("[TechmanPy] Motion error: %s", exc)
             return False
 
-    async def _send_motion_script(self, pose: list[float], speed_perc: float, accel_ms: int) -> None:
+    async def _send_motion_script(
+        self,
+        pose: list[float],
+        speed_perc: float,
+        accel_ms: int,
+        *,
+        motion_mode=None,
+    ) -> None:
         async with techmanpy.connect_sct(
             robot_ip=self.host,
             conn_timeout=float(getattr(config, "ROBOT_CONNECT_TIMEOUT_SEC", 3.0)),
@@ -144,11 +156,21 @@ class TechmanPyAdapter:
         ) as conn:
             tag = self._next_queue_tag()
             transaction = conn.start_transaction()
-            motion_mode = str(getattr(config, "ROBOT_TECHMANPY_MOTION_MODE", "ptp")).strip().lower()
-            if motion_mode == "line":
+            base_name = str(getattr(config, "ROBOT_TMFLOW_BASE", "")).strip()
+            tcp_name = str(getattr(config, "ROBOT_TMFLOW_TCP", "")).strip()
+            if base_name:
+                transaction.set_base(base_name)
+            if tcp_name:
+                transaction.set_tcp(tcp_name)
+            selected_mode = str(
+                motion_mode or getattr(config, "ROBOT_TECHMANPY_MOTION_MODE", "ptp")
+            ).strip().lower()
+            if selected_mode == "line":
                 transaction.move_to_point_line(pose, speed_perc, accel_ms)
-            else:
+            elif selected_mode == "ptp":
                 transaction.move_to_point_ptp(pose, speed_perc, accel_ms)
+            else:
+                raise ValueError(f"Unsupported TechmanPy motion mode: {selected_mode}")
             transaction.set_queue_tag(tag, wait_for_completion=True)
             await transaction.submit()
 
@@ -179,6 +201,77 @@ class TechmanPyAdapter:
         ) as conn:
             await conn.send_tm_script(script)
 
+    def trigger_vision(self, timeout=None) -> bool:
+        """Leave Listen once, let TMflow run its Vision node, then wait for Listen."""
+        if not self.connected and not self.connect():
+            return False
+        if not TECHMANPY_AVAILABLE:
+            if getattr(config, "FAKE_ROBOT", False):
+                logger.info("[MOCK] TechmanPy Vision cycle triggered.")
+                self.last_vision_cycle_at = time.time()
+                self.last_vision_cycle_error = None
+                return True
+            self.last_error = "techmanpy is required for the TMflow Vision cycle."
+            return False
+
+        cycle_timeout = float(
+            timeout
+            if timeout is not None
+            else getattr(config, "ROBOT_TECHMANPY_VISION_TIMEOUT_SEC", 30.0)
+        )
+        if cycle_timeout <= 0:
+            self.last_error = "TMflow Vision cycle timeout must be positive."
+            return False
+
+        try:
+            self._run_async(
+                self._trigger_vision_cycle(cycle_timeout),
+                timeout=cycle_timeout + float(getattr(config, "ROBOT_CONNECT_TIMEOUT_SEC", 3.0)) + 1.0,
+            )
+            self.last_vision_cycle_at = time.time()
+            self.last_vision_cycle_error = None
+            self.last_error = None
+            return True
+        except Exception as exc:
+            self.last_vision_cycle_error = str(exc)
+            self.last_error = str(exc)
+            logger.error("[TechmanPy] TMflow Vision cycle failed: %s", exc)
+            return False
+
+    async def _trigger_vision_cycle(self, timeout: float) -> None:
+        if not await self._check_listen_node():
+            raise RuntimeError("TMflow is not inside the Listen Node; Vision cannot be triggered.")
+
+        async with techmanpy.connect_sct(
+            robot_ip=self.host,
+            conn_timeout=float(getattr(config, "ROBOT_CONNECT_TIMEOUT_SEC", 3.0)),
+            suppress_warns=bool(getattr(config, "ROBOT_TECHMANPY_SUPPRESS_WARNINGS", False)),
+        ) as conn:
+            await conn.exit_listen()
+
+        self.last_listen_node_active = False
+        poll_sec = float(getattr(config, "ROBOT_TECHMANPY_VISION_POLL_SEC", 0.1))
+        poll_sec = min(1.0, max(0.05, poll_sec))
+        deadline = asyncio.get_running_loop().time() + timeout
+        observed_outside_listen = False
+
+        while asyncio.get_running_loop().time() < deadline:
+            await asyncio.sleep(poll_sec)
+            try:
+                active = bool(await self._check_listen_node())
+            except Exception:
+                active = False
+            self.last_listen_node_active = active
+            if not active:
+                observed_outside_listen = True
+                continue
+            if observed_outside_listen:
+                return
+
+        raise TimeoutError(
+            "TMflow did not complete Vision and return to Listen before the configured timeout."
+        )
+
     def halt(self):
         if not TECHMANPY_AVAILABLE:
             logger.warning("[TechmanPy] HALT requested but techmanpy is unavailable.")
@@ -208,6 +301,8 @@ class TechmanPyAdapter:
             "async_loop_running": self._loop_is_running(),
             "cancelled_operations": self._cancelled_operations,
             "last_async_timeout_at": self._last_async_timeout_at,
+            "last_vision_cycle_at": self.last_vision_cycle_at,
+            "last_vision_cycle_error": self.last_vision_cycle_error,
         }
 
     def read_telemetry(self) -> dict[str, Any]:

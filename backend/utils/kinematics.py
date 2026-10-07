@@ -23,6 +23,7 @@ class Kinematics:
         self.affine_matrix = None
         self.inverse_affine_matrix = None
         self.calibration_error = None
+        self.split_halves = None
         self.vision_to_robot_homography = None
         self.robot_to_vision_homography = None
         self.vision_to_robot_coordinate_space = "rectified_board"
@@ -88,6 +89,7 @@ class Kinematics:
             self.dead_zone = dead_zone_coords
             self.dead_zone_range = self._normalize_dead_zone_range(dead_zone_range, default_coords=dead_zone_coords)
             affine = data.get("affine_matrix")
+            self.split_halves = data.get("split_halves")
             if affine is not None:
                 self._set_affine_matrix(affine)
             else:
@@ -233,10 +235,13 @@ class Kinematics:
         square_size_y=None,
         dead_zone=None,
         affine_matrix=None,
+        split_halves=None,
         persist: bool = False,
         path: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Update robot board calibration and optionally persist it."""
+        if split_halves is not None:
+            self.split_halves = split_halves
         if origin_x is not None:
             self.origin_x = self._finite_float(origin_x, "origin_x")
         if origin_y is not None:
@@ -418,6 +423,7 @@ class Kinematics:
             "dead_zone": {"x": float(self.dead_zone[0]), "y": float(self.dead_zone[1])},
             "dead_zone_range": dict(self.dead_zone_range),
             "affine_matrix": [row[:] for row in self.affine_matrix] if self.affine_matrix else None,
+            "split_halves": self.split_halves,
             "calibration_error": dict(self.calibration_error) if self.calibration_error else None,
             "vision_to_robot": self._vision_to_robot_dict(),
             "path": str(Path(getattr(config, "CALIBRATION_FILE", "robot/calibration.json"))),
@@ -426,7 +432,7 @@ class Kinematics:
     def save_calibration(self, path: Optional[str] = None) -> None:
         target = Path(path or getattr(config, "CALIBRATION_FILE", "robot/calibration.json"))
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(json.dumps(self.to_dict(), indent=2), encoding="utf-8")
+        target.write_text(json.dumps(self.to_dict(), indent=2) + "\n", encoding="utf-8")
 
     def _square_indices(self, square: str) -> Tuple[int, int]:
         if not isinstance(square, str) or len(square) != 2:
@@ -481,13 +487,27 @@ class Kinematics:
         }
 
     def _apply_affine(self, file_idx: float, rank_idx: float) -> Tuple[float, float]:
+        if getattr(self, "split_halves", None) is not None:
+            if rank_idx <= 4.5:
+                mat = self.split_halves.get("lower_affine")
+                if mat is not None:
+                    x = mat[0][0] * file_idx + mat[0][1] * rank_idx + mat[0][2]
+                    y = mat[1][0] * file_idx + mat[1][1] * rank_idx + mat[1][2]
+                    return float(x), float(y)
+            else:
+                mat = self.split_halves.get("upper_affine")
+                if mat is not None:
+                    rel_rank = rank_idx - 5.0
+                    x = mat[0][0] * file_idx + mat[0][1] * rel_rank + mat[0][2]
+                    y = mat[1][0] * file_idx + mat[1][1] * rel_rank + mat[1][2]
+                    return float(x), float(y)
         matrix = self.affine_matrix
         if matrix is None:
             self._refresh_affine()
             matrix = self.affine_matrix
         x = matrix[0][0] * file_idx + matrix[0][1] * rank_idx + matrix[0][2]
         y = matrix[1][0] * file_idx + matrix[1][1] * rank_idx + matrix[1][2]
-        return x, y
+        return float(x), float(y)
 
     def _load_vision_to_robot(self, payload) -> None:
         if not isinstance(payload, dict):
@@ -740,6 +760,20 @@ class Kinematics:
         return float(out_x), float(out_y)
 
     def _apply_inverse_affine(self, x: float, y: float) -> Tuple[float, float]:
+        if getattr(self, "split_halves", None) is not None:
+            lower_inv = self.split_halves.get("lower_inverse_affine")
+            upper_inv = self.split_halves.get("upper_inverse_affine")
+            if lower_inv and upper_inv:
+                f_low = lower_inv[0][0] * x + lower_inv[0][1] * y + lower_inv[0][2]
+                r_low = lower_inv[1][0] * x + lower_inv[1][1] * y + lower_inv[1][2]
+                f_up = upper_inv[0][0] * x + upper_inv[0][1] * y + upper_inv[0][2]
+                r_up = (upper_inv[1][0] * x + upper_inv[1][1] * y + upper_inv[1][2]) + 5.0
+                dist_low = max(0.0, -r_low, r_low - 4.0)
+                dist_up = max(0.0, 5.0 - r_up, r_up - 9.0)
+                if dist_low <= dist_up:
+                    return f_low, r_low
+                else:
+                    return f_up, r_up
         matrix = self.inverse_affine_matrix
         if matrix is None:
             self._refresh_affine()

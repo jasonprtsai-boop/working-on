@@ -25,6 +25,7 @@ class VisionCaptureSession:
         self._completed_at = None
         self._interval_sec = self._default_interval_sec()
         self._timeout_sec = self._default_timeout_sec()
+        self._lead_in_sec = self._default_lead_in_sec()
         self._attempts = 0
         self._processed_count = 0
         self._last_capture_at = None
@@ -40,6 +41,7 @@ class VisionCaptureSession:
         trace_id: str | None = None,
         interval_sec: float | None = None,
         timeout_sec: float | None = None,
+        lead_in_sec: float | None = None,
     ) -> dict[str, Any]:
         now = time.time()
         with self._lock:
@@ -51,6 +53,7 @@ class VisionCaptureSession:
             self._completed_at = None
             self._interval_sec = self._coerce_interval(interval_sec)
             self._timeout_sec = self._coerce_timeout(timeout_sec)
+            self._lead_in_sec = self._coerce_lead_in(lead_in_sec)
             self._attempts = 0
             self._processed_count = 0
             self._last_capture_at = None
@@ -85,7 +88,10 @@ class VisionCaptureSession:
                 self._complete_locked(reason="timeout", now=current)
                 return "expired", self._snapshot_locked(now=current)
 
-            if self._last_capture_at is not None:
+            if self._last_capture_at is None:
+                if self._started_at is not None and (current - float(self._started_at)) < self._lead_in_sec:
+                    return "waiting", None
+            else:
                 elapsed = current - float(self._last_capture_at)
                 if elapsed < self._interval_sec:
                     return "waiting", None
@@ -177,6 +183,7 @@ class VisionCaptureSession:
             "elapsed_sec": round(elapsed, 3),
             "interval_sec": round(float(self._interval_sec), 3),
             "timeout_sec": round(float(self._timeout_sec), 3),
+            "lead_in_sec": round(float(self._lead_in_sec), 3),
             "attempts": int(self._attempts),
             "processed_count": int(self._processed_count),
             "last_capture_at": self._last_capture_at,
@@ -191,6 +198,8 @@ class VisionCaptureSession:
         if not self._active:
             return None
         if self._last_capture_at is None:
+            if self._started_at is not None:
+                return round(max(0.0, self._lead_in_sec - (now - float(self._started_at))), 3)
             return 0.0
         return round(max(0.0, self._interval_sec - (now - float(self._last_capture_at))), 3)
 
@@ -199,6 +208,9 @@ class VisionCaptureSession:
 
     def _coerce_timeout(self, value: float | None) -> float:
         return self._bounded_float(value, self._default_timeout_sec(), minimum=2.0, maximum=300.0)
+
+    def _coerce_lead_in(self, value: float | None) -> float:
+        return self._bounded_float(value, self._default_lead_in_sec(), minimum=0.0, maximum=10.0)
 
     def _bounded_float(self, value: float | None, default: float, *, minimum: float, maximum: float) -> float:
         try:
@@ -212,6 +224,9 @@ class VisionCaptureSession:
 
     def _default_timeout_sec(self) -> float:
         return float(getattr(config, "VISION_USER_CAPTURE_TIMEOUT_SEC", 30.0))
+
+    def _default_lead_in_sec(self) -> float:
+        return max(0.0, float(getattr(config, "VISION_USER_CAPTURE_LEAD_IN_SEC", 0.6)))
 
     def _status_for_reason(self, reason: str | None) -> str:
         if reason == "stable_vision_result":

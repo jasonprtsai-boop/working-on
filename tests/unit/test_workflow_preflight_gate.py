@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 import time
 import unittest
 from types import SimpleNamespace
@@ -61,6 +62,7 @@ class WorkflowPreflightGateTest(unittest.TestCase):
             with patch.object(coordinate_workflow, "build_preflight_report", return_value=preflight):
                 with patch.object(coordinate_workflow.container, "get", return_value=robot):
                     coordinator.on_engine_complete(FakeEvent())
+                    coordinator.wait_for_robot()
 
         robot.execute_move.assert_called_once_with("a0a1", is_capture=False)
         workflow = coordinator.active_workflows[FakeEvent.trace_id]
@@ -92,6 +94,22 @@ class WorkflowPreflightGateTest(unittest.TestCase):
         self.assertNotIn(EventType.ENGINE_ANALYSIS_REQUESTED, event_types)
         self.assertIn(EventType.DIAGNOSTICS_UPDATED, event_types)
         self.assertFalse(workflow["verify_pending"])
+
+    def test_robot_completion_uses_active_command_trace(self):
+        coordinator = coordinate_workflow.WorkflowCoordinator()
+        coordinator._active_robot_trace_id = "trace-command"
+        event = SimpleNamespace(
+            trace_id="trace-random-event",
+            timestamp=time.time(),
+            payload={"status": "success", "move": "a0a1"},
+        )
+
+        with patch.object(coordinator, "is_game_over", return_value=False):
+            coordinator.on_robot_complete(event)
+
+        self.assertTrue(coordinator.active_workflows["trace-command"]["verify_pending"])
+        self.assertNotIn("trace-random-event", coordinator.active_workflows)
+        coordinate_workflow.vision_capture_session.stop(reason="test_cleanup")
 
     def test_player_move_game_over_stops_before_engine_request(self):
         coordinator = coordinate_workflow.WorkflowCoordinator()
@@ -133,6 +151,60 @@ class WorkflowPreflightGateTest(unittest.TestCase):
         self.assertFalse(workflow["verify_pending"])
         self.assertTrue(workflow["ended"])
         self.assertEqual(result["game_result"]["reason"], "player_ended")
+
+    def test_robot_execution_is_dispatched_asynchronously(self):
+        coordinator = coordinate_workflow.WorkflowCoordinator()
+        robot = Mock()
+        robot.execute_move.return_value = True
+        preflight = {"ok": True, "ready": True, "failures": [], "warnings": []}
+
+        with patch.object(coordinate_workflow.config, "AUTO_EXECUTE_ROBOT", True, create=True):
+            with patch.object(coordinate_workflow, "build_preflight_report", return_value=preflight):
+                with patch.object(coordinate_workflow.container, "get", return_value=robot):
+                    future = coordinator.on_engine_complete(FakeEvent())
+                    self.assertIsNotNone(future)
+                    coordinator.wait_for_robot()
+
+        robot.execute_move.assert_called_once_with("a0a1", is_capture=False)
+
+    def test_robot_execution_rejects_duplicate_while_active(self):
+        coordinator = coordinate_workflow.WorkflowCoordinator()
+        started = threading.Event()
+        release = threading.Event()
+        robot = Mock()
+
+        def execute_move(move, is_capture=False):
+            started.set()
+            release.wait(timeout=2.0)
+            return True
+
+        robot.execute_move.side_effect = execute_move
+
+        with patch.object(coordinate_workflow.container, "get", return_value=robot):
+            first = coordinator.start_robot_move("trace-one", "a0a1")
+            self.assertIsNotNone(first)
+            self.assertTrue(started.wait(timeout=1.0))
+            second = coordinator.start_robot_move("trace-two", "a0a2")
+            self.assertIsNone(second)
+            self.assertTrue(coordinator.robot_command_active())
+            release.set()
+            coordinator.wait_for_robot()
+
+        robot.execute_move.assert_called_once_with("a0a1", is_capture=False)
+        self.assertFalse(coordinator.robot_command_active())
+
+    def test_workflow_pruning_caps_active_workflows(self):
+        coordinator = coordinate_workflow.WorkflowCoordinator()
+        # Seed 120 workflows
+        for i in range(120):
+            coordinator.active_workflows[f"trace-{i}"] = {
+                "start_time": time.time() - (120 - i) * 10,
+                "steps": [],
+            }
+        self.assertEqual(len(coordinator.active_workflows), 120)
+        # Accessing _workflow triggers pruning to max 100
+        coordinator._workflow("trace-new")
+        self.assertLessEqual(len(coordinator.active_workflows), 101)
 
 
 if __name__ == "__main__":

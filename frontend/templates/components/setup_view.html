@@ -10,6 +10,12 @@
                 <h2>硬體設定</h2>
                 <span id="setup-save-state" class="setup-save-state">尚未載入</span>
             </div>
+            <div class="setup-toolbar-meta" aria-label="設定分類">
+                <span>連線</span>
+                <span>視覺</span>
+                <span>手臂</span>
+                <span>工程</span>
+            </div>
             <div class="setup-actions">
                 <button type="button" class="admin-btn mini" id="btn-setup-load" data-setup-admin="true">重新載入</button>
                 <button type="submit" class="admin-btn mini success" id="btn-setup-save" data-setup-admin="true">儲存設定</button>
@@ -21,6 +27,39 @@
             <button type="button" class="setup-pane-tab" data-setup-pane-target="live" role="tab" aria-selected="false">工程模式</button>
         </div>
         <p class="setup-mode-note">預設只保留現場啟動會用到的設定；暫存器、細部速度與進階硬體測試集中在工程模式。</p>
+
+        <section class="setup-control-map" aria-labelledby="setup-control-map-title">
+            <div class="setup-control-map-head">
+                <h3 id="setup-control-map-title">可調整項目</h3>
+                <span>現場參數與工程參數分開顯示</span>
+            </div>
+            <div class="setup-control-map-grid">
+                <button type="button" class="setup-control-card" data-setup-pane-target="essential">
+                    <span class="setup-control-card-kicker">現場</span>
+                    <strong>啟動與安全</strong>
+                    <small>模擬手臂、自動執行、影像有效秒數、拍照節奏</small>
+                    <span class="setup-control-card-count">6 項</span>
+                </button>
+                <button type="button" class="setup-control-card" data-setup-pane-target="essential">
+                    <span class="setup-control-card-kicker">視覺</span>
+                    <strong>相機與辨識來源</strong>
+                    <small>USB / TMvision / TMflow JSON、預覽、來源測試、校正</small>
+                    <span class="setup-control-card-count">7 項</span>
+                </button>
+                <button type="button" class="setup-control-card" data-setup-pane-target="essential">
+                    <span class="setup-control-card-kicker">手臂</span>
+                    <strong>棋盤與 Z 軸</strong>
+                    <small>原點、格距、安全 Z、夾取 Z、工具姿態</small>
+                    <span class="setup-control-card-count">10 項</span>
+                </button>
+                <button type="button" class="setup-control-card" data-setup-pane-target="live">
+                    <span class="setup-control-card-kicker">工程</span>
+                    <strong>通訊與暫存器</strong>
+                    <small>Modbus、TMflow、速度曲線、邊界、死棋區與硬體測試</small>
+                    <span class="setup-control-card-count">40+ 項</span>
+                </button>
+            </div>
+        </section>
 
         <section class="setup-section setup-commissioning">
             <div class="setup-section-head">
@@ -147,6 +186,8 @@
                     <label class="setup-field"><span>自動執行手臂</span><input type="checkbox" data-setup-field="robot.runtime.auto_execute_robot"></label>
                     <label class="setup-field"><span>連線時驗證狀態暫存器</span><input type="checkbox" data-setup-field="robot.modbus.verify_status_on_connect"></label>
                     <label class="setup-field"><span>影像最大有效秒數</span><input type="number" step="0.1" min="0.1" data-setup-field="vision.result_max_age_sec"></label>
+                    <label class="setup-field"><span>辨識擷取間隔秒數</span><input type="number" step="0.1" min="0.25" max="30" data-setup-field="vision.user_capture_interval_sec"></label>
+                    <label class="setup-field"><span>辨識逾時秒數</span><input type="number" step="1" min="2" max="300" data-setup-field="vision.user_capture_timeout_sec"></label>
                 </div>
                 <div class="setup-status-line">
                     <span>預檢狀態</span>

@@ -47,7 +47,29 @@ def get_cfg(path, default=None):
 SETUP_SETTINGS_FILE = os.path.abspath(
     os.environ.get("SETUP_SETTINGS_FILE") or get_cfg("setup.settings_file", "data/setup_settings.json")
 )
-_setup_settings = _load_setup_settings(SETUP_SETTINGS_FILE)
+
+
+def _raw_bool(value, default: bool = False) -> bool:
+    if value is None:
+        return default
+    return str(value).strip().lower() in ["1", "true", "yes", "on"]
+
+
+def _raw_system_mode() -> str:
+    return str(os.environ.get("SYSTEM_MODE") or get_cfg("system.mode", "simulation")).strip().lower()
+
+
+_setup_settings_enabled_value = (
+    os.environ.get("SETUP_SETTINGS_ENABLED")
+    or os.environ.get("SMART_CHESS_SETUP_SETTINGS_ENABLED")
+    or get_cfg("setup.settings_enabled", None)
+)
+SETUP_SETTINGS_ENABLED = (
+    _raw_bool(_setup_settings_enabled_value)
+    if _setup_settings_enabled_value is not None
+    else _raw_system_mode() not in {"simulation", "test", "demo"}
+)
+_setup_settings = _load_setup_settings(SETUP_SETTINGS_FILE) if SETUP_SETTINGS_ENABLED else {}
 
 
 def _env_or_cfg(env_name: str, cfg_path: str, default=None):
@@ -59,16 +81,17 @@ def _env_or_cfg(env_name: str, cfg_path: str, default=None):
 
 
 def _setup_or_env_or_cfg(env_name: str, cfg_path: str, setup_path: str, default=None):
-    """Read setup JSON before env/YAML, except production env overrides stale setup."""
+    """Read setup JSON before env/YAML when setup settings are enabled."""
     env_value = os.environ.get(env_name)
     app_env = str(
         os.environ.get("APP_ENV") or os.environ.get("FLASK_ENV") or get_cfg("system.environment", "development")
     ).strip().lower()
     if app_env in {"prod", "production"} and env_value is not None:
         return env_value
-    value = _setup_get(_setup_settings, setup_path, None)
-    if value is not None:
-        return value
+    if SETUP_SETTINGS_ENABLED:
+        value = _setup_get(_setup_settings, setup_path, None)
+        if value is not None:
+            return value
     if env_value is not None:
         return env_value
     return _env_or_cfg(env_name, cfg_path, default)
@@ -209,6 +232,20 @@ _weak_secret = (
     or "change-me" in _secret_text.lower()
     or "changeme" in _secret_text.lower()
 )
+_weak_password_values = {
+    "",
+    "admin",
+    "changeme",
+    "change-me",
+    "login",
+    "password",
+    "setup",
+}
+
+
+def _is_weak_control_password(value) -> bool:
+    text = str(value or "").strip()
+    return len(text) < 12 or text.lower() in _weak_password_values
 
 if IS_PRODUCTION:
     if TEST_MODE:
@@ -223,6 +260,10 @@ if IS_PRODUCTION:
         _security_errors.append("SOCKET_PUBLIC_SNAPSHOT_ENABLED must be false in production.")
     if EVENTBUS_ALLOW_LEGACY_DICT_EVENTS:
         _security_errors.append("EVENTBUS_ALLOW_LEGACY_DICT_EVENTS must be false in production.")
+    if _is_weak_control_password(ADMIN_PASSWORD):
+        _security_errors.append("ADMIN_PASSWORD must be a non-default 12+ character value in production.")
+    if _is_weak_control_password(SETUP_PASSWORD):
+        _security_errors.append("SETUP_PASSWORD must be a non-default 12+ character value in production.")
     if LOGIN_RATE_LIMIT_PER_MINUTE <= 0 or CONTROL_RATE_LIMIT_PER_MINUTE <= 0 or SOCKET_RATE_LIMIT_PER_MINUTE <= 0:
         _security_errors.append("Rate limits must be positive in production.")
     if TRUST_X_FORWARDED_FOR and not TRUSTED_PROXY_IPS:
@@ -267,6 +308,10 @@ VISION_ALLOW_SIMULATION_FALLBACK = _as_bool(
 FAKE_AI = _as_bool(os.environ.get('FAKE_AI', get_cfg('system.simulation.fake_ai', True)), default=True)
 AUTO_EXECUTE_ROBOT = _as_bool(
     _setup_or_env_or_cfg("AUTO_EXECUTE_ROBOT", "system.auto_execute_robot", "robot.runtime.auto_execute_robot", False),
+    default=False,
+)
+PLAYER_MANUAL_MOVE_ENABLED = _as_bool(
+    _setup_or_env_or_cfg("PLAYER_MANUAL_MOVE_ENABLED", "player.manual_move_enabled", "player.manual_move_enabled", False),
     default=False,
 )
 
@@ -506,6 +551,41 @@ VISION_TMFLOW_INGEST_KEY = str(
         "",
     )
 ).strip()
+VISION_TMFLOW_DETECT_URL = str(
+    _setup_or_env_or_cfg(
+        "VISION_TMFLOW_DETECT_URL",
+        "vision.tmvision_http.detect_url",
+        "vision.tmvision_http.detect_url",
+        f"http://192.168.10.50:{PORT}/api/vision/tmvision/detect",
+    )
+).strip()
+VISION_TMFLOW_SAVE_IMAGES = _as_bool(
+    _setup_or_env_or_cfg(
+        "VISION_TMFLOW_SAVE_IMAGES",
+        "vision.tmvision_http.save_images",
+        "vision.tmvision_http.save_images",
+        False,
+    ),
+    default=False,
+)
+VISION_TMFLOW_SAVE_DIR = os.path.abspath(
+    str(
+        _setup_or_env_or_cfg(
+            "VISION_TMFLOW_SAVE_DIR",
+            "vision.tmvision_http.save_dir",
+            "vision.tmvision_http.save_dir",
+            "data/tmvision_captures",
+        )
+    ).strip()
+)
+VISION_TMFLOW_MAX_SAVED_IMAGES = int(
+    _setup_or_env_or_cfg(
+        "VISION_TMFLOW_MAX_SAVED_IMAGES",
+        "vision.tmvision_http.max_saved_images",
+        "vision.tmvision_http.max_saved_images",
+        500,
+    )
+)
 _tmflow_vision_key_required = VISION_SOURCE in {"tmvision_http", "tmflow_json"} and (
     IS_PRODUCTION or BIND_HOST in {"0.0.0.0", "::"} or not FAKE_ROBOT
 )
@@ -553,10 +633,28 @@ VISION_PREPROCESS_MODE = str(_env_or_cfg("VISION_PREPROCESS_MODE", "vision.prepr
 VISION_MJPEG_QUALITY = int(_env_or_cfg("VISION_MJPEG_QUALITY", "vision.mjpeg_quality", 75))
 VISION_MJPEG_FPS = int(_env_or_cfg("VISION_MJPEG_FPS", "vision.mjpeg_fps", 15))
 VISION_USER_CAPTURE_INTERVAL_SEC = float(
-    _env_or_cfg("VISION_USER_CAPTURE_INTERVAL_SEC", "vision.user_capture_interval_sec", 2.0)
+    _setup_or_env_or_cfg(
+        "VISION_USER_CAPTURE_INTERVAL_SEC",
+        "vision.user_capture_interval_sec",
+        "vision.user_capture_interval_sec",
+        2.0,
+    )
 )
 VISION_USER_CAPTURE_TIMEOUT_SEC = float(
-    _env_or_cfg("VISION_USER_CAPTURE_TIMEOUT_SEC", "vision.user_capture_timeout_sec", 30.0)
+    _setup_or_env_or_cfg(
+        "VISION_USER_CAPTURE_TIMEOUT_SEC",
+        "vision.user_capture_timeout_sec",
+        "vision.user_capture_timeout_sec",
+        30.0,
+    )
+)
+VISION_USER_CAPTURE_LEAD_IN_SEC = float(
+    _setup_or_env_or_cfg(
+        "VISION_USER_CAPTURE_LEAD_IN_SEC",
+        "vision.user_capture_lead_in_sec",
+        "vision.user_capture_lead_in_sec",
+        0.6,
+    )
 )
 VISION_RESULT_MAX_AGE_SEC = float(
     _setup_or_env_or_cfg("VISION_RESULT_MAX_AGE_SEC", "vision.result_max_age_sec", "vision.result_max_age_sec", 3.0)
@@ -849,6 +947,31 @@ ROBOT_TMFLOW_STOP_MODE = str(
 ).strip().upper()
 if ROBOT_TMFLOW_STOP_MODE != "CONTROLLED_STOP":
     ROBOT_TMFLOW_STOP_MODE = "CONTROLLED_STOP"
+ROBOT_TECHMANPY_TRIGGER_VISION_AFTER_MOVE = _as_bool(
+    _setup_or_env_or_cfg(
+        "ROBOT_TECHMANPY_TRIGGER_VISION_AFTER_MOVE",
+        "robot.techmanpy.trigger_vision_after_move",
+        "robot.techmanpy.trigger_vision_after_move",
+        False,
+    ),
+    default=False,
+)
+ROBOT_TECHMANPY_VISION_TIMEOUT_SEC = float(
+    _setup_or_env_or_cfg(
+        "ROBOT_TECHMANPY_VISION_TIMEOUT_SEC",
+        "robot.techmanpy.vision_timeout_sec",
+        "robot.techmanpy.vision_timeout_sec",
+        30.0,
+    )
+)
+ROBOT_TECHMANPY_VISION_POLL_SEC = float(
+    _setup_or_env_or_cfg(
+        "ROBOT_TECHMANPY_VISION_POLL_SEC",
+        "robot.techmanpy.vision_poll_sec",
+        "robot.techmanpy.vision_poll_sec",
+        0.1,
+    )
+)
 CALIBRATION_FILE = get_cfg('robot.calibration_file', 'robot/calibration.json')
 Z_SAFE = float(_setup_or_env_or_cfg("Z_SAFE", "robot.z_safe", "robot.motion.z_safe", 150.0))
 Z_GRAB = float(_setup_or_env_or_cfg("Z_GRAB", "robot.z_grab", "robot.motion.z_grab", 20.0))

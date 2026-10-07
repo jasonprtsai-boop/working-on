@@ -2,7 +2,6 @@
 # Optional heavy dependencies for real camera + ML vision pipeline.
 numpy>=1.24.0
 opencv-python>=4.8.0
-tensorflow>=2.15.0
 
 # Detection stack (YOLO26-compatible)
 ultralytics>=8.4.55

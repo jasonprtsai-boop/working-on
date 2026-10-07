@@ -326,15 +326,21 @@ class EngineService:
             logger.warning("[EngineService] compute skipped while engine is closing.")
             return None
 
-        if not process or process.returncode is not None:
+        if not process or process.returncode is not None or self.last_internal_error:
+            if process and process.returncode is not None:
+                logger.warning(
+                    f"[EngineService] engine process terminated (code {process.returncode}), recycling..."
+                )
+            elif self.last_internal_error:
+                logger.warning(
+                    f"[EngineService] engine encountered internal error ({self.last_internal_error}), restarting..."
+                )
+            await self.close()
             await self.start()
             process = self.process
             if not process or process.returncode is not None:
+                logger.error("[EngineService] failed to auto-recover engine process.")
                 return None
-
-        if self.last_internal_error:
-            logger.warning(f"Engine compute skipped due to startup error: {self.last_internal_error}")
-            return None
 
         self._drain_output_queue()
         await self.send(f"setoption name MultiPV value {multipv}")

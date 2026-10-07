@@ -119,7 +119,8 @@ class InferenceWorker:
 
             processed = self.preprocessor.process(work_frame)
             detector_input = processed if processed is not None else work_frame
-            detections = self.detector.detect(detector_input) or []
+            expected_count = self._expected_piece_count()
+            detections = self.detector.detect(detector_input, expected_count=expected_count) or []
             coordinate_space = "rectified_board" if calibrated else "camera_frame"
             detections_payload = self._serialize_detections(
                 detections,
@@ -142,6 +143,7 @@ class InferenceWorker:
             "board_corners": board_corners,
             "coordinate_space": coordinate_space,
             "source": str(source or "vision_system"),
+            "expected_count": expected_count,
         }
         frame_buffer.put_detection(payload)
         if publish:
@@ -155,10 +157,25 @@ class InferenceWorker:
                         "latency_ms": latency_ms,
                         "calibrated": calibrated,
                         "board_corners": board_corners,
+                        "expected_count": expected_count,
                     },
                 )
             )
         return payload
+
+    def _expected_piece_count(self) -> int:
+        try:
+            from backend.state.store.state_store import state_store
+            from backend.utils.fen.parser import count_fen_pieces
+
+            fen = getattr(getattr(state_store.current, "game", None), "fen", "")
+            if fen:
+                counted = count_fen_pieces(fen).get("total", 32)
+                if counted > 0:
+                    return int(counted)
+        except Exception:
+            pass
+        return 32
 
     def _serialize_detections(self, detections, *, work_frame, coordinate_space: str, calibrated: bool):
         height, width = work_frame.shape[:2]

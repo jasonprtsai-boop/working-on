@@ -70,8 +70,19 @@ class MoveReducer:
             game_result=game_result if ended else None,
         )
 
-        # 4. Return new root state
-        return dataclasses.replace(state, game=new_game, trace_id=event.trace_id)
+        # 4. Construct Vision State if piece_counts or detection metadata provided
+        piece_counts = payload.get("piece_counts")
+        new_vision = state.vision
+        if isinstance(piece_counts, dict) or "confidence" in payload or "board_state" in payload:
+            new_vision = dataclasses.replace(
+                state.vision,
+                piece_counts=dict(piece_counts) if isinstance(piece_counts, dict) else state.vision.piece_counts,
+                confidence=float(payload.get("confidence", state.vision.confidence) or state.vision.confidence),
+                board_mapping=payload.get("board_state", state.vision.board_mapping) if isinstance(payload.get("board_state"), dict) else state.vision.board_mapping,
+            )
+
+        # 5. Return new root state
+        return dataclasses.replace(state, game=new_game, vision=new_vision, trace_id=event.trace_id)
 
     @staticmethod
     def _game_result(fen: str) -> dict:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import time
+from pathlib import Path
 
 from flask import current_app, request
 
@@ -107,6 +108,7 @@ def ingest_tmvision_image_request() -> dict:
         return {"ok": False, "reason": "decode_failed"}
 
     frame_buffer.put_raw(frame)
+    saved_path = _save_tmvision_frame(frame, cv2)
     height, width = frame.shape[:2]
     current_app.logger.info(
         "[TMvision] frame accepted remote=%s field=%s filename=%s bytes=%s frame_size=%sx%s",
@@ -123,8 +125,37 @@ def ingest_tmvision_image_request() -> dict:
         "image_field": image_field,
         "filename": filename,
         "bytes": int(len(raw)),
+        "saved_path": saved_path,
         "_frame": frame,
     }
+
+
+def _save_tmvision_frame(frame, cv2) -> str | None:
+    if not bool(getattr(config, "VISION_TMFLOW_SAVE_IMAGES", False)):
+        return None
+
+    save_dir = Path(str(getattr(config, "VISION_TMFLOW_SAVE_DIR", "data/tmvision_captures")))
+    try:
+        save_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        path = save_dir / f"tmvision_{timestamp}_{time.time_ns() % 1_000_000_000:09d}.jpg"
+        encoded_ok, encoded = cv2.imencode(".jpg", frame)
+        if not encoded_ok:
+            raise RuntimeError("JPEG encoding failed")
+        path.write_bytes(encoded.tobytes())
+        _prune_tmvision_frames(save_dir, int(getattr(config, "VISION_TMFLOW_MAX_SAVED_IMAGES", 500)))
+        current_app.logger.info("[TMvision] frame saved path=%s", path)
+        return str(path)
+    except Exception as exc:
+        current_app.logger.warning("[TMvision] frame save failed path=%s error=%s", save_dir, exc)
+        return None
+
+
+def _prune_tmvision_frames(save_dir: Path, max_images: int) -> None:
+    keep = max(1, int(max_images))
+    images = sorted(save_dir.glob("tmvision_*.jpg"), key=lambda item: item.stat().st_mtime_ns)
+    for old_path in images[:-keep]:
+        old_path.unlink(missing_ok=True)
 
 
 def tmvision_debug_response_enabled() -> bool:

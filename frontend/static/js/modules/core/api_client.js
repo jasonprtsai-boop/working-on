@@ -173,6 +173,7 @@ export async function apiFetch(url, options = {}, timeoutMs = DEFAULT_TIMEOUT_MS
         || path.startsWith('/api/video')
         || path.startsWith('/api/snapshot')
         || path === '/api/robot/play'
+        || path === '/api/robot/execute-ready-move'
         ? getSetupToken()
         : ''
     );

@@ -129,6 +129,14 @@ def _run_self_test() -> int:
         weak_secret["CHESS_SECRET_KEY"] = "change-me"
         passed &= _expect_fail("reject weak secret", weak_secret, ("CHESS_SECRET_KEY",))
 
+        weak_passwords = dict(safe)
+        weak_passwords.update({"ADMIN_PASSWORD": "login", "SETUP_PASSWORD": "login"})
+        passed &= _expect_fail(
+            "reject default control passwords",
+            weak_passwords,
+            ("ADMIN_PASSWORD", "SETUP_PASSWORD"),
+        )
+
         unsafe_control = dict(safe)
         unsafe_control.update(
             {

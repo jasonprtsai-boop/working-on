@@ -34,6 +34,26 @@ class TMvisionHTTPSourceTest(unittest.TestCase):
 
         self.assertEqual(settings["vision"]["source"], "tmvision_http")
 
+    def test_setup_settings_include_tmvision_http_storage(self):
+        settings = normalize_setup_settings(
+            {
+                "vision": {
+                    "tmvision_http": {
+                        "detect_url": "http://192.168.10.50:5000/api/vision/tmvision/detect",
+                        "save_images": True,
+                        "save_dir": "data/tmvision_captures",
+                        "max_saved_images": 500,
+                    }
+                }
+            },
+            base=current_setup_settings(),
+        )
+
+        http_settings = settings["vision"]["tmvision_http"]
+        self.assertTrue(http_settings["save_images"])
+        self.assertEqual(http_settings["max_saved_images"], 500)
+        self.assertEqual(http_settings["ingest_key_env"], "VISION_TMFLOW_INGEST_KEY")
+
 
 if __name__ == "__main__":
     unittest.main()

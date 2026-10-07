@@ -47,7 +47,8 @@ export const state = {
             min_confidence: 0,
             status: "OK",
             mode: "unknown",
-            simulation: false
+            simulation: false,
+            piece_counts: {}
         }
     },
     version: 0

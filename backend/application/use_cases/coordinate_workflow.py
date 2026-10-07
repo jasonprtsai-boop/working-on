@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import concurrent.futures
+from contextlib import suppress
+import threading
 import time
 from typing import Any, Dict, Optional
 
@@ -25,10 +28,16 @@ class WorkflowCoordinator:
     The website only starts the round; TMflow only executes robot commands.
     """
 
-    def __init__(self):
+    def __init__(self, robot_executor: Optional[concurrent.futures.Executor] = None):
         self.active_workflows: Dict[str, Dict[str, Any]] = {}
         self._is_enabled = True
         self._started = False
+        self._robot_executor = robot_executor or concurrent.futures.ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="RobotActuationWorker"
+        )
+        self._last_robot_future: Optional[concurrent.futures.Future] = None
+        self._robot_lock = threading.Lock()
+        self._active_robot_trace_id: Optional[str] = None
 
     def start(self):
         if self._started:
@@ -38,6 +47,22 @@ class WorkflowCoordinator:
         bus.subscribe(EventType.ROBOT_MOVE_COMPLETED, self.on_robot_complete)
         self._started = True
         logger.info("[WorkflowCoordinator] Minimal chess workflow subscribed.")
+
+    def wait_for_robot(self, timeout: float = 5.0) -> Any:
+        """Wait for the most recent background robot actuation task to complete."""
+        if self._last_robot_future is not None:
+            return self._last_robot_future.result(timeout=timeout)
+        return None
+
+    def robot_command_active(self) -> bool:
+        """Return True while a robot command is running or awaiting vision verification."""
+        with self._robot_lock:
+            return self._robot_command_active_locked()
+
+    def robot_activity_snapshot(self) -> Dict[str, Any]:
+        """Return a compact activity snapshot for API conflict responses."""
+        with self._robot_lock:
+            return self._robot_activity_snapshot_locked()
 
     def player_done(self, payload: Optional[dict] = None) -> str:
         payload = dict(payload or {})
@@ -52,6 +77,8 @@ class WorkflowCoordinator:
                     "status": "player_done",
                     "message": "Player reported that the move is complete.",
                     "details": {"source": payload.get("source")},
+                    "step": 2,
+                    "step_label": "[步驟 2/4] 啟動影像辨識與棋子校驗",
                 },
             },
             trace_id=payload.get("trace_id"),
@@ -80,6 +107,22 @@ class WorkflowCoordinator:
         workflow = self._workflow(trace_id)
         workflow["vision_time"] = self._payload_time(payload, fallback=event.timestamp)
         workflow["steps"].append("vision")
+
+        # Check piece counts validation
+        piece_counts = payload.get("piece_counts")
+        if isinstance(piece_counts, dict) and piece_counts.get("valid") is False:
+            summary = piece_counts.get("summary_message") or (
+                f"預期 {piece_counts.get('expected')} 顆，辨識到 {piece_counts.get('total')} 顆（紅 {piece_counts.get('red')} / 黑 {piece_counts.get('black')}）"
+            )
+            self._publish_status(
+                trace_id,
+                "piece_count_mismatch",
+                f"棋子校驗提示：{summary}，請檢查棋盤。",
+                severity="warning",
+                details=piece_counts,
+                step=2,
+                step_label="[步驟 2/4] 影像辨識與棋子校驗",
+            )
 
         if workflow.get("verify_pending"):
             self._handle_robot_verification(event, workflow)
@@ -120,6 +163,8 @@ class WorkflowCoordinator:
             "player_move_valid",
             f"Player move accepted: {move}",
             details={"move": move},
+            step=3,
+            step_label="[步驟 3/4] AI 思考出招中",
         )
 
         game_result = self._game_result(fen_after)
@@ -198,6 +243,12 @@ class WorkflowCoordinator:
             )
             return
 
+        is_capture = self._infer_capture(str(best_move), payload)
+        workflow["is_capture"] = is_capture
+        return self.start_robot_move(trace_id, str(best_move), is_capture=is_capture)
+
+    def start_robot_move(self, trace_id: str, move: str, *, is_capture: bool = False):
+        """Start a robot move on the single actuation worker."""
         robot = container.get("robot")
         if not robot or not hasattr(robot, "execute_move"):
             self._publish_status(
@@ -206,34 +257,93 @@ class WorkflowCoordinator:
                 "Robot service does not expose execute_move.",
                 severity="error",
             )
-            return
+            return None
 
-        is_capture = self._infer_capture(str(best_move), payload)
-        workflow["is_capture"] = is_capture
+        def _execute_robot_job(target_trace_id: str, move_cmd: str, capture_flag: bool):
+            try:
+                ok = bool(robot.execute_move(move_cmd, is_capture=capture_flag))
+                if not ok:
+                    self._publish_status(
+                        target_trace_id,
+                        "robot_command_failed",
+                        f"Robot rejected move: {move_cmd}",
+                        severity="error",
+                        details={"move": move_cmd, "is_capture": capture_flag},
+                    )
+                    return
+
+                trigger_vision = getattr(robot, "trigger_vision", None)
+                vision_triggered = trigger_vision() if callable(trigger_vision) else None
+                if vision_triggered is False:
+                    workflow = self._workflow(target_trace_id)
+                    workflow["verify_pending"] = False
+                    with self._robot_lock:
+                        self._active_robot_trace_id = None
+                    if vision_capture_session.is_active():
+                        vision_capture_session.stop(reason="tmflow_vision_trigger_failed")
+                        vision_capture_session.publish_status(source="minimal_chess_workflow")
+                    self._publish_status(
+                        target_trace_id,
+                        "tmflow_vision_trigger_failed",
+                        "Robot move completed, but TMflow did not complete the Vision cycle.",
+                        severity="error",
+                        details={"move": move_cmd, "is_capture": capture_flag},
+                    )
+            except Exception as exc:
+                with self._robot_lock:
+                    self._active_robot_trace_id = None
+                workflow = self._workflow(target_trace_id)
+                workflow["verify_pending"] = False
+                logger.error(f"[WorkflowCoordinator] Robot execution exception: {exc}", exc_info=True)
+                self._publish_status(
+                    target_trace_id,
+                    "robot_command_error",
+                    f"Robot execution exception: {exc}",
+                    severity="error",
+                    details={"move": move_cmd, "is_capture": capture_flag, "error": str(exc)},
+                )
+
+        with self._robot_lock:
+            if self._robot_command_active_locked():
+                activity = self._robot_activity_snapshot_locked()
+                future = None
+            else:
+                self._active_robot_trace_id = str(trace_id)
+                future = self._robot_executor.submit(_execute_robot_job, trace_id, str(move), is_capture)
+                self._last_robot_future = future
+                activity = None
+
+        if future is None:
+            self._publish_status(
+                trace_id,
+                "robot_command_already_active",
+                "Robot command ignored because another command or verification is still active.",
+                severity="warning",
+                details=activity or {},
+            )
+            return None
+
         self._publish_status(
             trace_id,
             "robot_command_started",
-            f"Sending robot move: {best_move}",
-            details={"move": best_move, "is_capture": is_capture},
+            f"Sending robot move: {move}",
+            details={"move": move, "is_capture": is_capture},
+            step=4,
+            step_label=f"[步驟 4/4] 機械手臂執行中：{move}",
         )
-        ok = bool(robot.execute_move(str(best_move), is_capture=is_capture))
-        if not ok:
-            self._publish_status(
-                trace_id,
-                "robot_command_failed",
-                f"Robot rejected move: {best_move}",
-                severity="error",
-                details={"move": best_move, "is_capture": is_capture},
-            )
+        return future
 
     def on_robot_complete(self, event: BaseEvent):
         payload = event.payload or {}
-        trace_id = event.trace_id
+        with self._robot_lock:
+            trace_id = self._active_robot_trace_id or event.trace_id
         workflow = self._workflow(trace_id)
         workflow["robot_time"] = event.timestamp
         workflow["steps"].append("robot")
 
         if self.is_game_over():
+            with self._robot_lock:
+                self._active_robot_trace_id = None
             self._publish_status(
                 trace_id,
                 "robot_verify_skipped_game_over",
@@ -243,6 +353,8 @@ class WorkflowCoordinator:
             return
 
         if str(payload.get("status") or "success").lower() not in {"success", "done", "completed"}:
+            with self._robot_lock:
+                self._active_robot_trace_id = None
             self._publish_status(trace_id, "robot_failed", "Robot move completed with failure.", severity="error")
             return
 
@@ -258,7 +370,13 @@ class WorkflowCoordinator:
                 toast="機械手臂完成，開始驗證棋盤。",
                 level="info",
             )
-        self._publish_status(trace_id, "verify_started", "Robot move done; verification capture started.")
+        self._publish_status(
+            trace_id,
+            "verify_started",
+            "Robot move done; verification capture started.",
+            step=4,
+            step_label="[步驟 4/4] 手臂動作完成，影像複驗中",
+        )
 
     def end_game_by_player(self, payload: Optional[dict] = None) -> dict:
         payload = dict(payload or {})
@@ -311,6 +429,8 @@ class WorkflowCoordinator:
         payload = event.payload or {}
         trace_id = event.trace_id
         workflow["verify_pending"] = False
+        with self._robot_lock:
+            self._active_robot_trace_id = None
         workflow["verify_time"] = event.timestamp
         workflow["steps"].append("verify")
 
@@ -341,9 +461,41 @@ class WorkflowCoordinator:
             "round_ready_for_player",
             "Robot move verified; waiting for the next player move.",
             details={"move": observed_move or expected_move, "fen": fen_after},
+            step=1,
+            step_label="[步驟 1/4] 等待玩家下棋",
         )
 
+    def _prune_workflows(self, max_workflows: int = 100, ttl_sec: float = 3600.0) -> int:
+        """
+        Prune stale workflows to avoid unbounded memory growth.
+        Preserves any workflow that is currently verify_pending.
+        """
+        now = time.time()
+        pruned = 0
+        with suppress(Exception):
+            stale_keys = [
+                k for k, w in self.active_workflows.items()
+                if not w.get("verify_pending") and (now - float(w.get("start_time", now))) > ttl_sec
+            ]
+            for k in stale_keys:
+                self.active_workflows.pop(k, None)
+                pruned += 1
+
+            if len(self.active_workflows) > max_workflows:
+                candidates = [
+                    (k, float(w.get("start_time", now)))
+                    for k, w in self.active_workflows.items()
+                    if not w.get("verify_pending")
+                ]
+                candidates.sort(key=lambda item: item[1])
+                excess = len(self.active_workflows) - max_workflows
+                for k, _ in candidates[:excess]:
+                    self.active_workflows.pop(k, None)
+                    pruned += 1
+        return pruned
+
     def _workflow(self, trace_id: str) -> Dict[str, Any]:
+        self._prune_workflows()
         workflow = self.active_workflows.setdefault(
             trace_id,
             {
@@ -353,6 +505,24 @@ class WorkflowCoordinator:
         )
         return workflow
 
+    def _robot_command_active_locked(self) -> bool:
+        future_active = self._last_robot_future is not None and not self._last_robot_future.done()
+        verification_active = any(bool(workflow.get("verify_pending")) for workflow in self.active_workflows.values())
+        return bool(future_active or verification_active)
+
+    def _robot_activity_snapshot_locked(self) -> Dict[str, Any]:
+        future_active = self._last_robot_future is not None and not self._last_robot_future.done()
+        verification_trace_ids = [
+            str(trace_id)
+            for trace_id, workflow in self.active_workflows.items()
+            if workflow.get("verify_pending")
+        ]
+        return {
+            "robot_future_active": bool(future_active),
+            "verification_active": bool(verification_trace_ids),
+            "verification_trace_ids": verification_trace_ids[:5],
+        }
+
     def _publish_status(
         self,
         trace_id: str,
@@ -361,7 +531,19 @@ class WorkflowCoordinator:
         *,
         severity: str = "info",
         details: Optional[dict] = None,
+        step: Optional[int] = None,
+        step_label: Optional[str] = None,
     ) -> None:
+        workflow_data = {
+            "status": status,
+            "message": message,
+            "details": details or {},
+        }
+        if step is not None:
+            workflow_data["step"] = step
+        if step_label:
+            workflow_data["step_label"] = step_label
+
         bus.publish(BaseEvent.create(
             event_type=EventType.DIAGNOSTICS_UPDATED,
             source="minimal_chess_workflow",
@@ -370,11 +552,7 @@ class WorkflowCoordinator:
                 "status": status,
                 "severity": severity,
                 "message": message,
-                "workflow": {
-                    "status": status,
-                    "message": message,
-                    "details": details or {},
-                },
+                "workflow": workflow_data,
             },
             trace_id=trace_id,
         ))

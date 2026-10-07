@@ -1,0 +1,248 @@
+{
+  "version": "3.1",
+  "date": "2026-09-20",
+  "status": "DESIGN_ONLY",
+  "title": "TMflow 1.82.51：單張拍攝與共用取放最小流程",
+  "assumptions": [
+    "目標是先接通 Listen 接令、共用取放、單張上傳與 DONE 回報；尚未部署至控制器。",
+    "沿用已通的 IP、Listen 及認證；只允許一個 PC 發送器與一筆活動命令。",
+    "DO3 為吸盤開關；SUCTION_LEVEL / RELEASE_LEVEL 使用現場核對的電位。",
+    "暫按手臂相機設計：P_PHOTO 一張涵蓋全盤；與 P_READY_SAFE 直接往返的空載路徑待實測。",
+    "吃子由 PC 分兩筆 MOVE 共用取放段；第一筆照片只供觀察，不發布正式棋局。",
+    "不做自動重送或重連續跑；故障停止，PC 逾時後人工確認，不能重發結果未知的 MOVE。"
+  ],
+  "groups": [
+    {
+      "id": "A",
+      "title": "啟動與接收",
+      "nodes": [
+        {
+          "id": "A1",
+          "type": "Start",
+          "task": "僅空載且位於已驗證起始區域啟動。",
+          "next": {
+            "next": "A2"
+          }
+        },
+        {
+          "id": "A2",
+          "type": "Set",
+          "task": "DO3=RELEASE_LEVEL；var_cmd_ready=false；var_cmd_id=0；var_last_cmd_id=0；var_kind=0。僅開機執行。",
+          "next": {
+            "next": "L1"
+          }
+        },
+        {
+          "id": "L1",
+          "type": "Listen",
+          "task": "PC 寫命令與 4 個動態點，確認回覆後送 ScriptExit()；Pass 接 B1。",
+          "next": {
+            "pass": "B1",
+            "failure": "G1"
+          }
+        }
+      ]
+    },
+    {
+      "id": "B",
+      "title": "接受一次命令",
+      "nodes": [
+        {
+          "id": "B1",
+          "type": "If",
+          "task": "var_cmd_ready && var_cmd_id > var_last_cmd_id && (var_kind == 1 || var_kind == 2)。不完整、舊編號或不合法命令停止。",
+          "next": {
+            "yes": "B2",
+            "no": "G1"
+          }
+        },
+        {
+          "id": "B2",
+          "type": "Set",
+          "task": "var_last_cmd_id=var_cmd_id；var_cmd_ready=false。先記錄已接受編號並消耗命令。",
+          "next": {
+            "next": "B3"
+          }
+        },
+        {
+          "id": "B3",
+          "type": "If",
+          "task": "var_kind == 2？是=MOVE 共用取放；否=SCAN 單張拍攝。",
+          "next": {
+            "yes": "M1",
+            "no": "M12"
+          }
+        }
+      ]
+    },
+    {
+      "id": "M",
+      "title": "共用取放",
+      "nodes": [
+        {
+          "id": "M1",
+          "type": "Point",
+          "point": "P_READY_SAFE",
+          "task": "P_READY_SAFE；PTP 空載退出拍照姿態，進入已驗證的取放起點。",
+          "next": {
+            "next": "M2"
+          }
+        },
+        {
+          "id": "M2",
+          "type": "Point",
+          "point": "P_SRC_ABOVE",
+          "task": "P_SRC_ABOVE；Line 到來源上方，維持轉移高度與取放姿態。",
+          "next": {
+            "next": "M3"
+          }
+        },
+        {
+          "id": "M3",
+          "type": "Point",
+          "point": "P_SRC_PICK",
+          "task": "P_SRC_PICK；Line 垂直下降至吸取高度，精準到位。",
+          "next": {
+            "next": "M4"
+          }
+        },
+        {
+          "id": "M4",
+          "type": "Set",
+          "task": "DO3=SUCTION_LEVEL。",
+          "next": {
+            "next": "M5"
+          }
+        },
+        {
+          "id": "M5",
+          "type": "Wait for",
+          "task": "等待 grip_wait_ms；依單顆吸取實測填入。",
+          "next": {
+            "next": "M6"
+          }
+        },
+        {
+          "id": "M6",
+          "type": "Point",
+          "point": "P_SRC_ABOVE",
+          "task": "P_SRC_ABOVE；Line 垂直抬升，先升高再橫移。",
+          "next": {
+            "next": "M7"
+          }
+        },
+        {
+          "id": "M7",
+          "type": "Point",
+          "point": "P_DST_ABOVE",
+          "task": "P_DST_ABOVE；Line 在轉移高度橫移至目的上方。",
+          "next": {
+            "next": "M8"
+          }
+        },
+        {
+          "id": "M8",
+          "type": "Point",
+          "point": "P_DST_PLACE",
+          "task": "P_DST_PLACE；Line 垂直下降至放置高度，精準到位。",
+          "next": {
+            "next": "M9"
+          }
+        },
+        {
+          "id": "M9",
+          "type": "Set",
+          "task": "DO3=RELEASE_LEVEL。",
+          "next": {
+            "next": "M10"
+          }
+        },
+        {
+          "id": "M10",
+          "type": "Wait for",
+          "task": "等待 release_wait_ms；依單顆釋放實測填入。",
+          "next": {
+            "next": "M11"
+          }
+        },
+        {
+          "id": "M11",
+          "type": "Point",
+          "point": "P_DST_ABOVE",
+          "task": "P_DST_ABOVE；Line 垂直抬升，離開棋子或死棋盒。",
+          "next": {
+            "next": "M12"
+          }
+        },
+        {
+          "id": "M12",
+          "type": "Point",
+          "point": "P_READY_SAFE",
+          "task": "P_READY_SAFE；Line 空載回轉移點。SCAN 也由此進入拍照段，初始區域及拍照點返回路徑須已驗證。",
+          "next": {
+            "next": "S1"
+          }
+        }
+      ]
+    },
+    {
+      "id": "S",
+      "title": "拍一張並送出",
+      "nodes": [
+        {
+          "id": "S1",
+          "type": "Point",
+          "point": "P_PHOTO",
+          "task": "P_PHOTO；PTP 沿已驗證空載路徑到單一全盤拍照點，精準到位。",
+          "next": {
+            "next": "S2"
+          }
+        },
+        {
+          "id": "S2",
+          "type": "Wait for",
+          "task": "等待 settle_ms，讓影像穩定。",
+          "next": {
+            "next": "S3"
+          }
+        },
+        {
+          "id": "S3",
+          "type": "Vision",
+          "task": "JOB_BOARD：重新拍一張，POST 至 /api/vision/tmvision/classify；frame_received 通過後才回 DONE。",
+          "next": {
+            "next": "F1",
+            "failure": "G1"
+          }
+        }
+      ]
+    },
+    {
+      "id": "F",
+      "title": "回報與下一筆",
+      "nodes": [
+        {
+          "id": "F1",
+          "type": "Network",
+          "task": "送帶 var_last_cmd_id 的 DONE JSON line 到 PC；完成後直接回 Listen，在拍照點等待。",
+          "next": {
+            "next": "L1",
+            "failure": "G1"
+          }
+        }
+      ]
+    },
+    {
+      "id": "G",
+      "title": "停止",
+      "nodes": [
+        {
+          "id": "G1",
+          "type": "Stop",
+          "task": "停止專案，不自動重搬、關吸盤或回家。PC 未收到 DONE 時逾時標記結果未知。",
+          "next": {}
+        }
+      ]
+    }
+  ]
+}

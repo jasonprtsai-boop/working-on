@@ -434,13 +434,18 @@ class RobotService:
         if self.connected:
             sender = getattr(self.adapter, "send_motion", None)
             if callable(sender):
+                sender_kwargs = {
+                    "speed": profile.speed,
+                    "acceleration": profile.acceleration,
+                    "timeout": profile.timeout,
+                }
+                if self.adapter_name == "techmanpy":
+                    sender_kwargs["motion_mode"] = "line" if profile.label in {"approach", "lift"} else "ptp"
                 ok = await self._wait_for_hardware_motion(
                     asyncio.to_thread(
                         sender,
                         coords,
-                        speed=profile.speed,
-                        acceleration=profile.acceleration,
-                        timeout=profile.timeout,
+                        **sender_kwargs,
                     ),
                     profile=profile,
                     coords=coords,
@@ -507,6 +512,21 @@ class RobotService:
             logger.warning(f"[RobotService] halt failed during stop_all: {exc}", exc_info=True)
         self.is_moving = False
         return True
+
+    def trigger_vision(self) -> Optional[bool]:
+        """Trigger the TMflow Listen -> Vision -> Listen cycle when configured."""
+        if self.adapter_name != "techmanpy":
+            return None
+        if not bool(getattr(config, "ROBOT_TECHMANPY_TRIGGER_VISION_AFTER_MOVE", False)):
+            return None
+        trigger = getattr(self.adapter, "trigger_vision", None)
+        if not callable(trigger):
+            self.last_error = "TechmanPy adapter does not support the TMflow Vision cycle."
+            return False
+        ok = bool(trigger(timeout=float(getattr(config, "ROBOT_TECHMANPY_VISION_TIMEOUT_SEC", 30.0))))
+        if not ok:
+            self.last_error = getattr(self.adapter, "last_error", None) or "TMflow Vision cycle failed."
+        return ok
 
     def disconnect(self):
         try:

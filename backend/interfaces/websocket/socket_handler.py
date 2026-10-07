@@ -106,6 +106,18 @@ def register_socketio(socketio):
         limited = _rate_limit_socket("player_move")
         if limited:
             return limited
+        if not getattr(config, "PLAYER_MANUAL_MOVE_ENABLED", False):
+            raw = data if isinstance(data, dict) else {}
+            trace_id = str(raw.get("trace_id") or "") or None
+            return _socket_error(
+                "player_manual_move_disabled",
+                "玩家主流程只接受「我已下棋」後的拍照與 YOLO 辨識結果。",
+                trace_id=trace_id,
+                details={
+                    "replacement": "player_done",
+                    "flow": "physical_move -> player_done -> photo -> yolo_python -> engine -> robot",
+                },
+            )
         try:
             cmd = SocketPlayerMove.model_validate(data or {})
         except ValidationError as exc:

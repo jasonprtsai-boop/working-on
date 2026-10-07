@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import unittest
 from io import BytesIO
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 import numpy as np
@@ -120,6 +122,54 @@ class TMvisionDetectionResponseTest(unittest.TestCase):
         self.assertEqual(payload["annotations"][0]["label"], "red_king")
         self.assertIn("bbox_xyxy", payload["annotations"][0])
         self.assertIn("color", payload["annotations"][0])
+
+    def test_tmvision_detect_endpoint_supports_connection_test(self):
+        from flask import Flask
+
+        from backend.interfaces.api.shared import api_bp
+        from backend.interfaces.api import vision_routes
+
+        app = Flask(__name__)
+        app.register_blueprint(api_bp, url_prefix="/api")
+        with patch.object(vision_routes, "_tmflow_frame_ingest_authorized", return_value=True):
+            response = app.test_client().get("/api/vision/tmvision/detect")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["result"], "tmvision_detection_ready")
+
+    def test_tmvision_detect_endpoint_can_save_image_on_pc(self):
+        try:
+            import cv2
+        except Exception:
+            self.skipTest("OpenCV is not available")
+
+        from flask import Flask
+
+        from backend.interfaces.api.shared import api_bp
+        from backend.interfaces.api import vision_frame_io, vision_routes
+
+        app = Flask(__name__)
+        app.register_blueprint(api_bp, url_prefix="/api")
+        frame = np.zeros((20, 30, 3), dtype=np.uint8)
+        ok, encoded = cv2.imencode(".jpg", frame)
+        self.assertTrue(ok)
+
+        with TemporaryDirectory() as temp_dir:
+            with patch.object(vision_routes, "_tmflow_frame_ingest_authorized", return_value=True):
+                with patch.object(vision_routes, "vision_system", FakeVisionSystem()):
+                    with patch.object(vision_frame_io.config, "VISION_TMFLOW_SAVE_IMAGES", True, create=True):
+                        with patch.object(vision_frame_io.config, "VISION_TMFLOW_SAVE_DIR", temp_dir, create=True):
+                            with patch.object(vision_frame_io.config, "VISION_TMFLOW_MAX_SAVED_IMAGES", 2, create=True):
+                                response = app.test_client().post(
+                                    "/api/vision/tmvision/detect",
+                                    data={"image": (BytesIO(encoded.tobytes()), "frame.jpg")},
+                                    content_type="multipart/form-data",
+                                )
+
+            self.assertEqual(response.status_code, 200)
+            saved = list(Path(temp_dir).glob("tmvision_*.jpg"))
+            self.assertEqual(len(saved), 1)
+            self.assertGreater(saved[0].stat().st_size, 0)
 
 
 if __name__ == "__main__":

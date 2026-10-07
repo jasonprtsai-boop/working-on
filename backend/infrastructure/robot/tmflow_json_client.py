@@ -22,6 +22,7 @@ class TMflowJsonClient:
         self.timeout = float(timeout)
         self.max_message_bytes = int(max_message_bytes)
         self.sock: socket.socket | None = None
+        self._rx_buffer = bytearray()
 
     @property
     def connected(self) -> bool:
@@ -29,10 +30,12 @@ class TMflowJsonClient:
 
     def connect(self) -> None:
         self.close()
+        self._rx_buffer.clear()
         self.sock = socket.create_connection((self.host, self.port), self.timeout)
         self.sock.settimeout(self.timeout)
 
     def close(self) -> None:
+        self._rx_buffer.clear()
         sock = self.sock
         self.sock = None
         if not sock:
@@ -52,24 +55,28 @@ class TMflowJsonClient:
             raise ConnectionError("TMflow JSON client is not connected.")
         read_timeout = float(timeout if timeout is not None else self.timeout)
         deadline = time.monotonic() + read_timeout
-        buffer = bytearray()
         while True:
+            newline_idx = self._rx_buffer.find(b"\n")
+            if newline_idx != -1:
+                line = bytes(self._rx_buffer[:newline_idx])
+                del self._rx_buffer[: newline_idx + 1]
+                if len(line) > self.max_message_bytes:
+                    raise TMflowJsonProtocolError("TMflow JSON response exceeds maximum message size.")
+                return parse_json_line(line)
+
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise TimeoutError("Timed out reading TMflow JSON response.")
             self.sock.settimeout(max(0.001, remaining))
             try:
-                chunk = self.sock.recv(1)
+                chunk = self.sock.recv(1024)
             except socket.timeout as exc:
                 raise TimeoutError("Timed out reading TMflow JSON response.") from exc
             if not chunk:
                 raise ConnectionError("TMflow socket closed.")
-            if chunk == b"\n":
-                break
-            buffer.extend(chunk)
-            if len(buffer) > self.max_message_bytes:
+            self._rx_buffer.extend(chunk)
+            if len(self._rx_buffer) > self.max_message_bytes and b"\n" not in self._rx_buffer:
                 raise TMflowJsonProtocolError("TMflow JSON response exceeds maximum message size.")
-        return parse_json_line(bytes(buffer))
 
     def transact(
         self,

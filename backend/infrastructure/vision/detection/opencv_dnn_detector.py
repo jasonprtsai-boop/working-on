@@ -58,7 +58,8 @@ class Detector:
             self.last_error = str(e)
             logger.error(f"[Detector] Failed to load ONNX model: {e}")
 
-    def detect(self, image: np.ndarray) -> List[Detection]:
+    def detect(self, image: np.ndarray, expected_count: int | None = None) -> List[Detection]:
+        _ = expected_count
         if self.net is None or image is None:
             return []
 

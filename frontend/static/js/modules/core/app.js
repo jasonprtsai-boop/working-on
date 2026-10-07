@@ -21,6 +21,7 @@ import {
     loginAdmin,
     loginSetup,
 } from './api_client.js';
+import { VoiceAnnouncer } from '../ui/voice_announcer.js';
 
 const REPLAY_ALL_SESSIONS = '__all__';
 
@@ -41,7 +42,10 @@ const ADMIN_ONLY_CONTROL_IDS = [
 let playerGameStarted = false;
 let playerStartPreflight = null;
 let robotPlayRequestActive = false;
+let robotPlayAcceptedAt = 0;
 let robotPlayCooldownUntil = 0;
+let robotPlaySawBusy = false;
+let robotPlayReleaseTimerId = null;
 let playerEndRequestActive = false;
 let videoReconnectAttempts = 0;
 let videoReconnectTimer = null;
@@ -66,7 +70,10 @@ const runtimeControlState = {
 const VIDEO_RECONNECT_BASE_MS = 5000;
 const VIDEO_RECONNECT_MAX_MS = 30000;
 const VISION_STALE_THRESHOLD_MS = 3000;
-const ROBOT_PLAY_CONFIRM_MESSAGE = '警告：即將送出機械手臂 Play 訊號，請勿靠近棋盤與手臂工作範圍。確認 TMflow 已在控制器端啟動、所有人員已離開後，才可以繼續。';
+const ROBOT_PLAY_ACCEPTED_COOLDOWN_MS = 5000;
+const ROBOT_PLAY_UNLOCK_GRACE_MS = 1000;
+const ROBOT_PLAY_LOCK_TIMEOUT_MS = 45000;
+const ROBOT_EXECUTE_CONFIRM_MESSAGE = '警告：即將執行目前 AI 招法，請勿靠近棋盤與手臂工作範圍。確認 TMflow 已在控制器端啟動、所有人員已離開後，才可以繼續。';
 const PLAYER_END_CONFIRM_MESSAGE = '確定要結束目前對局嗎？結束後玩家不能再送出棋步或啟動機械手臂；這不是實體急停。';
 const PLAYER_END_FINAL_CONFIRM_MESSAGE = '再次確認：你真的要結束對局嗎？若手臂正在動作，請保持距離並由工作人員處理急停。';
 const LIVE_HARDWARE_ACTIONS = new Set([
@@ -198,6 +205,7 @@ function setupUI() {
     setupSessionControls();
     setupSettingsControls();
     setupPlayerGuide();
+    setupVoiceControls();
     setupSidebarTabs();
     setupReplayControls();
     setupModeTabsKeyboard();
@@ -284,6 +292,7 @@ async function startPlayerGame() {
         updatePlayerStartGate(true);
         applyRuntimeControlStatus(payload);
         updatePlayerGuide();
+        VoiceAnnouncer.announce('對局開始，請紅方移動棋子，下棋後請按我已下棋。');
         if (playerPreflightHasWarnings(playerStartPreflight)) {
             window.showAlert?.(playerPreflightMessage(playerStartPreflight), 'warning', 5200);
         } else {
@@ -1762,11 +1771,49 @@ function replacePillContent(element, labelText) {
     element.append(dot, label);
 }
 
+function setupVoiceControls() {
+    const voiceBtn = document.getElementById('btn-voice-toggle');
+    if (!voiceBtn) return;
+    const updateVoiceBtn = (enabled) => {
+        voiceBtn.classList.toggle('muted', !enabled);
+        const icon = voiceBtn.querySelector('.voice-icon');
+        const label = voiceBtn.querySelector('.voice-label');
+        if (icon) icon.textContent = enabled ? '🔊' : '🔇';
+        if (label) label.textContent = enabled ? '語音播報: 開' : '語音播報: 關';
+        voiceBtn.setAttribute('aria-pressed', String(enabled));
+    };
+    updateVoiceBtn(VoiceAnnouncer.isVoiceEnabled());
+    voiceBtn.addEventListener('click', () => {
+        const enabled = VoiceAnnouncer.toggleVoice();
+        updateVoiceBtn(enabled);
+        window.showAlert?.(enabled ? '語音播報已開啟' : '語音播報已靜音', 'info');
+    });
+}
+
 function setupPlayerGuide() {
-    ['board', 'vision', 'engine', 'robot', 'ui'].forEach((domain) => {
+    ['board', 'vision', 'engine', 'ui'].forEach((domain) => {
         subscribe(domain, () => updatePlayerGuide());
     });
+    subscribe('robot', (robot) => {
+        syncRobotPlayRequestWithRobotStatus(robot);
+        updatePlayerGuide();
+    });
     updatePlayerGuide();
+}
+
+function syncRobotPlayRequestWithRobotStatus(robot = {}) {
+    if (!robotPlayRequestActive || !robotPlayAcceptedAt) return;
+
+    if (robot?.busy) {
+        robotPlaySawBusy = true;
+        updateRobotStartButton(state.snapshot.robot || {}, state.snapshot.board || {}, state.snapshot.engine || {});
+        return;
+    }
+
+    const graceElapsed = Date.now() - robotPlayAcceptedAt >= ROBOT_PLAY_UNLOCK_GRACE_MS;
+    if (robotPlaySawBusy || graceElapsed) {
+        releaseRobotPlayRequest({ cooldown: true });
+    }
 }
 
 function updatePlayerGuide() {
@@ -1796,42 +1843,59 @@ function updatePlayerGuide() {
 
     if (gameEnded) {
         const result = board.game_result || {};
-        setPlayerGuideCopy('棋局結束', gameEndActionText(result), '請勿再移動棋子；這不是實體急停，如需重新開始或處理手臂，請由工作人員操作。');
+        setPlayerGuideCopy('[完成] 棋局結束', gameEndActionText(result), '請勿再移動棋子；這不是實體急停，如需重新開始或處理手臂，請由工作人員操作。');
+        VoiceAnnouncer.announce('棋局結束，感謝對局。');
         return;
     }
     if (!playerGameStarted) {
-        setPlayerGuideCopy('等待開始', '請按下開始對局', '開始後，系統會提示輪到哪一方、辨識是否成功，以及機械手臂是否準備動作。');
+        setPlayerGuideCopy('[準備] 等待開始', '請按下開始對局', '開始後系統只接受一條流程：玩家實體下棋 -> 按我已下棋 -> 拍照與 YOLO 辨識 -> AI 思考 -> 手臂落子。');
         return;
     }
     if (robot.busy) {
-        setPlayerGuideCopy('機械手臂動作中', '請保持雙手離開棋盤', '等待機械手臂完成後，再依畫面提示繼續。');
+        const cmd = robot.last_action || robot.current_command || '';
+        const robotActionDesc = cmd ? `執行指令 ${cmd}` : '移動中';
+        setPlayerGuideCopy('[步驟 4/4] 機械手臂動作中', '請保持雙手離開棋盤', `機械手臂正在${robotActionDesc}，動作完成後將自動進行影像複驗。`);
+        VoiceAnnouncer.announce('機械手臂動作中，請保持雙手離開棋盤。');
         return;
     }
     if (robotStatus.reason === 'ready_to_start') {
-        setPlayerGuideCopy('等待啟動手臂', '請按下啟動機械手臂流程', '啟動前請確認所有人員遠離棋盤與手臂工作範圍。');
+        setPlayerGuideCopy('[步驟 4/4] AI 已回傳', '等待機械手臂移動', 'AI 思考完畢；若現場尚未啟用自動執行，請由工作人員確認安全後啟動手臂。完成後系統會顯示完成並換玩家移動。');
+        VoiceAnnouncer.announce('AI 已回傳，等待機械手臂移動。');
         return;
     }
     if (engine.is_thinking) {
-        setPlayerGuideCopy('AI 思考中', '請稍候，不需要移動棋子', '系統正在計算下一步。');
+        setPlayerGuideCopy('[步驟 3/4] AI 思考出招中', '請稍候，不需要移動棋子', 'Pikafish AI 正在計算最佳防守/進攻招法，請稍候...');
         return;
     }
     if (visionStatus.reason === 'capture_active') {
-        setPlayerGuideCopy('辨識中', '請保持雙手離開棋盤', '系統每 2 秒擷取一次最新畫面，辨識成功後會自動停止。');
+        const intervalSec = state.snapshot?.setup?.vision?.user_capture_interval_sec || 2.0;
+        const expCount = vision.piece_counts?.expected || 32;
+        setPlayerGuideCopy('[步驟 2/4] 拍照送 YOLO', '請保持雙手離開棋盤', `系統每 ${intervalSec} 秒拍照送 YOLO 辨識，並比對每種棋子數量是否符合預期（${expCount} 顆）...`);
+        VoiceAnnouncer.announce('辨識中，請保持雙手離開棋盤。');
+        return;
+    }
+    if (vision.piece_counts && vision.piece_counts.valid === false) {
+        const pc = vision.piece_counts;
+        const summary = pc.summary_message || `預期應有 ${pc.expected} 顆（吃子則為 ${pc.expected - 1} 顆），目前僅辨識到 ${pc.total} 顆（紅 ${pc.red} / 黑 ${pc.black}）`;
+        setPlayerGuideCopy('[步驟 2/4] 棋子種類或數量異常', '請確認棋子是否擺正或遺漏', `${summary}。請移開遮擋物或擺正棋子後，按「我已下棋」重新辨識。`);
+        VoiceAnnouncer.announce('棋子種類或數量異常，請檢查棋盤。');
         return;
     }
     if (visionStatus.state === 'error') {
-        setPlayerGuideCopy('辨識失敗', '請重新擺正棋子', '確認棋子放在格線交點附近，手離開棋盤後等待系統重新辨識。');
+        setPlayerGuideCopy('[步驟 2/4] 辨識失敗', '請重新擺正棋子', '確認棋子放在格線交點附近，手離開棋盤後等待系統重新辨識。');
+        VoiceAnnouncer.announce('辨識失敗，請重新擺正棋子。');
         return;
     }
     if (visionStatus.state === 'warning') {
-        setPlayerGuideCopy('等待影像更新', '請先不要移動棋子', '目前影像資料延遲或尚未穩定，請把手離開棋盤並等待辨識成功。');
+        setPlayerGuideCopy('[步驟 2/4] 等待影像更新', '請先不要移動棋子', '目前影像資料延遲或尚未穩定，請把手離開棋盤並等待辨識成功。');
         return;
     }
     if (turn === 'black') {
-        setPlayerGuideCopy('等待 AI', '現在輪到黑方', '請稍候系統計算，機械手臂動作前畫面會再次提示。');
+        setPlayerGuideCopy('[步驟 3/4] 等待 AI', '現在輪到黑方', '請稍候系統計算，機械手臂動作前畫面會再次提示。');
         return;
     }
-    setPlayerGuideCopy('玩家回合', '請移動紅方棋子', '移動後請把手離開棋盤，按下我已下棋。');
+    const currentPieces = vision.piece_counts?.total ? `（目前棋盤 ${vision.piece_counts.total} 顆）` : '';
+    setPlayerGuideCopy('[步驟 1/4] 換玩家移動', '請在實體棋盤移動紅方棋子', `依提示移動棋子${currentPieces}，移動後請把手離開棋盤，按下「我已下棋」進行拍照與 YOLO 辨識。`);
 }
 
 function setPlayerGuideCopy(step, action, detail) {
@@ -1848,10 +1912,17 @@ function playerVisionStatus(vision = {}) {
         return { state: 'warning', text: '辨識中', reason: 'capture_active' };
     }
     if (captureReason === 'stable_vision_result') {
-        return { state: 'ok', text: '辨識成功', reason: 'capture_complete' };
+        const total = vision.piece_counts?.total;
+        return { state: 'ok', text: total ? `辨識成功 (${total}顆)` : '辨識成功', reason: 'capture_complete' };
     }
     if (captureReason === 'timeout') {
         return { state: 'error', text: '辨識逾時', reason: 'capture_timeout' };
+    }
+    if (vision.piece_counts && typeof vision.piece_counts === 'object' && vision.piece_counts.valid === false) {
+        const pc = vision.piece_counts;
+        const mismatchCount = Array.isArray(pc.mismatches) ? pc.mismatches.length : 0;
+        const text = mismatchCount > 0 ? `種類不符 (${mismatchCount}種異常)` : `數量不符 (${pc.total ?? 0}/${pc.expected ?? 32}顆)`;
+        return { state: 'warning', text, reason: 'count_mismatch' };
     }
     const status = String(vision.status || '').toLowerCase();
     const ageMs = Number(vision.vision_age_ms ?? vision.visionAgeMs ?? 0);
@@ -1863,7 +1934,8 @@ function playerVisionStatus(vision = {}) {
         return { state: 'warning', text: '影像延遲' };
     }
     if (vision.stable || vision.fen || vision.fen_after) {
-        return { state: 'ok', text: '辨識成功' };
+        const total = vision.piece_counts?.total;
+        return { state: 'ok', text: total ? `辨識成功 (${total}顆)` : '辨識成功' };
     }
     if (vision.camera_ready === false) {
         return { state: 'error', text: '相機未就緒' };
@@ -1908,17 +1980,24 @@ async function submitPlayerDone() {
     const button = document.getElementById('btn-player-vision-capture');
     if (button) button.disabled = true;
     try {
+        VoiceAnnouncer.announce('已啟動拍照與 YOLO 辨識，請保持雙手離開棋盤。');
+        const visionSetup = state.snapshot?.setup?.vision || {};
+        const reqBody = { source: 'player_done_button' };
+        if (visionSetup.user_capture_interval_sec) {
+            reqBody.interval_sec = visionSetup.user_capture_interval_sec;
+        }
+        if (visionSetup.user_capture_timeout_sec) {
+            reqBody.timeout_sec = visionSetup.user_capture_timeout_sec;
+        }
         const payload = await apiJson('/api/player-done', {
             method: 'POST',
-            body: JSON.stringify({
-                source: 'player_done_button',
-            }),
+            body: JSON.stringify(reqBody),
         }, 6000);
         if (payload.vision) {
             commit('DIAGNOSTICS.UPDATED', { vision: payload.vision });
         }
         updatePlayerGuide();
-        window.showAlert?.('已通知系統開始辨識。', 'success');
+        window.showAlert?.('已啟動拍照與 YOLO 辨識。', 'success');
     } catch (error) {
         window.showAlert?.(error?.message || '送出玩家完成狀態失敗。', 'error');
     } finally {
@@ -1930,7 +2009,11 @@ async function submitPlayerDone() {
 function playerRobotStatus(robot = {}, engine = {}, turn = 'red') {
     const simulation = Boolean(robot.fake_robot || robot.simulation);
     if (robot.error) return { state: 'error', text: '需要工作人員確認' };
-    if (robot.busy) return { state: 'warning', text: simulation ? '模擬動作中' : '動作中，請勿靠近' };
+    if (robot.busy) {
+        const action = robot.last_action || robot.current_command || '';
+        const text = action ? (simulation ? `模擬 (${action})` : `動作中 (${action})`) : (simulation ? '模擬動作中' : '動作中，請勿靠近');
+        return { state: 'warning', text, action };
+    }
     if (isRobotMoveReady(engine, { turn })) {
         return { state: 'warning', text: simulation ? '模擬待啟動' : '等待啟動', reason: 'ready_to_start' };
     }
@@ -1946,7 +2029,7 @@ function updateRobotStartButton(robot = {}, board = {}, engine = {}) {
     const moveReady = isRobotMoveReady(engine, board);
     button.disabled = !playerGameStarted || ended || busy || !moveReady || robotPlayRequestActive || coolingDown;
     if (robotPlayRequestActive) {
-        button.textContent = '送出啟動中...';
+        button.textContent = robotPlayAcceptedAt ? '手臂指令執行中...' : '送出啟動中...';
     } else if (busy) {
         button.textContent = '手臂動作中...';
     } else if (coolingDown) {
@@ -1956,8 +2039,57 @@ function updateRobotStartButton(robot = {}, board = {}, engine = {}) {
     } else if (!moveReady) {
         button.textContent = '等待 AI 招法';
     } else {
-        button.textContent = '啟動機械手臂流程';
+        button.textContent = '確認執行 AI 招法';
     }
+}
+
+function beginRobotPlayRequest() {
+    clearRobotPlayReleaseTimer();
+    robotPlayRequestActive = true;
+    robotPlayAcceptedAt = 0;
+    robotPlaySawBusy = Boolean(state.snapshot.robot?.busy);
+    updateRobotStartButton(state.snapshot.robot || {}, state.snapshot.board || {}, state.snapshot.engine || {});
+}
+
+function markRobotPlayAccepted() {
+    robotPlayAcceptedAt = Date.now();
+    robotPlaySawBusy = Boolean(state.snapshot.robot?.busy);
+    scheduleRobotPlayReleaseTimeout();
+    updateRobotStartButton(state.snapshot.robot || {}, state.snapshot.board || {}, state.snapshot.engine || {});
+}
+
+function releaseRobotPlayRequest({ cooldown = false } = {}) {
+    clearRobotPlayReleaseTimer();
+    robotPlayRequestActive = false;
+    robotPlayAcceptedAt = 0;
+    robotPlaySawBusy = false;
+    if (cooldown) {
+        robotPlayCooldownUntil = Math.max(
+            robotPlayCooldownUntil,
+            Date.now() + ROBOT_PLAY_ACCEPTED_COOLDOWN_MS,
+        );
+        setTimeout(
+            () => updateRobotStartButton(state.snapshot.robot || {}, state.snapshot.board || {}, state.snapshot.engine || {}),
+            ROBOT_PLAY_ACCEPTED_COOLDOWN_MS + 200,
+        );
+    }
+    updateRobotStartButton(state.snapshot.robot || {}, state.snapshot.board || {}, state.snapshot.engine || {});
+}
+
+function scheduleRobotPlayReleaseTimeout() {
+    clearRobotPlayReleaseTimer();
+    if (typeof setTimeout !== 'function') return;
+    robotPlayReleaseTimerId = setTimeout(() => {
+        if (!robotPlayRequestActive || !robotPlayAcceptedAt) return;
+        releaseRobotPlayRequest({ cooldown: true });
+        window.showAlert?.('機械手臂狀態更新逾時，請由工作人員確認現場狀態後再操作。', 'warning', 5200);
+    }, ROBOT_PLAY_LOCK_TIMEOUT_MS);
+}
+
+function clearRobotPlayReleaseTimer() {
+    if (!robotPlayReleaseTimerId || typeof clearTimeout !== 'function') return;
+    clearTimeout(robotPlayReleaseTimerId);
+    robotPlayReleaseTimerId = null;
 }
 
 async function startRobotArmFlow() {
@@ -1979,37 +2111,46 @@ async function startRobotArmFlow() {
         showSetupAuthOverlay();
         return;
     }
-    if (typeof window.confirm === 'function' && !window.confirm(ROBOT_PLAY_CONFIRM_MESSAGE)) {
+    if (typeof window.confirm === 'function' && !window.confirm(ROBOT_EXECUTE_CONFIRM_MESSAGE)) {
         window.showAlert?.('已取消啟動機械手臂。', 'info');
         return;
     }
 
-    robotPlayRequestActive = true;
-    updateRobotStartButton(state.snapshot.robot || {}, state.snapshot.board || {}, state.snapshot.engine || {});
+    beginRobotPlayRequest();
+    VoiceAnnouncer.announce('警告，機械手臂即將啟動，請勿靠近棋盤！', { priority: true });
+    let accepted = false;
     try {
-        await apiJson('/api/robot/play', {
+        const payload = await apiJson('/api/robot/execute-ready-move', {
             method: 'POST',
             body: JSON.stringify({
                 source: 'player_web_robot_start_button',
-                confirmed_action: 'robot_play',
+                confirmed_action: 'robot_execute_ready_move',
                 warning_acknowledged: true,
             }),
         }, 9000);
-        robotPlayCooldownUntil = Date.now() + 5000;
-        setTimeout(() => updateRobotStartButton(state.snapshot.robot || {}, state.snapshot.board || {}, state.snapshot.engine || {}), 5200);
+        accepted = true;
+        robotPlayCooldownUntil = Date.now() + ROBOT_PLAY_ACCEPTED_COOLDOWN_MS;
+        markRobotPlayAccepted();
+        setTimeout(
+            () => updateRobotStartButton(state.snapshot.robot || {}, state.snapshot.board || {}, state.snapshot.engine || {}),
+            ROBOT_PLAY_ACCEPTED_COOLDOWN_MS + 200,
+        );
         commit('DIAGNOSTICS.UPDATED', {
             ui: {
-                robot_play_requested_at: Date.now(),
-                robot_play_warning_acknowledged: true,
+                robot_execute_requested_at: Date.now(),
+                robot_execute_warning_acknowledged: true,
             },
         });
         updatePlayerGuide();
-        window.showAlert?.('已送出機械手臂啟動訊號，請勿靠近。', 'warning', 5200);
+        window.showAlert?.(`已開始執行 AI 招法 ${payload?.move || ''}，請勿靠近。`, 'warning', 5200);
     } catch (error) {
         window.showAlert?.(error?.message || '機械手臂啟動失敗。', 'error', 5200);
     } finally {
-        robotPlayRequestActive = false;
-        updateRobotStartButton(state.snapshot.robot || {}, state.snapshot.board || {}, state.snapshot.engine || {});
+        if (!accepted) {
+            releaseRobotPlayRequest();
+        } else {
+            updateRobotStartButton(state.snapshot.robot || {}, state.snapshot.board || {}, state.snapshot.engine || {});
+        }
     }
 }
 

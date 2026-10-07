@@ -1,0 +1,86 @@
+專題系統理解與 TMflow 1.82.51 知識紀錄
+日期：2026-09-20
+
+現行基準——使用者於2026-09-20明確更正，優先於下方舊盤點：
+1. 控制與連結使用 TMflow 1.82.51。這是已確認版本，不得混稱1.82.5100、1.88或2.x；1.82系列手冊只作資料來源，細部相容性另查證。
+2. 現行流程以單張影像為主；A/B雙張是舊設計，不再列為待選主線。
+3. 手臂控制流程尚未完成，具體流程將於後續與使用者討論，不能自行補定。
+4. 「手臂完成後進入影像複驗」是先前錯誤的現況描述，已撤回。程式中存在相關邏輯不代表現場流程或使用者需求。
+5. 以下保留歷史程式閱讀證據；凡與本段衝突的現況及建議皆已被本段取代。
+
+一、閱讀範圍與可信度
+已盤點「C:\Users\user\Desktop\專題」各主要資料夾，排除 .git、node_modules、.venv、.tools、__pycache__ 的內部內容。清理前盤點 17,164 個檔案；這是檔案清單，不代表逐行讀完所有第三方原始碼、二進位、影像及壓縮包內容。
+86 份 DOCX 成功擷取可選取文字；已閱讀文件用途、架構與相關技術段落。部分 2.22 教材主要是圖片，擷取文字很少，不能視為已完整讀懂。未更動任何 DOCX。
+重點核對現行 working-on 的入口、bootstrap、RobotService、techmanpy adapter、JSON adapter、VisionCaptureSession、FrameBuffer、WorkflowCoordinator、Kinematics 與資產 manifest。既有報告的效能、測試及真機成功敘述不視為本次實測。
+
+二、資料夾用途
+專題程式/working-on：目前工作樹，Flask 網站及 Python 控制程式；原先已有大量未提交修改，本次未重置。
+專題程式/壓縮/code-23：歷史程式與書面文件工作稿，不能當現行 runtime。
+專題程式/Pikafish、opencv-4.x：第三方引擎與影像原始碼，保留套件文件及授權完整性。
+ppt & 書面報告：上下學期論文版本、簡報、技術參考、同意書及量表。
+專題繳交事項、專題繳交資料_MB106-B1：行政要求與提交副本。
+說明書及教材：TMflow、Expression/Listen、TMvision、TM5 硬體手冊及安裝程式；1.82、1.88、2.22、2.24 內容混存。
+影像辨識訓練、yolo檔案：資料集、標註與模型相關材料。其餘：申請、課程及行政資料。
+
+三、系統目的與架構
+目的：讓人透過實體象棋盤與機械手臂對弈；文件設定的研究情境包含高齡陪伴及可用性評估。此目的不代表已驗證醫療或心理效益。
+輸入：玩家網頁操作、相機影格、機械手臂回報、棋盤及工具校正。
+介面：Flask REST、Socket.IO、TMvision HTTP ingest、影像串流。
+應用：bootstrap 統一組裝；WorkflowCoordinator 包含玩家完成、辨識、AI及機械動作相關邏輯。既有複驗程式不作為現行流程。
+狀態：EventBus 傳遞事件，StateManager/reducers 更新狀態；服務由 container 共用；SQLite 保存事件及相關資料。
+視覺：VisionSystem 預設主路徑；OpenCV/TMvision → FrameBuffer → detector/YOLO（可用 SAHI fallback）→ 校正/棋格/FEN。
+引擎：Pikafish + NNUE，服務處理分析與引擎生命週期。
+手臂：RobotFacade → RobotService → tmflow_json、techmanpy 或 modbus；假機器人另依設定選用。
+輸出設計包含棋局/狀態畫面、實體移子、紀錄及匯出；手臂流程尚未完成。
+設定：.env、可選 backend/config.yaml、啟用時的 data/setup_settings.json；APP_ENV 與 SYSTEM_MODE 用途不同。
+依賴宣告包含 Flask、Flask-SocketIO、techmanpy==1.2、pyModbusTCP、OpenCV、Ultralytics、SAHI、ONNX 等。宣告版本不等於所有套件已安裝或全部相容。
+
+四、程式與文件的關鍵界線
+1. RobotService 已支援 techmanpy，故「完全沒有 Listen adapter」不精確。techmanpy_adapter.py 透過 connect_sct 直接送 PTP/Line、QueueTag 與吸盤 script；它不等於新設計的動態 Point 寫入後 ScriptExit 交回 TMflow 節點。
+2. tmflow_json_adapter.py 使用自訂 JSON line；名稱含 TMflow 不代表它能直接對 Listen 5890 傳 JSON。
+3. FrameBuffer.get_latest_raw 會清掉較舊影格。這適合即時串流，不足以保存同批 A/B、capture_id 與校正版本。
+4. WorkflowCoordinator 的完成回報路徑會開啟影像複驗 session；尚不能據此證明已能以同筆 DONE+A+B 驅動雙圖複驗。
+5. Kinematics 既有棋格 XY 映射與視覺到機械平面校正；不能推論自動處理棋盤傾斜的 Z、工具長度、姿態及路徑避障。
+6. 盤點時 JSON 節點模型為 v3.1 單張、23 節點、DESIGN_ONLY；保留的指南/設計書仍是 v3.0 雙張、55 節點。--check 已確認 Generated guide is stale。此為資料一致性問題，未擅自決定採用哪套硬體流程。
+7. 既有文件記錄 IP/Listen 可用、DO3 控制吸盤；本次沒有控制器連線或現場量測，不將它升格為新實測。
+
+五、TMflow 版本及資料來源
+主要版本依據：本機「說明書及教材/TMflow 1.82.5100/Expression Editor and Listen Node_1.82_Rev1.00_TW.pdf」，433 頁，封面 TMflow 1.82、文件 1.00、2021-02-08。
+使用者已確認使用 TMflow 1.82.51。資料夾名1.82.5100不取代這個版本基準；尚未取得完整官方release notes，不能聲稱已核實所有patch差異。
+本機 Omron i626-e-14 的軟體版本是 1.88；線上官方同版手冊修訂表列 1.82、1.82.2、1.84、1.86、1.88，不能拿它的全部功能當 1.82.5100 功能。
+官方下載中心可選 1.82，但部分下載要求會員。未安裝、更新韌體或執行資料夾內安裝程式。
+官方來源：
+https://www.tm-robot.com/zh-hant/support/download-center
+https://www.tm-robot.com/en/support/developer-area
+https://assets.omron.eu/downloads/latest/manual/en/i626_tm_flow_software_installation_manual_en.pdf
+https://github.com/TechmanRobotInc/tmr_ros1
+官方目前的開發者頁可證實 Listen、資料通訊及 EIH API 的產品路線，但不能單獨證實 1.82 build 的支援範圍。ROS driver 不代表本專案使用 ROS。
+
+六、已核對的 1.82 工程知識
+以下頁碼皆指上述本機 1.82 原廠手冊，不混用 2.x：
+A. 點位（p.236）：Point[名稱].Value 是可讀寫 6 元素 float 陣列 XYZ/RX/RY/RZ；Pose 是 3 元素構型。BaseName/TCPName 在 Point 物件為唯讀。只改 Value 不等於變更 Base/TCP，也不自動證明構型或路徑可達。
+B. Listen（p.248）：TCP server 隨專案啟動建立、停止關閉；文件指定 port 5890。TCP 連通不代表流程已進 Listen。Connection Timeout/Data Timeout 單位毫秒，<=0 不逾時；是否使用無限等待需依專案失敗處理決定。
+C. 封包（pp.250–253）：格式為 $Header,Length,Data,*Checksum 加 CRLF。Length 是 UTF-8 bytes；Checksum 對 $ 與 * 之間 bytes 做 XOR，不包含兩個邊界字元。TMSCT 用於 script；Script ID 為英數字，用來關聯回覆。自訂業務 cmd_id 與 Script ID 應分清。
+D. 狀態（pp.254–258）：TMSTA 00 查外部 script 模式；01 查 QueueTag；90–99 可用於資料訊息。TMSTA 不要求已進 Listen。CPERR 是通訊錯誤，與 TMSCT 的語法 ERROR 不同。
+E. 完成語意（pp.248、264–265）：運動及 DO/AO 有排程順序；不能把 TCP write 成功或收到語法 OK 當整個實體棋步已成功。需確認 QueueTag／應用完成訊息，再用影像確認棋局。
+F. ScriptExit（p.249、260）：無參數版本等待已排程指令完成，再離開 Listen 走 Pass；其後同份 script 不執行。ScriptExit(0)／(1) 是優先命令，立即停止運動並清除運動緩衝，分別走 Fail／Pass。不能互換，也不是硬體急停。
+G. 變數（p.253）：Listen 可讀寫既有專案變數；在 Listen 宣告的是當次區域變數，不會替專案建立持久變數。需預先建立交握欄位。
+H. 外部連線（第6章，pp.218–234）：socket_read/socket_read_string/socket_send/socket_sendline 使用已設定的連線；應依1.82連線設定及函式簽章實作，不猜測存在 socket_open 類 API。
+I. 運動與視覺（第9章）：PTP、Line、ChangeBase、ChangeTCP、QueueTag、Vision_DoJob 及其移動版本須分清執行時序。Vision job 執行不等於 Python 已收到新影像；取像、傳輸 ACK、辨識結果、實體動作 DONE 是不同階段。
+J. I/O：DO3 接線端、極性、負壓回授與停止時行為由現場確認。輸出設值成功不能證明吸住棋子。
+K. 棋盤校正（專案設計推導）：90 交點為9列檔×10橫列，兩方向分別8、9個間距；至少獨立保留驗證點。A/B設計需兩視角各自校正及重疊衝突處理；單張設計則需確定整盤解析度與遮擋符合辨識需求。
+
+七、後續決策順序
+現行主線已確認為單張、TMflow 1.82.51；待使用者後續說明控制流程後，再同步規格、圖及實作，不能沿用舊雙張或複驗假設。
+保留單一活動命令與來源；結果未知的 MOVE 不自動重送；讀回點位及確認狀態後才退出 Listen。
+分段驗證：版本/連線 → 不運動的點位寫入讀回 → 新取像與上傳 → 空載路徑 → 單顆取放 → 吃子 → 完整棋步與複驗。
+本次為文件清理與理解，不是硬體驗收、全產品 QA 或韌體升級。程式、文件、現場行為三者需分開驗證。
+
+八、清理決策
+刪除106份非必要Markdown，保留現行系統6份及61份第三方/歷史資產必要文件。依賴環境內Markdown未列入清理。
+README保留啟動及必要摘要；asset manifest被程式讀取；節點指南被產圖檢查讀取；三份關聯現場文件保留以防遺失點位、I/O、協定與遷移操作依據。
+備份：reports/document_cleanup_20260920/markdown_before_cleanup.zip。
+逐檔路徑、SHA-256及理由：同目錄manifest.json。刪除前核對每份檔案未變動且仍在專題根目錄內。
+
+九、本次驗證結果
+106份目標Markdown均已刪除；67份列入保留清單的Markdown仍存在（現行系統6份，其餘為第三方及歷史資產清單）。86份DOCX仍存在且大小未變。備份逐檔SHA-256通過；保留文件本地連結沒有缺失。5份模型/引擎資產驗證通過；5項既有unit tests通過。節點一致性檢查未通過，原因為已記錄的v3.0/v3.1差異。

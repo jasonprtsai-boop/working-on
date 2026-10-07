@@ -36,7 +36,7 @@ if ($needsRecreate) {
   $created = $false
 
   if (Get-Command "py" -ErrorAction SilentlyContinue) {
-    foreach ($ver in @("3.11", "3.12", "3.10", "3.9")) {
+    foreach ($ver in @("3.10", "3.11", "3.12", "3.9")) {
       try {
         py -$ver -m venv .venv
         $created = $true
@@ -47,12 +47,12 @@ if ($needsRecreate) {
 
   if (-not $created) {
     if (-not (Get-Command "python" -ErrorAction SilentlyContinue)) {
-      Write-Error "[setup] No python found. Install Python 3.11 recommended, or Python 3.9, 3.10, or 3.12 (64-bit), and retry."
+      Write-Error "[setup] No python found. Install Python 3.10.x (64-bit), or another supported Python 3.9-3.12 runtime, and retry."
       exit 1
     }
     $sysVer = & python --version
     if (Test-IncompatiblePythonVersion $sysVer) {
-      Write-Error "[setup] System python is $sysVer (incompatible). Install Python 3.11 recommended, or Python 3.9, 3.10, or 3.12 (64-bit), and retry."
+      Write-Error "[setup] System python is $sysVer (incompatible). Install Python 3.10.x (64-bit), or another supported Python 3.9-3.12 runtime, and retry."
       exit 1
     }
     python -m venv .venv
@@ -60,7 +60,7 @@ if ($needsRecreate) {
 
   $finalVersion = & ".\.venv\Scripts\python.exe" --version
   if (Test-IncompatiblePythonVersion $finalVersion) {
-    Write-Error "[setup] Created venv uses $finalVersion (incompatible). Install Python 3.11 recommended, or Python 3.9, 3.10, or 3.12, and retry."
+    Write-Error "[setup] Created venv uses $finalVersion (incompatible). Install Python 3.10.x, or another supported Python 3.9-3.12 runtime, and retry."
     exit 1
   }
 }

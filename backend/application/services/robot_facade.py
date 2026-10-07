@@ -148,6 +148,27 @@ class RobotFacade(RobotInterface):
             )
         return False
 
+    def trigger_vision(self):
+        """Request the controller-owned Vision node after Python motion completes."""
+        if self._is_fake_mode():
+            return None
+        trigger = getattr(self._impl, "trigger_vision", None)
+        if not callable(trigger):
+            return None
+        try:
+            return trigger()
+        except Exception as exc:
+            logger.error("[RobotFacade] trigger_vision failed: %s", exc, exc_info=True)
+            publish_error_diagnostic(
+                source="robot_facade",
+                module="robot",
+                code="tmflow_vision_trigger_failed",
+                message=str(exc),
+                severity="error",
+                recoverable=True,
+            )
+            return False
+
     def get_status(self) -> Dict[str, Any]:
         fake_mode = self._is_fake_mode()
         try:

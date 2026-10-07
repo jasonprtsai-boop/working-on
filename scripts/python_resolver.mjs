@@ -40,7 +40,7 @@ export function pythonCandidates(root = PROJECT_ROOT) {
   );
 
   if (isWindows()) {
-    for (const version of ['3.11', '3.12', '3.10', '3.9']) {
+    for (const version of ['3.10', '3.11', '3.12', '3.9']) {
       candidates.push(pythonCandidate(`Python launcher ${version}`, 'py.exe', [`-${version}`]));
     }
     candidates.push(pythonCandidate('python on PATH', 'python.exe'));
@@ -99,7 +99,7 @@ export function formatPythonResolutionFailure(error) {
     'Checked:',
     ...attempts.map((attempt) => `- ${attempt.label}: ${attempt.detail}`),
     '',
-    'Fix: run setup_env.ps1 after installing Python 3.11, or set SMART_CHESS_PYTHON to a working python.exe.',
+    'Fix: run setup_env.ps1 after installing Python 3.10.x, or set SMART_CHESS_PYTHON to a working python.exe.',
   ];
   return lines.join('\n');
 }

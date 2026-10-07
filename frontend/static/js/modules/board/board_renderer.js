@@ -90,6 +90,8 @@ export class BoardRenderer {
     addPiece(piece) {
         const el = document.createElement('div');
         el.className = `piece ${piece.type === piece.type.toUpperCase() ? 'red' : 'black'}`;
+        el.dataset.pos = piece.pos;
+        el.dataset.type = piece.type;
         const label = document.createElement('span');
         label.textContent = PIECE_MAP[piece.type] || piece.type;
         el.appendChild(label);
@@ -112,6 +114,8 @@ export class BoardRenderer {
 
     updatePiece(el, piece) {
         el.className = `piece ${piece.type === piece.type.toUpperCase() ? 'red' : 'black'}`;
+        el.dataset.pos = piece.pos;
+        el.dataset.type = piece.type;
         const span = el.querySelector?.('span');
         const label = PIECE_MAP[piece.type] || piece.type;
         if (span && span.textContent !== label) span.textContent = label;
@@ -120,6 +124,7 @@ export class BoardRenderer {
 
     updatePosition(el, pos, immediate) {
         if (!isValidBoardPos(pos)) return;
+        el.dataset.pos = pos;
         const col = pos.charCodeAt(0) - 97;
         const row = 9 - parseInt(pos[1], 10);
         el.style.transition = immediate ? 'none' : 'all 0.4s cubic-bezier(0.2, 0, 0, 1)';

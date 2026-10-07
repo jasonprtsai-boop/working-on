@@ -1,0 +1,45 @@
+{
+  "design_version": "3.0",
+  "purpose": "measurement_worksheet_not_runtime_config",
+  "units": {"position": "mm", "angle": "degree", "wait": "ms"},
+  "base_name": null,
+  "tool_tcp_name": null,
+  "controller_build": null,
+  "timeouts_ms": {"motion":null,"network":null,"vision":null,"capture_pair":null},
+  "vacuum": {"output_label": "DO3", "device": null, "suction_level": null, "release_level": null, "feedback_present": null, "stop_behavior": null, "error_behavior": null},
+  "board": {
+    "files": "abcdefghi",
+    "ranks": "0123456789",
+    "origin_square": "a0",
+    "measurement_reference": null,
+    "sample_z_reference": null,
+    "equal_spacing": null,
+    "horizontal_intersection_span_mm": null,
+    "vertical_intersection_span_mm": null,
+    "rank_offsets_mm": null,
+    "fit_points": [{"square":"a0","x":null,"y":null,"z":null},{"square":"i0","x":null,"y":null,"z":null},{"square":"a9","x":null,"y":null,"z":null}],
+    "validation_points": [{"square":"i9","x":null,"y":null,"z":null},{"square":"e4","x":null,"y":null,"z":null}],
+    "piece_diameter_mm": null,
+    "piece_height_mm": null
+  },
+  "motion": {"safe_z":null,"pick_z":null,"place_z":null,"tool_rotation_deg":[null,null,null],"grip_wait_ms":null,"release_wait_ms":null,"settle_ms":null},
+  "fixed_points_xyz_rxryrz": {
+    "P_READY_SAFE": [null,null,null,null,null,null],
+    "P_PHOTO_A_APPROACH": [null,null,null,null,null,null],
+    "P_PHOTO_A": [null,null,null,null,null,null],
+    "P_PHOTO_B_APPROACH": [null,null,null,null,null,null],
+    "P_PHOTO_B": [null,null,null,null,null,null],
+    "P_DROP_ABOVE": [null,null,null,null,null,null],
+    "P_DROP_RELEASE": [null,null,null,null,null,null]
+  },
+  "fixed_point_base_tcp_overrides": {},
+  "capture": {
+    "camera_layout_confirmed": null,
+    "planned_layout": "one_eye_in_hand_camera_two_poses",
+    "metadata_transport": null,
+    "calibration_version": null,
+    "A": {"job":"JOB_BOARD_A","primary_ranks":[0,1,2,3,4],"expected_visible_ranks":[0,1,2,3,4,5],"calibration_samples":[]},
+    "B": {"job":"JOB_BOARD_B","primary_ranks":[5,6,7,8,9],"expected_visible_ranks":[4,5,6,7,8,9],"calibration_samples":[]},
+    "calibration_sample_format": {"square":"a0","pixel":[null,null]}
+  }
+}

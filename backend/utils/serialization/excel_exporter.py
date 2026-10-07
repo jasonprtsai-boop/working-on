@@ -189,11 +189,18 @@ class ExcelExporter:
 
         def worker():
             while True:
-                game_state, event = self._queue.get()
+                item = self._queue.get()
+                batch = [item]
+                while len(batch) < 50:
+                    try:
+                        batch.append(self._queue.get_nowait())
+                    except queue.Empty:
+                        break
                 try:
-                    self.log_event(game_state, event)
+                    self.log_events_batch(batch)
                 finally:
-                    self._queue.task_done()
+                    for _ in batch:
+                        self._queue.task_done()
 
         self._queue_worker = threading.Thread(
             target=worker,
@@ -785,20 +792,31 @@ class ExcelExporter:
             return "player"
         return ""
 
-    def log_event(self, game_state: Any, event: Dict[str, Any]) -> None:
-        """Append one normalized runtime event into Pipeline_Log."""
+    def log_events_batch(self, items: List[Any]) -> None:
+        """Append multiple normalized runtime events into Pipeline_Log in a single write."""
+        if not items:
+            return
         try:
             with self._lock:
                 wb = load_workbook(self.filename)
                 try:
                     ws = wb[self.PIPELINE_SHEET]
-                    record = self._event_record(game_state, event)
-                    self._append_safe(ws, [record.get(header, "") for header in self.PIPELINE_HEADERS])
+                    for item in items:
+                        if isinstance(item, tuple) and len(item) == 2:
+                            game_state, event = item
+                        else:
+                            game_state, event = None, item
+                        record = self._event_record(game_state, event)
+                        self._append_safe(ws, [record.get(header, "") for header in self.PIPELINE_HEADERS])
                     wb.save(self.filename)
                 finally:
                     wb.close()
         except Exception as exc:
-            logger.error("[ExcelExporter] log_event failed: %s", exc, exc_info=True)
+            logger.error("[ExcelExporter] log_events_batch failed: %s", exc, exc_info=True)
+
+    def log_event(self, game_state: Any, event: Dict[str, Any]) -> None:
+        """Append one normalized runtime event into Pipeline_Log."""
+        self.log_events_batch([(game_state, event)])
 
     def export_session(self, session_id: Optional[str], target_filename: str, profile: str = "research") -> None:
         """Build a multi-sheet research workbook for one session or all sessions."""
@@ -1000,6 +1018,7 @@ class ExcelExporter:
             ("Trace IDs", trace_count),
             ("Total Events", len(records)),
             ("Game Moves", len(move_records)),
+            ("Avg Turn Duration sec", self._avg_turn_seconds(records)),
             ("Vision Events", len(vision_records)),
             ("YOLO Avg Confidence", self._average(vision_records, "avg_confidence")),
             ("YOLO Min Confidence", self._minimum(vision_records, "min_confidence")),
@@ -1242,6 +1261,7 @@ class ExcelExporter:
             "events",
             "traces",
             "game_moves",
+            "avg_turn_sec",
             "vision_events",
             "engine_events",
             "robot_events",
@@ -1273,6 +1293,7 @@ class ExcelExporter:
                     "events": len(items),
                     "traces": len({item.get("trace_id") for item in items if item.get("trace_id")}),
                     "game_moves": sum(1 for item in items if self._is_move(item)),
+                    "avg_turn_sec": self._avg_turn_seconds(items),
                     "vision_events": sum(1 for item in items if self._is_vision(item)),
                     "engine_events": sum(1 for item in items if self._is_engine(item)),
                     "robot_events": sum(1 for item in items if self._is_robot(item)),
@@ -1383,9 +1404,352 @@ class ExcelExporter:
     def _write_pipeline(self, wb: Workbook, records: List[Dict[str, Any]]) -> None:
         self._write_rows(wb, self.PIPELINE_SHEET, self.PIPELINE_HEADERS, records)
 
+    def _avg_turn_seconds(self, records: List[Dict[str, Any]]) -> Any:
+        moves = [row for row in records if self._is_move(row)]
+        if len(moves) < 2:
+            return ""
+        moves.sort(
+            key=lambda r: (
+                self._timestamp_seconds(r.get("timestamp")) or 0.0,
+                self._to_float(r.get("_sequence_id")) or 0.0,
+            )
+        )
+        deltas = []
+        prev_ts = None
+        for m in moves:
+            ts = self._timestamp_seconds(m.get("timestamp"))
+            if ts is not None and prev_ts is not None:
+                diff = ts - prev_ts
+                if diff >= 0:
+                    deltas.append(diff)
+            if ts is not None:
+                prev_ts = ts
+        if not deltas:
+            return ""
+        return round(sum(deltas) / len(deltas), 2)
+
+    def _parse_move_details(self, move_str: str, fen_before: str, record: Dict[str, Any]) -> Dict[str, Any]:
+        """Parse UCI move into Xiangqi piece names, Chinese notation, coordinates and kinematics."""
+        RED_FULL_NAMES = {"K": "紅帥", "A": "紅仕", "B": "紅相", "R": "紅俥", "N": "紅傌", "C": "紅炮", "P": "紅兵"}
+        BLACK_FULL_NAMES = {"k": "黑將", "a": "黑士", "b": "黑象", "r": "黑車", "n": "黑馬", "c": "黑砲", "p": "黑卒"}
+        RED_SYMBOLS = {"K": "帥", "A": "仕", "B": "相", "R": "俥", "N": "傌", "C": "炮", "P": "兵"}
+        BLACK_SYMBOLS = {"k": "將", "a": "士", "b": "象", "r": "車", "n": "馬", "c": "砲", "p": "卒"}
+        CHINESE_DIGITS_RED = ["", "一", "二", "三", "四", "五", "六", "七", "八", "九"]
+        DIGITS_BLACK = ["", "1", "2", "3", "4", "5", "6", "7", "8", "9"]
+
+        move = str(move_str or "").strip().lower()
+        actor_raw = str(record.get("actor") or "").lower()
+        is_player = actor_raw in ("player", "red") or bool(record.get("player_move"))
+        is_ai = actor_raw in ("ai", "robot", "black", "engine") or bool(record.get("ai_move"))
+
+        res = {
+            "turn_side": "紅方" if is_player else ("黑方" if is_ai else "紅方"),
+            "actor": "玩家 (Player)" if is_player else ("AI機械手臂 (AI Robot)" if is_ai else "未知"),
+            "move": move,
+            "move_chinese": move,
+            "piece_name": "",
+            "action_type": "移動",
+            "captured_piece": "無",
+            "from_square": "",
+            "to_square": "",
+            "from_board_coord": "",
+            "to_board_coord": "",
+            "from_robot_xy": "",
+            "to_robot_xy": "",
+            "robot_pose": "",
+        }
+
+        # Extract robot pose from payload if present
+        raw = self._load_json(record.get("raw_payload"))
+        raw = raw if isinstance(raw, dict) else {}
+        robot_dict = self._dict_child(raw, "robot")
+        pose_val = self._first_from_sources([raw, robot_dict], "robot_pose", "pose", "coords", "pos", "target_pos", default=None)
+        if pose_val is not None:
+            res["robot_pose"] = self._safe_json(pose_val) if isinstance(pose_val, (dict, list)) else str(pose_val)
+
+        if len(move) < 4:
+            return res
+
+        from_file = move[0]
+        from_rank = move[1]
+        to_file = move[2]
+        to_rank = move[3]
+
+        if from_file not in "abcdefghi" or to_file not in "abcdefghi" or not from_rank.isdigit() or not to_rank.isdigit():
+            return res
+
+        from_square = f"{from_file}{from_rank}"
+        to_square = f"{to_file}{to_rank}"
+        res["from_square"] = from_square
+        res["to_square"] = to_square
+
+        from_col = ord(from_file) - ord("a")
+        from_row = 9 - int(from_rank)
+        to_col = ord(to_file) - ord("a")
+        to_row = 9 - int(to_rank)
+
+        res["from_board_coord"] = f"[{from_col}, {int(from_rank)}]"
+        res["to_board_coord"] = f"[{to_col}, {int(to_rank)}]"
+
+        # Map to physical kinematics coordinates
+        try:
+            from backend.utils.kinematics import kinematics
+
+            from_xy = kinematics.square_to_robot(from_square)
+            to_xy = kinematics.square_to_robot(to_square)
+            if from_xy:
+                res["from_robot_xy"] = f"[{round(from_xy[0], 1)}, {round(from_xy[1], 1)}]"
+            if to_xy:
+                res["to_robot_xy"] = f"[{round(to_xy[0], 1)}, {round(to_xy[1], 1)}]"
+        except Exception:
+            pass
+
+        # Parse board state from fen_before to identify moving and captured pieces
+        board = None
+        if fen_before and isinstance(fen_before, str):
+            try:
+                from backend.utils.fen.parser import fen_to_board
+
+                board = fen_to_board(fen_before)
+            except Exception:
+                board = None
+
+        moving_piece_char = None
+        captured_piece_char = None
+        if board and 0 <= from_row < 10 and 0 <= from_col < 9:
+            moving_piece_char = board[from_row][from_col]
+        if board and 0 <= to_row < 10 and 0 <= to_col < 9:
+            captured_piece_char = board[to_row][to_col]
+
+        # Determine turn_side and piece identity
+        if moving_piece_char in RED_FULL_NAMES:
+            turn_side = "紅方"
+            actor_name = "玩家 (Player)"
+            piece_name = RED_FULL_NAMES[moving_piece_char]
+            piece_sym = RED_SYMBOLS[moving_piece_char]
+            is_red = True
+        elif moving_piece_char in BLACK_FULL_NAMES:
+            turn_side = "黑方"
+            actor_name = "AI機械手臂 (AI Robot)"
+            piece_name = BLACK_FULL_NAMES[moving_piece_char]
+            piece_sym = BLACK_SYMBOLS[moving_piece_char]
+            is_red = False
+        else:
+            is_red = not is_ai
+            turn_side = "紅方" if is_red else "黑方"
+            actor_name = "玩家 (Player)" if is_red else "AI機械手臂 (AI Robot)"
+            piece_name = "紅子" if is_red else "黑子"
+            piece_sym = "子"
+
+        res["turn_side"] = turn_side
+        res["actor"] = actor_name
+        res["piece_name"] = piece_name
+
+        # Determine capture
+        if captured_piece_char in RED_FULL_NAMES:
+            res["captured_piece"] = RED_FULL_NAMES[captured_piece_char]
+            res["action_type"] = "吃子"
+        elif captured_piece_char in BLACK_FULL_NAMES:
+            res["captured_piece"] = BLACK_FULL_NAMES[captured_piece_char]
+            res["action_type"] = "吃子"
+        else:
+            is_cap_flag = self._first_from_sources([raw, self._dict_child(raw, "robot")], "is_capture", "capture", default=False)
+            if is_cap_flag:
+                res["action_type"] = "吃子"
+                res["captured_piece"] = "敵方棋子"
+            else:
+                res["action_type"] = "移動"
+                res["captured_piece"] = "無"
+
+        # Generate standard Chinese Xiangqi notation
+        try:
+            if is_red:
+                start_col_num = 9 - from_col
+                dest_col_num = 9 - to_col
+                start_str = CHINESE_DIGITS_RED[start_col_num] if 1 <= start_col_num <= 9 else str(start_col_num)
+                if to_row == from_row:
+                    dir_str = "平"
+                    dest_str = CHINESE_DIGITS_RED[dest_col_num] if 1 <= dest_col_num <= 9 else str(dest_col_num)
+                elif to_row < from_row:
+                    dir_str = "進"
+                    if piece_sym in ("帥", "俥", "車", "炮", "兵"):
+                        step = from_row - to_row
+                        dest_str = CHINESE_DIGITS_RED[step] if 1 <= step <= 9 else str(step)
+                    else:
+                        dest_str = CHINESE_DIGITS_RED[dest_col_num] if 1 <= dest_col_num <= 9 else str(dest_col_num)
+                else:
+                    dir_str = "退"
+                    if piece_sym in ("帥", "俥", "車", "炮", "兵"):
+                        step = to_row - from_row
+                        dest_str = CHINESE_DIGITS_RED[step] if 1 <= step <= 9 else str(step)
+                    else:
+                        dest_str = CHINESE_DIGITS_RED[dest_col_num] if 1 <= dest_col_num <= 9 else str(dest_col_num)
+                res["move_chinese"] = f"{piece_sym}{start_str}{dir_str}{dest_str}"
+            else:
+                start_col_num = from_col + 1
+                dest_col_num = to_col + 1
+                start_str = DIGITS_BLACK[start_col_num] if 1 <= start_col_num <= 9 else str(start_col_num)
+                if to_row == from_row:
+                    dir_str = "平"
+                    dest_str = DIGITS_BLACK[dest_col_num] if 1 <= dest_col_num <= 9 else str(dest_col_num)
+                elif to_row > from_row:
+                    dir_str = "進"
+                    if piece_sym in ("將", "車", "砲", "卒"):
+                        step = to_row - from_row
+                        dest_str = DIGITS_BLACK[step] if 1 <= step <= 9 else str(step)
+                    else:
+                        dest_str = DIGITS_BLACK[dest_col_num] if 1 <= dest_col_num <= 9 else str(dest_col_num)
+                else:
+                    dir_str = "退"
+                    if piece_sym in ("將", "車", "砲", "卒"):
+                        step = from_row - to_row
+                        dest_str = DIGITS_BLACK[step] if 1 <= step <= 9 else str(step)
+                    else:
+                        dest_str = DIGITS_BLACK[dest_col_num] if 1 <= dest_col_num <= 9 else str(dest_col_num)
+                res["move_chinese"] = f"{piece_sym}{start_str}{dir_str}{dest_str}"
+        except Exception:
+            res["move_chinese"] = f"{piece_name} {from_square}->{to_square}"
+
+        return res
+
     def _write_game_moves(self, wb: Workbook, records: List[Dict[str, Any]]) -> None:
-        headers = ["event_id", "timestamp", "actor", "move", "player_move", "ai_move", "fen_before", "fen_after", "system_status", "trace_id"]
-        self._write_rows(wb, "Game Moves", headers, [row for row in records if self._is_move(row)])
+        headers = [
+            "round_number",
+            "move_number",
+            "turn_side",
+            "actor",
+            "move",
+            "move_chinese",
+            "piece_name",
+            "action_type",
+            "captured_piece",
+            "from_square",
+            "to_square",
+            "from_board_coord",
+            "to_board_coord",
+            "from_robot_xy",
+            "to_robot_xy",
+            "turn_duration_sec",
+            "round_duration_sec",
+            "thinking_ms",
+            "robot_ms",
+            "vision_latency_ms",
+            "engine_score",
+            "engine_depth",
+            "robot_status",
+            "robot_pose",
+            "fen_before",
+            "fen_after",
+            "system_status",
+            "timestamp",
+            "trace_id",
+            "session_id",
+            "event_id",
+        ]
+        raw_moves = [row for row in records if self._is_move(row)]
+        raw_moves.sort(
+            key=lambda r: (
+                self._timestamp_seconds(r.get("timestamp")) or 0.0,
+                self._to_float(r.get("_sequence_id")) or 0.0,
+            )
+        )
+
+        rows = []
+        round_number = 1
+        round_start_ts: Optional[float] = None
+        prev_ts: Optional[float] = None
+        moves_in_current_round = 0
+        last_fen = "rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w - - 0 1"
+
+        for idx, record in enumerate(raw_moves, start=1):
+            move_str = record.get("move") or record.get("player_move") or record.get("ai_move") or ""
+            fen_before = record.get("fen_before") or last_fen
+            details = self._parse_move_details(move_str, fen_before, record)
+
+            turn_side = details["turn_side"]
+            actor = details["actor"]
+            current_ts = self._timestamp_seconds(record.get("timestamp"))
+
+            # Calculate turn duration (seconds since last move)
+            turn_duration_sec = ""
+            if current_ts is not None and prev_ts is not None:
+                diff = current_ts - prev_ts
+                if diff >= 0:
+                    turn_duration_sec = round(diff, 2)
+
+            # Round tracking: Red starting move advances the round after the first round
+            if turn_side == "紅方" and moves_in_current_round > 0:
+                round_number += 1
+                moves_in_current_round = 0
+                round_start_ts = current_ts
+            elif round_start_ts is None and current_ts is not None:
+                round_start_ts = current_ts
+
+            moves_in_current_round += 1
+
+            # Round duration: elapsed seconds since current round started
+            round_duration_sec = ""
+            if current_ts is not None and round_start_ts is not None:
+                r_diff = current_ts - round_start_ts
+                if r_diff >= 0:
+                    round_duration_sec = round(r_diff, 2)
+
+            prev_ts = current_ts
+
+            # Track FEN progression
+            fen_after = record.get("fen_after") or ""
+            if fen_after:
+                last_fen = fen_after
+
+            # Latency and telemetry metrics
+            raw = self._load_json(record.get("raw_payload"))
+            raw = raw if isinstance(raw, dict) else {}
+            thinking_ms = record.get("engine_ms")
+            if thinking_ms in ("", None):
+                thinking_ms = self._first_from_sources([raw, self._dict_child(raw, "engine")], "engine_ms", "decision_time_ms", default="")
+            robot_ms = record.get("robot_ms")
+            if robot_ms in ("", None):
+                robot_ms = self._first_from_sources([raw, self._dict_child(raw, "robot")], "robot_ms", "duration_ms", default="")
+            vision_latency_ms = record.get("yolo_latency_ms")
+            if vision_latency_ms in ("", None):
+                vision_latency_ms = self._first_from_sources([raw, self._dict_child(raw, "vision")], "yolo_latency_ms", "latency_ms", default="")
+
+            row = {
+                "round_number": round_number,
+                "move_number": idx,
+                "turn_side": turn_side,
+                "actor": actor,
+                "move": move_str,
+                "move_chinese": details["move_chinese"],
+                "piece_name": details["piece_name"],
+                "action_type": details["action_type"],
+                "captured_piece": details["captured_piece"],
+                "from_square": details["from_square"],
+                "to_square": details["to_square"],
+                "from_board_coord": details["from_board_coord"],
+                "to_board_coord": details["to_board_coord"],
+                "from_robot_xy": details["from_robot_xy"],
+                "to_robot_xy": details["to_robot_xy"],
+                "turn_duration_sec": turn_duration_sec,
+                "round_duration_sec": round_duration_sec,
+                "thinking_ms": thinking_ms if thinking_ms is not None else "",
+                "robot_ms": robot_ms if robot_ms is not None else "",
+                "vision_latency_ms": vision_latency_ms if vision_latency_ms is not None else "",
+                "engine_score": record.get("engine_score", ""),
+                "engine_depth": record.get("engine_depth", ""),
+                "robot_status": record.get("robot_status", ""),
+                "robot_pose": details["robot_pose"],
+                "fen_before": fen_before,
+                "fen_after": fen_after,
+                "system_status": record.get("system_status", ""),
+                "timestamp": record.get("timestamp", ""),
+                "trace_id": record.get("trace_id", ""),
+                "session_id": record.get("session_id", ""),
+                "event_id": record.get("event_id", ""),
+            }
+            rows.append(row)
+
+        self._write_rows(wb, "Game Moves", headers, rows)
 
     def _write_field_test_report(self, wb: Workbook, records: List[Dict[str, Any]]) -> None:
         headers = [
@@ -1634,8 +1998,48 @@ class ExcelExporter:
         self._write_rows(wb, "Engine AI", headers, [row for row in records if self._is_engine(row)])
 
     def _write_robot_control(self, wb: Workbook, records: List[Dict[str, Any]]) -> None:
-        headers = ["event_id", "timestamp", "robot_status", "move", "robot_ms", "system_status", "trace_id", "raw_payload"]
-        self._write_rows(wb, "Robot Control", headers, [row for row in records if self._is_robot(row)])
+        headers = [
+            "event_id",
+            "timestamp",
+            "robot_status",
+            "move",
+            "move_chinese",
+            "action",
+            "is_capture",
+            "from_square",
+            "to_square",
+            "from_robot_xy",
+            "to_robot_xy",
+            "robot_pose",
+            "robot_ms",
+            "system_status",
+            "trace_id",
+            "raw_payload",
+        ]
+        rows = []
+        for record in records:
+            if not self._is_robot(record):
+                continue
+            row = dict(record)
+            move_str = record.get("move") or record.get("ai_move") or ""
+            fen_before = record.get("fen_before") or ""
+            details = self._parse_move_details(move_str, fen_before, record)
+            raw = self._load_json(record.get("raw_payload"))
+            raw = raw if isinstance(raw, dict) else {}
+            action = self._first_value(raw, "action", "command", default="")
+            is_capture = self._first_value(raw, "is_capture", "capture", default="")
+            if is_capture == "" and details.get("action_type") == "吃子":
+                is_capture = True
+            row["move_chinese"] = details.get("move_chinese", "")
+            row["action"] = action or details.get("action_type", "")
+            row["is_capture"] = is_capture
+            row["from_square"] = details.get("from_square", "")
+            row["to_square"] = details.get("to_square", "")
+            row["from_robot_xy"] = details.get("from_robot_xy", "")
+            row["to_robot_xy"] = details.get("to_robot_xy", "")
+            row["robot_pose"] = details.get("robot_pose", "")
+            rows.append(row)
+        self._write_rows(wb, "Robot Control", headers, rows)
 
     def _write_system_events(self, wb: Workbook, records: List[Dict[str, Any]]) -> None:
         headers = [
@@ -2136,6 +2540,8 @@ class ExcelExporter:
         elif lowered.endswith("_sec"):
             fmt = "0.0"
         elif lowered in (
+            "round_number",
+            "move_number",
             "detections_count",
             "small_object_count",
             "frames",

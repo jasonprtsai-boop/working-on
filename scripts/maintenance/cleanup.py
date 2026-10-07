@@ -11,7 +11,7 @@ from datetime import datetime
 ROOT = Path(__file__).resolve().parents[2]
 RETENTION_COUNT = 3  # Keep latest 3 of each artifact type
 
-SKIP_DIR_NAMES = {".git", ".venv", "node_modules", "engine"}
+SKIP_DIR_NAMES = {".git", ".venv", "node_modules"}
 PROTECTED_FILES = {"system-review-20260515.md", "file_consistency_audit.md"}
 PROTECTED_ASSET_PREFIX = ("backend", "infrastructure", "protected_assets")
 

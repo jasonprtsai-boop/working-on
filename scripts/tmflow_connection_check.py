@@ -16,9 +16,9 @@ import time
 from dataclasses import dataclass
 
 
-DEFAULT_ROBOT_IP = "192.168.10.10"
+DEFAULT_ROBOT_IP = "192.168.1.200"
 # Keep this aligned with ROBOT_PC_IP in the lab setup docs.
-DEFAULT_SOURCE_IP = "192.168.10.50"
+DEFAULT_SOURCE_IP = "192.168.1.99"
 DEFAULT_PORT = 5890
 
 

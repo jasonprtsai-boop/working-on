@@ -1,0 +1,247 @@
+{
+  "_description": "S.M.A.R.T. Chess Robot 系統全設定與量測計算參數檔（雙半區與象棋河界規則版）",
+  "_version": "2.0",
+  "_instructions": "中國象棋棋盤因中央有「楚河漢界」，本設定檔將棋盤拆分為「上半區（黑方半盤）」與「下半區（紅方半盤）」獨立量測。填入示教點後執行 python scripts/calculate_system_calibration.py 自動計算 90 格座標並同步至系統。",
+
+  "board_calibration": {
+    "mode": "split_halves",
+    "units": "mm",
+    "description": "實體棋盤基準點量測。以手臂吸盤 TCP 對準棋盤交叉點中心示教，記錄 X, Y, Z",
+
+    "upper_half": {
+      "name": "上半區（黑方半盤，Ranks 5 ~ 9）",
+      "grid_span": "橫向 a~i 共 8 段間距，縱向 5~9 共 4 段間距",
+      "top_left": {
+        "square": "a9",
+        "description": "左上角：黑方底線左端（黑左車位）",
+        "x": 0.0,
+        "y": 460.0,
+        "z": 20.0
+      },
+      "bottom_right": {
+        "square": "i5",
+        "description": "右下角：黑方河沿右端（楚河漢界黑方側右端交叉點）",
+        "x": 320.0,
+        "y": 300.0,
+        "z": 20.0
+      },
+      "optional_bottom_left": {
+        "square": "a5",
+        "description": "（選填）左下角：黑方河沿左端（楚河漢界黑方側左端交叉點），若未填將自動由 TL/BR 直角推算",
+        "x": null,
+        "y": null,
+        "z": null
+      },
+      "optional_top_right": {
+        "square": "i9",
+        "description": "（選填）右上角：黑方底線右端（黑右車位），用於非矩形旋轉校正",
+        "x": null,
+        "y": null,
+        "z": null
+      }
+    },
+
+    "lower_half": {
+      "name": "下半區（紅方半盤，Ranks 0 ~ 4）",
+      "grid_span": "橫向 a~i 共 8 段間距，縱向 0~4 共 4 段間距",
+      "top_left": {
+        "square": "a4",
+        "description": "左上角：紅方河沿左端（楚河漢界紅方側左端交叉點）",
+        "x": 0.0,
+        "y": 260.0,
+        "z": 20.0
+      },
+      "bottom_right": {
+        "square": "i0",
+        "description": "右下角：紅方底線右端（紅右車位）",
+        "x": 320.0,
+        "y": 100.0,
+        "z": 20.0
+      },
+      "optional_bottom_left": {
+        "square": "a0",
+        "description": "（選填）左下角：紅方底線左端（紅左車位，全盤原點），若未填將自動由 TL/BR 直角推算",
+        "x": null,
+        "y": null,
+        "z": null
+      },
+      "optional_top_right": {
+        "square": "i4",
+        "description": "（選填）右上角：紅方河沿右端（楚河漢界紅方側右端交叉點）",
+        "x": null,
+        "y": null,
+        "z": null
+      }
+    },
+
+    "river": {
+      "description": "楚河漢界（River）幾何規格",
+      "note": "河界位於 Rank 4 (紅方河沿 a4..i4) 與 Rank 5 (黑方河沿 a5..i5) 之間。計算工具會由 (Y_a5 - Y_a4) 計算出真實河界寬度，並依實際尺寸分開計算上下兩半盤，徹底消除整盤單一線性插值產生的棋格落點誤差。"
+    },
+
+    "validation_points": [
+      {
+        "square": "i9",
+        "description": "黑方右上角獨立檢驗點",
+        "x": 320.0,
+        "y": 460.0,
+        "z": 20.0
+      },
+      {
+        "square": "e1",
+        "description": "紅方九宮天元中心點（帥位正前方）",
+        "x": 160.0,
+        "y": 140.0,
+        "z": 20.0
+      },
+      {
+        "square": "e8",
+        "description": "黑方九宮天元中心點（將位正前方）",
+        "x": 160.0,
+        "y": 420.0,
+        "z": 20.0
+      }
+    ],
+
+    "dead_zone": {
+      "description": "死棋盒 / 棄子區配置（吃子放置點）",
+      "x": 420.0,
+      "y": 100.0,
+      "z": 20.0,
+      "width": 80.0,
+      "height": 80.0,
+      "slot_spacing": 25.0,
+      "slot_count": 4
+    }
+  },
+
+  "robot_motion": {
+    "units": {
+      "distance": "mm",
+      "angle": "degree",
+      "speed": "percent",
+      "time": "seconds"
+    },
+    "description": "機械手臂動作高度、抓取姿態與運動速度",
+    "z_safe": 150.0,
+    "z_grab": 20.0,
+    "place_z_offset": 2.0,
+    "tool_rx": 0.0,
+    "tool_ry": 0.0,
+    "tool_rz": 0.0,
+    "travel_speed": 30.0,
+    "lift_speed": 30.0,
+    "approach_speed": 15.0,
+    "default_acceleration": 60.0,
+    "timeout_sec": 10.0
+  },
+
+  "robot_limits": {
+    "units": "mm",
+    "description": "機械手臂安全軟體邊界保護（超出範圍自動阻擋）",
+    "min_x": -600.0,
+    "max_x": 600.0,
+    "min_y": 100.0,
+    "max_y": 600.0,
+    "min_z": 0.0,
+    "max_z": 250.0
+  },
+
+  "gripper_vacuum": {
+    "description": "吸盤 / 夾爪 I/O 與氣閥時序",
+    "output_device": "ControlBox",
+    "output_pin": "DO3",
+    "suction_level": 1,
+    "release_level": 0,
+    "grip_wait_ms": 300,
+    "release_wait_ms": 200,
+    "settle_ms": 500
+  },
+
+  "vision_calibration": {
+    "mode": "split_halves",
+    "description": "相機視覺校正（拆分為上半區與下半區像素點，消除相機看河界之透視畸變）",
+    "source": "opencv",
+    "camera_index": 0,
+    "output_size": [1000, 1000],
+    "upper_half": {
+      "description": "上半區（黑方半盤，Ranks 5~9）影像像素座標 [x, y]",
+      "top_left": [50.0, 50.0],
+      "bottom_right": [850.0, 480.0]
+    },
+    "lower_half": {
+      "description": "下半區（紅方半盤，Ranks 0~4）影像像素座標 [x, y]",
+      "top_left": [50.0, 520.0],
+      "bottom_right": [850.0, 950.0]
+    },
+    "board_corners": [
+      [50.0, 50.0],
+      [850.0, 50.0],
+      [850.0, 950.0],
+      [50.0, 950.0]
+    ],
+    "confidence_threshold": 0.30
+  },
+
+  "system_connection": {
+    "description": "手臂連線協定與網路設定",
+    "adapter": "modbus",
+    "robot_ip": "192.168.10.10",
+    "robot_port": 502,
+    "pc_ip": "192.168.10.50",
+    "subnet_mask": "255.255.0.0",
+    "tmflow_version": "1.82.51",
+    "fake_robot": false,
+    "auto_execute_robot": false
+  },
+
+  "ai_engine": {
+    "description": "Pikafish NNUE 象棋引擎參數",
+    "engine_path": "backend/infrastructure/protected_assets/engine/pikafish-avx2.exe",
+    "nnue_path": "backend/infrastructure/protected_assets/engine/pikafish.nnue",
+    "search_depth": 6,
+    "time_limit_ms": 500
+  },
+
+  "xiangqi_rules_and_geometry": {
+    "description": "中國象棋棋盤佈局與走子幾何約束",
+    "board_structure": {
+      "total_files": 9,
+      "total_ranks": 10,
+      "total_intersections": 90,
+      "file_symbols": "abcdefghi",
+      "lower_half_ranks": [0, 1, 2, 3, 4],
+      "upper_half_ranks": [5, 6, 7, 8, 9]
+    },
+    "palace_rules": {
+      "description": "九宮格約束：將/帥與士/仕活動範圍嚴格限定在九宮內，不得出界",
+      "red_palace": {
+        "files": ["d", "e", "f"],
+        "ranks": [0, 1, 2],
+        "diagonals": [["d0", "e1", "f2"], ["f0", "e1", "d2"]]
+      },
+      "black_palace": {
+        "files": ["d", "e", "f"],
+        "ranks": [7, 8, 9],
+        "diagonals": [["d7", "e8", "f9"], ["f7", "e8", "d9"]]
+      }
+    },
+    "river_and_pieces_rules": {
+      "river_rank_boundary": [4, 5],
+      "elephant_cannot_cross_river": {
+        "note": "相/象不可過河，僅能在己方半盤走田字",
+        "red_elephant_valid_squares": ["c0", "g0", "a2", "e2", "i2", "c4", "g4"],
+        "black_elephant_valid_squares": ["c9", "g9", "a7", "e7", "i7", "c5", "g5"]
+      },
+      "soldier_pawn_river_rules": {
+        "note": "兵/卒過河前只能向前直走一格；過河後可向前或左右橫走一格，不可後退",
+        "red_soldier_initial_squares": ["a3", "c3", "e3", "g3", "i3"],
+        "black_soldier_initial_squares": ["a6", "c6", "e6", "g6", "i6"]
+      },
+      "cannon_initial_squares": {
+        "red_cannon": ["b2", "h2"],
+        "black_cannon": ["b7", "h7"]
+      }
+    }
+  }
+}

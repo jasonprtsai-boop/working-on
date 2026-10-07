@@ -63,7 +63,7 @@ function Resolve-ProjectPython {
   $candidates = @()
   if ($env:SMART_CHESS_PYTHON) { $candidates += New-PythonCandidate "env override" $env:SMART_CHESS_PYTHON }
   $candidates += New-PythonCandidate "project virtualenv" (Join-Path $root ".venv\Scripts\python.exe")
-  foreach ($ver in @("3.11", "3.12", "3.10", "3.9")) {
+  foreach ($ver in @("3.10", "3.11", "3.12", "3.9")) {
     $candidates += New-PythonCandidate "Python launcher $ver" "py.exe" @("-$ver")
   }
   $candidates += New-PythonCandidate "python on PATH" "python.exe"
@@ -72,7 +72,7 @@ function Resolve-ProjectPython {
     $tested = Test-PythonCandidate $cand
     if ($tested.Ok) { return $tested }
   }
-  throw "No usable Python runtime was found. Run setup_env.ps1 first."
+  throw "No usable Python runtime was found. Install Python 3.10.x and run setup_env.ps1 first, or set SMART_CHESS_PYTHON."
 }
 
 function Test-ServerReachable {
@@ -208,4 +208,3 @@ try {
     $backendProcess.Dispose()
   }
 }
-

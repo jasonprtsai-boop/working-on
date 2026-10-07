@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 REPORT_PATH = ROOT / "reports" / "file_consistency_audit.md"
 
 SKIP_DIRS = {
+    ".agents",
     ".git",
     ".venv",
     ".cleanup_quarantine",

@@ -1,806 +1,110 @@
-# TMflow 1.82.51 現場操作手冊：2026-09-02 修正版
+# 現場操作與設定表 v3.0
 
-最後修正：2026-09-02
+> 歷史操作表（2026-10-05 標示）：本文雙張流程不適用現行單張基準。校正與安全項目可供參考，但不可按本文步驟直接修改或啟動控制器；現行基準見 README。
 
-> 現場第一線請以本文件為準；節點展開圖與完整設計文件只作工程支援。
+更新：2026-09-18。DO3 吸盤、雙張棋盤拍攝、Listen 動態點位。
 
-這份手冊以目前現場已做出的節點為準。目標是先跑通「安全高度假流程」，不要同時測 Network、Listen、If 防呆、下降 Z、吸盤。
+這是新版設計的建置與量測手冊，不是已驗證的現場程式。使用者已確認 IP、指令通訊、Listen 可用；從新點位與新版流程開始，不重做舊網路排錯。
 
-## 1. 最重要規則
+完整原理見 [設計書](TMFLOW_1_82_51_FULL_NODE_DESIGN.md)，每一個節點見 [設定表](TMFLOW_1_82_51_NODE_SETUP_GUIDE.md)。
 
-只能用左側可拖曳節點：
+已做好舊版時，先看 [舊版改新版對照表](TMFLOW_V2_TO_V3_MIGRATION.md)：哪些保留、替換、新增，以及哪些舊節點要等替代段完成才能移除；不要只按新舊重複的節點編號刪除。
 
-```text
-Set
-Point
-Move
-If
-Goto
-Wait for
-Network
-Listen
-Stop
-```
+## 一、先完成一次初始設定
 
-右側工具不要當流程節點：
+| 項目 | 現場填寫 |
+| --- | --- |
+| 控制器版本 | 1.82.51；完整 build：待填 |
+| Base 名稱 | 待填；以下棋盤量測與動態點使用同一座標系 |
+| 吸盤 Tool/TCP 名稱 | 待填；確認吸盤接觸中心與 TCP 一致 |
+| 吸盤輸出 | DO3（使用者已確認）；控制箱/工具端：待確認 |
+| SUCTION_LEVEL / RELEASE_LEVEL | 暫按 ON / OFF；現場核對極性 |
+| Stop / Error 時 DO3 狀態 | 待填；核對控制器 Status IO 設定 |
+| 相機配置 | 暫按同一顆手臂相機；待確認 |
+| 抓取姿態 Rx/Ry/Rz | 待填，單位 degree |
+| safe_z / pick_z / place_z | 待填，單位 mm |
+| grip_wait_ms / release_wait_ms | 單顆取放量測後填入，不沿用固定保證值 |
+| settle_ms | 拍照點停穩後量測；避免模糊，不以延遲代替精準到位 |
+| Motion / Network / Vision timeout | 依量測最長正常時間留餘量；不得無限等待影像或回報 |
 
-```text
-ModbusDev
-Set IO while Project Error
-Set IO while Project Stop
-Operation Space
-Serial Port
-Stop Watch
-```
+不新增逐節點「設定完成」判斷。以上在開機前完成，循環內只使用結果。
 
-節點名稱能改時只輸入：
+## 二、棋盤基準量測
 
-```text
-A2
-B11
-C5
-F2
-```
+量的是落棋的**交點中心**，不是棋盤外框；同一 Base、同一吸盤 TCP。
 
-不要輸入空格、中文、底線、括號、斜線。若 TMflow 自動顯示 `A2SET`，或 `Listen1` 暫時不能改名，以畫面位置對照即可。
+| 棋格 | X mm | Y mm | Z mm | 用途 |
+| --- | --- | --- | --- | --- |
+| a0 | 待填 | 待填 | 待填 | 原點；紅方視角左下 |
+| i0 | 待填 | 待填 | 待填 | 定義棋盤橫向 8 段間距 |
+| a9 | 待填 | 待填 | 待填 | 定義棋盤縱向 9 段間距 |
+| i9 | 待填 | 待填 | 待填 | 對角獨立驗證 |
+| e4（或另一中心點） | 待填 | 待填 | 待填 | 中間位置獨立驗證 |
 
-變數建立時不要輸入 `var_`，例如只輸入 `status`。畫面顯示 `var_status` 是正常的。
+另填：棋子直徑/高度、交點間距是否均勻、河界是否加寬。若有特殊列距，提供 0..9 各列位置。棋盤尺寸本身不足以得到機械座標。
 
-## 2. 目前問題在哪
+一般用前三點建立 XY 仿射，再用後兩點檢查；驗證誤差應以吸盤接觸面、棋子尺寸和實際定位需求決定，不能直接宣稱某個通用誤差一定可接受。
 
-今天卡關主要有三個來源：
+目前 Kinematics 只有 XY 仿射；棋盤若傾斜需要先調平或擴充 Z 補償。固定 pick_z 只適用於已驗證的平面與棋子高度。
 
-| 問題 | 現象 | 解法 |
+各交點的 Z 要註明量測基準：棋盤表面、棋子頂面或上方量測高度。若在安全高度量 XY，該 Z 不是 pick_z，也不能用來推斷棋盤表面是否水平；高度需另量。
+
+## 三、固定點位填寫
+
+| 點名 | X | Y | Z | Rx | Ry | Rz | 用途 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| P_READY_SAFE | 待填 | 待填 | 待填 | 待填 | 待填 | 待填 | 空載待命/轉移 |
+| P_PHOTO_A_APPROACH | 待填 | 待填 | 待填 | 待填 | 待填 | 待填 | 第一拍照點接近/退出 |
+| P_PHOTO_A | 待填 | 待填 | 待填 | 待填 | 待填 | 待填 | 近側半盤 |
+| P_PHOTO_B_APPROACH | 待填 | 待填 | 待填 | 待填 | 待填 | 待填 | 第二拍照點接近/退出 |
+| P_PHOTO_B | 待填 | 待填 | 待填 | 待填 | 待填 | 待填 | 遠側半盤 |
+| P_DROP_ABOVE | 待填 | 待填 | 待填 | 待填 | 待填 | 待填 | 死棋盒上方轉移 |
+| P_DROP_RELEASE | 待填 | 待填 | 待填 | 待填 | 待填 | 待填 | 死棋釋放點 |
+
+固定點在 TMflow 中示教。拍照位置與吸盤抓棋位置是不同用途，不能拿影像中心座標直接當吸盤 TCP。兩個拍照點若使用不同 Base/TCP，需另外記錄；動態抓棋點仍統一使用第一個表的 Base/TCP。P_READY_SAFE 與所有取放 ABOVE 點應能在已驗證的轉移高度及抓取姿態連接，死棋盒路徑不足時另加中繼點。
+
+## 四、動態點模板
+
+建立 P_SRC_ABOVE、P_SRC_PICK、P_DST_ABOVE、P_DST_PICK、P_DST_PLACE 五個 Point。先用同一已知可達姿態建立模板並設定正確 Base/TCP/構型；實際座標由 Python 每筆寫入，不手填 90 個點。
+
+| 配對 | 要相同的欄位 | 要不同的欄位 |
 | --- | --- | --- |
-| Network | A5、B3、B5 會跳「停止專案」，但 F3 可通過 | 測 Move 時先跳過；之後照 F3 設定複製 |
-| If | `active_to=1` 但 B7 不通過 | 先跳過 B6/B7/B8；主線通過後刪掉 B7 重建 |
-| 測試混太多 | 通訊、防呆、Move 同時測，無法知道誰錯 | 一次只測一種：Move -> If -> Network -> 吸盤 |
+| SRC_ABOVE / SRC_PICK | X/Y、Rx/Ry/Rz、Base/TCP | Z=安全/抓取高度 |
+| DST_ABOVE / DST_PICK / DST_PLACE | X/Y、Rx/Ry/Rz、Base/TCP | Z=安全/抓取/放置高度 |
+| DROP_ABOVE / DROP_RELEASE | X/Y、Rx/Ry/Rz、Base/TCP | Z=轉移/釋放高度 |
+| PHOTO_A_APPROACH / PHOTO_A | 姿態、Base/TCP | 沿已示教的直線進退方向 |
+| PHOTO_B_APPROACH / PHOTO_B | 姿態、Base/TCP | 沿已示教的直線進退方向 |
 
-目前不要再追 B7 原地打轉。因為 `active_to=1` 時 B7 本來應該通過，繼續硬改同一顆節點只會浪費時間。
+## 五、兩個 Vision 工作
 
-## 3. 目前先用的座標
+| 工作 | 拍照姿態 | 預計範圍 | 必須對應的資料 |
+| --- | --- | --- | --- |
+| JOB_BOARD_A | P_PHOTO_A | a..i，0..5 列 | view=A、該批 capture_id、校正 H_A |
+| JOB_BOARD_B | P_PHOTO_B | a..i，4..9 列 | view=B、相同 capture_id、校正 H_B |
 
-安全等待座標：
+各保存至少四個不共線交點的「影像像素 → 棋格」對照。拍照後等待上傳接收 ACK，再前往下一點；不要在 A 工作內等待兩張辨識完成。
 
-```text
-X  = 363.30
-Y  = 13.18
-Z  = 532.27
-Rx = -176.41
-Ry = 0.69
-Rz = 83.93
-```
+兩個 Vision 工作的通過條件只檢查影像接收成功，例如既有 Classification 回傳的 `frame_received`；不以全盤棋子分類結果作為第一張的通過條件。沿用既有認證及回覆格式，並先確認現場 parser 可接受。
 
-死棋盒 X/Y：
+目前 HTTP ingest 未實作 A/B 配對。現場若不能在影像請求帶動態 capture_id，需在影像橋接程式完成實際擷取請求的關聯；兩個固定 URL 只識別 A/B，不足以隔離前後回合。不要將此限制留到取放後才發現。
 
-```text
-cap_x = 124.04
-cap_y = -202.49
-```
+## 六、最短驗證順序
 
-死棋盒低點先記錄，暫時不要用：
+1. 先核對 Base/TCP、DO3 極性、12 個點位模板與影像工作。這是開機前操作，不是循環內增加的節點。
+2. Listen 內只測欄位及 Point.Value 讀寫，讀回座標，不送 ScriptExit，也不測動作。
+3. 用不含動作的獨立測試分支驗證新命令、帶 ID 的回報與重送行為；禁止用「fake trigger」名稱判定一定不動。
+4. 空載走 A/B 拍照點，確認兩張都是新圖、批次一致、可合成全盤；再確認下一輪不混入舊圖。
+5. 在安全高度核對角落及中心位置；通過後測一顆來源到目標取放，再測死棋盒分支。
+6. 接完整玩家回合與 AI 移子；DONE + A/B 合併結果通過，才算該輪完成。
 
-```text
-drop_z  = 384.54
-drop_rx = 179.97
-drop_ry = 1.56
-drop_rz = -6.10
-```
+拍照失敗可以在人工復歸至空載待命後重新發 SCAN_PAIR。搬棋逾時或斷線不能自動重發 MOVE；先確認是否持棋及停止位置，依現場程序恢復空載待命，再拍兩張確認實際棋盤與命令結果。不能從未知姿態直接啟動拍照移動。
 
-安全假流程只讓機器人在安全高度移動：
+## 七、開機與恢復
 
-```text
-Z  一律用 safe_z
-Rx 一律用 safe_rx
-Ry 一律用 safe_ry
-Rz 一律用 safe_rz
-```
+正常開機 A1-A4 僅適用空載、已知起始區域。若停止時吸盤持棋，先按現場程序處理，不直接從 A3 關吸盤開始。G 區停止不自動回家，控制器層的 Stop/Error I/O 行為另依第一張表設定。
 
-## 4. 先建變數
+重新啟動後建立新 session、重新 SCAN_PAIR，不沿用未知狀態的舊 MOVE。單純停在 Listen 等待下一筆是正常狀態。
 
-到上方點：
+## 八、提供給程式的資料檔
 
-```text
-變數 -> 新增變數
-```
-
-新增 int：
-
-```text
-status = 0
-error_code = 0
-completed_cmd_id = 0
-heartbeat = 0
-robot_state = 0
-last_cmd_id = 0
-active_from = 0
-active_to = 1
-active_action = 0
-active_cmd_id = 1
-dead_slot_index = 0
-```
-
-新增 bool：
-
-```text
-flow_ok = true
-has_piece = false
-```
-
-新增 double：
-
-```text
-src_x = 363.30
-src_y = 13.18
-dst_x = 363.30
-dst_y = 13.18
-cap_x = 124.04
-cap_y = -202.49
-safe_z = 532.27
-safe_rx = -176.41
-safe_ry = 0.69
-safe_rz = 83.93
-move_x = 363.30
-move_y = 13.18
-move_z = 532.27
-move_rx = -176.41
-move_ry = 0.69
-move_rz = 83.93
-```
-
-## 5. 立即測試用接線
-
-先把主測試線接成：
-
-```text
-Start -> A2 -> A3 -> A4 -> B1 -> B2 -> B4 -> B9 -> B10
-```
-
-也就是先不要經過：
-
-```text
-A5
-Listen1
-B3
-B5
-B6
-B7
-B8
-F3
-```
-
-原因：
-
-```text
-A5/B3/B5/F3 是 Network，會把 Python 是否開啟混進來
-Listen1 會等外部資料
-B6/B7/B8 是防呆，不是測安全 Move 的必要節點
-```
-
-## 6. A 區設定
-
-### A1 Start
-
-保持 Start 即可。上方速度維持 `3%` 到 `5%`。
-
-### A2 Set
-
-點 A2 工具圖示，進入：
-
-```text
-變數
-```
-
-設定：
-
-```text
-status = 0
-error_code = 0
-completed_cmd_id = 0
-heartbeat = 0
-robot_state = 0
-flow_ok = true
-has_piece = false
-```
-
-### A3 Set
-
-A3 目的：開始時關吸盤、清掉夾取狀態。
-
-進入：
-
-```text
-變數
-```
-
-設定：
-
-```text
-has_piece = false
-flow_ok = true
-error_code = 0
-```
-
-如果已確認吸盤 DO 腳位，再進：
-
-```text
-數位輸出入
-```
-
-把吸盤對應 DO 設 OFF。若 DO 腳位還沒確認，不要按輸出測試。
-
-### A4 Point
-
-A4 設定：
-
-```text
-點位：P_READY_SAFE
-速度：3% 到 5%
-軌跡混合：無
-```
-
-測試版接線：
-
-```text
-A4 -> B1
-```
-
-正式版才接：
-
-```text
-A4 -> A5 -> Listen1
-Listen1 Pass -> B1
-```
-
-## 7. B 區主線設定
-
-### B1 Set
-
-進入：
-
-```text
-變數
-```
-
-設定：
-
-```text
-heartbeat = heartbeat + 1
-```
-
-### B2 Set
-
-設定：
-
-```text
-robot_state = 1
-```
-
-測試版接線：
-
-```text
-B2 -> B4
-```
-
-正式版中間才加回 B3 Network。
-
-### B4 Set
-
-B4 是目前的測試命令來源。不要同時放兩個 `active_action`。
-
-一般搬移測試：
-
-```text
-active_from = 0
-active_to = 1
-active_action = 0
-active_cmd_id = 1
-robot_state = 2
-error_code = 0
-```
-
-吃子測試時，只改同一行：
-
-```text
-active_action = 1
-```
-
-測試版接線：
-
-```text
-B4 -> B9
-```
-
-### B9 Set
-
-B9 是座標準備，不是讀取目前座標。
-
-設定：
-
-```text
-src_x = 363.30
-src_y = 13.18
-dst_x = 363.30
-dst_y = 13.18
-cap_x = 124.04
-cap_y = -202.49
-```
-
-### B10 If
-
-設定：
-
-```text
-var_active_action == 1
-```
-
-規則：
-
-```text
-單一
-```
-
-接線：
-
-```text
-B10 Yes/Pass -> C1
-B10 No/Fail  -> B11
-```
-
-## 8. 一般搬移安全假流程
-
-### B11 Set
-
-先設定完整版本：
-
-```text
-move_x = src_x
-move_y = src_y
-move_z = safe_z
-move_rx = safe_rx
-move_ry = safe_ry
-move_rz = safe_rz
-```
-
-如果 B11 卡住，先改成最小版本：
-
-```text
-move_x = src_x
-move_y = src_y
-```
-
-因為 `move_z/move_rx/move_ry/move_rz` 已經在變數初始值設成安全姿態。
-
-### B12 Move
-
-Move 設定畫面：
-
-```text
-選擇座標系：工具
-軌跡混合：無
-```
-
-移動設定右側選變數：
-
-```text
-X  = var_move_x
-Y  = var_move_y
-Z  = var_move_z
-RX = var_move_rx
-RY = var_move_ry
-RZ = var_move_rz
-```
-
-進階設定：
-
-```text
-精準到位：打勾
-```
-
-### B13 Set
-
-設定：
-
-```text
-move_x = dst_x
-move_y = dst_y
-move_z = safe_z
-move_rx = safe_rx
-move_ry = safe_ry
-move_rz = safe_rz
-```
-
-### B14 Move
-
-設定同 B12。
-
-接線：
-
-```text
-B14 -> F1
-```
-
-## 9. 吃子安全假流程
-
-### C1 Set
-
-設定：
-
-```text
-move_x = dst_x
-move_y = dst_y
-move_z = safe_z
-move_rx = safe_rx
-move_ry = safe_ry
-move_rz = safe_rz
-```
-
-### C2 Move
-
-設定同 B12。
-
-### C3 Set
-
-設定：
-
-```text
-move_x = cap_x
-move_y = cap_y
-move_z = safe_z
-move_rx = safe_rx
-move_ry = safe_ry
-move_rz = safe_rz
-```
-
-### C4 Move
-
-設定同 B12。
-
-### C5 Set
-
-設定：
-
-```text
-dead_slot_index = dead_slot_index + 1
-```
-
-C5 後面：
-
-```text
-Goto B11
-```
-
-如果可以直接拉線到 B11，也可以直接接；如果畫面太遠或接線混亂，就放 Goto，目標選 B11。
-
-## 10. 完成流程
-
-### F1 Point
-
-設定：
-
-```text
-點位：P_READY_SAFE
-```
-
-### F2 Set
-
-設定：
-
-```text
-status = 2
-error_code = 0
-completed_cmd_id = active_cmd_id
-robot_state = 1
-```
-
-測試版接線：
-
-```text
-F2 -> F4
-```
-
-正式版才接：
-
-```text
-F2 -> F3 -> F4
-```
-
-### F4 Wait for
-
-設定：
-
-```text
-100 ms
-```
-
-### F5 Set
-
-設定：
-
-```text
-status = 0
-robot_state = 0
-active_from = 0
-active_to = 0
-active_action = 0
-```
-
-F5 後面：
-
-```text
-測試版：接 Stop
-正式版：Goto Listen1
-```
-
-如果接回 Listen1，停在 Listen1 等外部資料是正常的。
-
-## 11. B7 卡關解法
-
-目前 B7 不通過，但 B4 已設定：
-
-```text
-active_to = 1
-```
-
-所以 B7 理論上一定應通過。處理順序：
-
-1. 先跳過 B6/B7/B8，確認假 Move 流程可以跑到 F5。
-2. 假流程成功後，刪掉舊 B7。
-3. 重新拖一顆 `If`。
-4. 先只設定：
-   ```text
-   var_active_to == 1
-   ```
-5. 規則選：
-   ```text
-   單一
-   ```
-6. 接線：
-   ```text
-   B6 Yes -> B7
-   B7 Yes -> B8
-   B7 No -> Stop
-   ```
-7. 成功後才改回正式範圍：
-   ```text
-   var_active_to >= 0
-   var_active_to <= 89
-   ```
-8. 規則改：
-   ```text
-   全部
-   ```
-
-不要在 B7 沒修好前繼續加新功能。
-
-## 12. B6/B8 加回方式
-
-B6：
-
-```text
-var_active_from >= 0
-var_active_from <= 89
-規則：全部
-Yes -> B7
-No -> Stop
-```
-
-B8 測試版：
-
-```text
-var_active_action >= 0
-var_active_action <= 1
-規則：全部
-Yes -> B9
-No -> Stop
-```
-
-B8 正式版：
-
-```text
-var_active_action == 0
-var_active_action == 1
-var_active_action == 3
-規則：單一
-Yes -> B9
-No -> Stop 或 G1
-```
-
-## 13. Network 加回方式
-
-安全假流程沒跑通前，不要接回 Network。
-
-等 Python 9001 開啟後，再逐顆加回：
-
-```text
-A5
-B3
-B5
-F3
-```
-
-每一顆都照 F3 可通過的設定複製，只改發送文字：
-
-```text
-A5: READY
-B3: HB
-B5: BUSY
-F3: DONE
-```
-
-Network 設定共同規則：
-
-```text
-選擇裝置：ntd_PY9001
-選：發送
-綠色圓點選：發送內容
-發送狀態：var_flow_ok
-額外閒置時間：0
-```
-
-先不要用：
-
-```text
-由變數接收
-變數發送
-BUSY,<active_cmd_id>
-DONE,<active_cmd_id>
-```
-
-先用純文字確認通訊能過。
-
-## 14. Listen1 加回方式
-
-正式通訊時才接：
-
-```text
-A5 -> Listen1
-Listen1 Pass -> B1
-```
-
-Listen1 Fail：
-
-```text
-先接 Stop
-之後錯誤流程完成後再接 G1
-```
-
-如果 Python 沒有送資料，Listen1 停住是正常的，不是 TMflow 壞掉。
-
-## 15. 正式取放後續
-
-安全假流程通過後，才加入真取放：
-
-一般搬移：
-
-```text
-到來源安全高度
-下降到 pick_z
-吸盤 ON
-等待
-上升到 safe_z
-到目標安全高度
-下降到 place_z
-吸盤 OFF
-上升到 safe_z
-```
-
-吃子：
-
-```text
-到目標安全高度
-下降到 pick_z
-吸盤 ON
-等待
-上升到 safe_z
-到死棋盒上方
-下降到 drop_z
-吸盤 OFF
-上升到 safe_z
-回 B11 搬來源棋
-```
-
-正式取放前必須先確認：
-
-```text
-pick_z
-place_z
-drop_z
-吸盤 DO 腳位
-吹氣 DO 腳位
-棋盤每一格 X/Y
-```
-
-## 16. 建議測試順序
-
-第一輪：一般搬移假流程
-
-```text
-B4: active_action = 0
-期望：B10 No -> B11 -> B12 -> B13 -> B14 -> F1 -> F2 -> F4 -> F5
-```
-
-第二輪：吃子假流程
-
-```text
-B4: active_action = 1
-期望：B10 Yes -> C1 -> C2 -> C3 -> C4 -> C5 -> B11 -> B12 -> B13 -> B14 -> F1 -> F2 -> F4 -> F5
-```
-
-第三輪：重建 If 防呆
-
-```text
-先 B7
-再 B6
-再 B8
-```
-
-第四輪：加回 Network
-
-```text
-先 F3
-再 A5
-再 B3
-再 B5
-```
-
-第五輪：加回 Listen1。
-
-第六輪：加下降 Z 和吸盤。
-
-## 17. 驗收標準
-
-安全假流程完成：
-
-```text
-active_action=0 可跑到 F5
-active_action=1 可跑 C1-C5，再回 B11，最後跑到 F5
-全程不下降 Z
-全程不開吸盤
-不出現停止專案
-```
-
-通訊完成：
-
-```text
-Python 9001 已開啟
-A5 READY 可通過
-B3 HB 可通過
-B5 BUSY 可通過
-F3 DONE 可通過
-```
-
-正式取放完成：
-
-```text
-來源格上方安全點正確
-目標格上方安全點正確
-下降高度正確
-吸盤 ON/OFF 正確
-死棋可落入盒子
-完成後回 P_READY_SAFE
-```
-
-## 18. 已撤回舊說法
-
-不要再使用：
-
-```text
-Modbus Read 節點
-Modbus Write 節點
-I/O Node
-右側 ModbusDev 當流程節點
-B2 是 Network 的舊表
-B3 是 If 的舊表
-```
-
-目前現場版：
-
-```text
-B1 = Set heartbeat
-B2 = Set robot_state
-B3 = Network HB，測試版先跳過
-B4 = Set 測試命令
-B9 = Set 座標
-B10 = If 是否吃子
-```
+[量測資料範本](examples/tmflow_v3_commissioning.example.json) 可記錄資料；null 表示尚未量測，不能當 0 使用。此檔不是現有程式自動讀取的設定檔，不能直接覆蓋 `data/setup_settings.json`。

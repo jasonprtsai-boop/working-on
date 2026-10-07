@@ -26,6 +26,7 @@ from backend.application.services.runtime_control import runtime_control
 from backend.application.use_cases.coordinate_workflow import workflow_coordinator
 from backend.interfaces.websocket.serializers import StateSerializer
 from backend.state.store.manager.state_manager import state_manager
+from backend.utils import config
 
 
 PLAYER_END_FINAL_CONFIRMATION = "END_GAME_CONFIRMED"
@@ -319,7 +320,17 @@ def apply_move():
 
 @api_bp.route("/player/move", methods=["POST"])
 def apply_player_move():
-    """Accept a player-view UCCI move without granting broader admin controls."""
+    """Legacy player-view UCCI move entrypoint, disabled by default for the one-pipeline flow."""
+    if not getattr(config, "PLAYER_MANUAL_MOVE_ENABLED", False):
+        return error_response(
+            "player_manual_move_disabled",
+            "玩家主流程只接受「我已下棋」後的拍照與 YOLO 辨識結果。",
+            409,
+            details={
+                "replacement": "/api/player-done",
+                "flow": "physical_move -> player_done -> photo -> yolo_python -> engine -> robot",
+            },
+        )
     return _apply_move_request(default_type="PLAYER")
 
 

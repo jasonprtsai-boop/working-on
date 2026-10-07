@@ -12,7 +12,7 @@ class BaseDetector(ABC):
     The active runtime detector is YOLO.
     """
     @abstractmethod
-    def detect(self, frame: np.ndarray) -> List[Detection]:
+    def detect(self, frame: np.ndarray, expected_count: int | None = None) -> List[Detection]:
         ...
 
     @abstractmethod

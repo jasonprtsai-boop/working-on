@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import re
+
 from flask import jsonify
 
 from backend.application.container import container
 from backend.application.services.system_preflight import build_preflight_report
+from backend.application.use_cases.coordinate_workflow import workflow_coordinator
 from backend.infrastructure.robot.tmflow_ingest_state import tmflow_ingest_state
 from backend.interfaces.api.shared import api_bp, error_response, json_object_payload, optional_json_object_payload
+from backend.state.store.state_store import state_store
 from backend.utils import config
+from backend.utils.fen.parser import fen_to_board
 from backend.utils.kinematics import kinematics
 from backend.interfaces.api.setup_routes import current_setup_settings, normalize_setup_settings
 
@@ -294,6 +299,84 @@ def play_tmflow_project():
         return error_response("play_failed", str(exc), 500, recoverable=True)
 
 
+@api_bp.route("/robot/execute-ready-move", methods=["POST"])
+def execute_ready_robot_move():
+    """Start the latest AI move after an operator has confirmed the robot area is clear."""
+    try:
+        payload = optional_json_object_payload()
+        if not _robot_execute_confirmed(payload):
+            return error_response(
+                "robot_execute_confirmation_required",
+                "請先確認棋盤與手臂工作範圍無人靠近，再執行 AI 招法。",
+                400,
+                details={
+                    "required": {
+                        "confirmed_action": "robot_execute_ready_move",
+                        "warning_acknowledged": True,
+                    }
+                },
+            )
+
+        preflight = build_preflight_report(require_auto_execute=False)
+        if not bool(preflight.get("ready", preflight.get("ok", False))):
+            return error_response(
+                "robot_preflight_failed",
+                "Robot preflight failed; AI move was not executed.",
+                409,
+                details={
+                    "failures": preflight.get("failures", []),
+                    "warnings": preflight.get("warnings", []),
+                },
+            )
+
+        robot = container.get("robot")
+        if not robot or not hasattr(robot, "execute_move"):
+            return error_response("robot_unavailable", "Robot service is not initialized.", 503)
+        if _robot_busy(robot):
+            return error_response("robot_busy", "Robot is already executing a move.", 409, recoverable=True)
+        if workflow_coordinator.robot_command_active():
+            return error_response(
+                "robot_busy",
+                "Robot is already executing or verifying a move.",
+                409,
+                recoverable=True,
+                details=workflow_coordinator.robot_activity_snapshot(),
+            )
+
+        move = _current_engine_best_move()
+        if not _is_valid_ucci_move(move):
+            return error_response(
+                "ai_move_unavailable",
+                "AI has not produced a valid robot move yet.",
+                409,
+                recoverable=True,
+                details={"move": move},
+            )
+
+        trace_id = str(payload.get("trace_id") or getattr(state_store.current, "trace_id", "") or "manual_robot_execute")
+        is_capture = _infer_capture_from_current_state(move)
+        future = workflow_coordinator.start_robot_move(trace_id, move, is_capture=is_capture)
+        if future is None:
+            return error_response(
+                "robot_busy",
+                "Robot is already executing or verifying a move.",
+                409,
+                recoverable=True,
+                details=workflow_coordinator.robot_activity_snapshot(),
+            )
+        return jsonify({
+            "ok": True,
+            "accepted": True,
+            "message": "Robot move execution started.",
+            "move": move,
+            "is_capture": is_capture,
+            "trace_id": trace_id,
+            "warnings": preflight.get("warnings", []),
+        }), 202
+    except Exception as exc:
+        return error_response("robot_execute_failed", str(exc), 500, recoverable=True)
+
+
 def _robot_play_confirmed(payload: dict) -> bool:
     if not isinstance(payload, dict):
         return False
@@ -301,6 +384,82 @@ def _robot_play_confirmed(payload: dict) -> bool:
         str(payload.get("confirmed_action") or "").strip().lower() == "robot_play"
         and _payload_bool(payload.get("warning_acknowledged", False))
     )
+
+
+def _robot_execute_confirmed(payload: dict) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    return (
+        str(payload.get("confirmed_action") or "").strip().lower() == "robot_execute_ready_move"
+        and _payload_bool(payload.get("warning_acknowledged", False))
+    )
+
+
+def _current_engine_best_move() -> str:
+    engine = getattr(state_store.current, "engine", None)
+    return str(
+        getattr(engine, "bestmove", None)
+        or getattr(engine, "best_move", None)
+        or ""
+    ).strip()
+
+
+def _is_valid_ucci_move(move: str) -> bool:
+    return bool(re.fullmatch(r"[a-i][0-9][a-i][0-9]", str(move or "").strip()))
+
+
+def _robot_busy(robot) -> bool:
+    try:
+        if bool(getattr(robot, "is_moving", False) or getattr(robot, "busy", False)):
+            return True
+        status_getter = getattr(robot, "get_status", None)
+        if callable(status_getter):
+            status = status_getter() or {}
+            return bool(status.get("busy") or status.get("is_moving"))
+    except Exception:
+        return False
+    return False
+
+
+def _infer_capture_from_current_state(move: str) -> bool:
+    try:
+        game = getattr(state_store.current, "game", None)
+        board = getattr(game, "board", None)
+        row_col = _move_target_square(move)
+        if row_col is None:
+            return False
+        row, col = row_col
+        piece = _piece_from_board(board, row, col)
+        if piece not in (None, ""):
+            return True
+        fen = getattr(game, "fen", "")
+        if fen:
+            piece = _piece_from_board(fen_to_board(str(fen), empty=""), row, col)
+            return piece not in (None, "")
+    except Exception:
+        return False
+    return False
+
+
+def _move_target_square(move: str):
+    if not isinstance(move, str) or len(move) < 4:
+        return None
+    file_char = move[2]
+    rank_char = move[3]
+    if file_char not in "abcdefghi" or not rank_char.isdigit():
+        return None
+    rank = int(rank_char)
+    if rank < 0 or rank > 9:
+        return None
+    return 9 - rank, "abcdefghi".index(file_char)
+
+
+def _piece_from_board(board, row: int, col: int):
+    if isinstance(board, list) and 0 <= row < len(board):
+        row_data = board[row]
+        if isinstance(row_data, list) and 0 <= col < len(row_data):
+            return row_data[col]
+    return None
 
 
 def _is_modbus_server_mode(adapter) -> bool:

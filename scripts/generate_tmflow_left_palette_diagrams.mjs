@@ -1,381 +1,243 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import assert from "node:assert/strict";
 import { chromium } from "playwright";
+import { createReadableTmflowDiagram } from "./tmflow_readable_diagram.mjs";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const repoRoot = path.resolve(__dirname, "..");
-const docsDir = path.join(repoRoot, "docs");
+const filename = fileURLToPath(import.meta.url);
+const root = path.resolve(path.dirname(filename), "..");
+const docs = path.join(root, "docs");
+const model = JSON.parse(fs.readFileSync(path.join(docs, "tmflow_v3_nodes.json"), "utf8"));
+const nodes = model.groups.flatMap((group) => group.nodes);
+const ids = new Set(nodes.map((node) => node.id));
+if (ids.size !== nodes.length) throw new Error("Duplicate node id");
+for (const node of nodes) {
+  for (const target of Object.values(node.next)) {
+    if (!ids.has(target)) throw new Error(`Missing node: ${node.id} -> ${target}`);
+  }
+}
+const visited = new Set();
+function visit(id) {
+  if (visited.has(id)) return;
+  visited.add(id);
+  Object.values(nodes.find((node) => node.id === id).next).forEach(visit);
+}
+visit("A1");
+if (visited.size !== ids.size) throw new Error("Unreachable node in design");
 
-const availableNodes = [
-  "Start",
-  "Set",
-  "Point",
-  "Wait for",
-  "If",
-  "Goto",
-  "Move",
-  "SubFlow",
-  "Network",
-  "Listen",
-  "Stop",
-  "Vision",
-  "Gateway",
-  "Display",
-  "Log",
-  "Command",
-];
-
-const rightOnly = [
-  "ModbusDev",
-  "Operation Space",
-  "Set IO while Project Error",
-  "Set IO while Project Stop",
-  "Stop Watch",
-  "Serial Port",
-  "力規設定",
-  "檢視",
-];
-
-const columns = [
-  {
-    key: "A",
-    title: "A 初始化 / 通訊暫跳",
-    tone: "blue",
-    nodes: [
-      ["A1", "Start", "流程入口；專案速度 3-5%"],
-      ["A2", "Set", "初始化 status/error/heartbeat 等變數"],
-      ["A3", "Set", "has_piece=false；吸盤 DO 已確認才 OFF"],
-      ["A4", "Point", "移到 P_READY_SAFE 安全等待點"],
-      ["A5", "Network", "正式送 READY；測試版先跳過"],
-      ["Listen1", "Listen", "正式等 Python 指令；測試版先跳過"],
-    ],
-  },
-  {
-    key: "B",
-    title: "B 測試主線 / 防呆",
-    tone: "orange",
-    nodes: [
-      ["B1", "Set", "heartbeat = heartbeat + 1"],
-      ["B2", "Set", "robot_state = 1"],
-      ["B3", "Network", "正式送 HB；測試版先跳過"],
-      ["B4", "Set", "固定測試命令 active_from/to/action"],
-      ["B5", "Network", "正式送 BUSY；測試版先跳過"],
-      ["B6", "If", "active_from 範圍；主線通過後加回"],
-      ["B7", "If", "active_to 範圍；今日卡關點，重建"],
-      ["B8", "If", "active_action 合法；主線通過後加回"],
-      ["B9", "Set", "設定 src/dst/cap 的安全 X/Y"],
-      ["B10", "If", "active_action==1 走 C；否則走 B11"],
-    ],
-  },
-  {
-    key: "M",
-    title: "B11-B14 一般假移動",
-    tone: "green",
-    nodes: [
-      ["B11", "Set", "move = src；卡住時先只留 move_x/y"],
-      ["B12", "Move", "到來源安全座標；不下降 Z"],
-      ["B13", "Set", "move = dst；Z/R 姿態保持 safe"],
-      ["B14", "Move", "到目標安全座標；不開吸盤"],
-    ],
-  },
-  {
-    key: "C",
-    title: "C 吃子假流程",
-    tone: "green",
-    nodes: [
-      ["C1", "Set", "move = dst；到被吃棋位置上方"],
-      ["C2", "Move", "到目標格安全高度"],
-      ["C3", "Set", "move = cap；死棋盒 X/Y"],
-      ["C4", "Move", "到死棋盒安全高度"],
-      ["C5", "Set", "dead_slot_index = dead_slot_index + 1"],
-      ["Goto", "Goto", "回 B11 搬來源棋"],
-    ],
-  },
-  {
-    key: "F",
-    title: "F 完成 / 回等待",
-    tone: "cyan",
-    nodes: [
-      ["F1", "Point", "回 P_READY_SAFE"],
-      ["F2", "Set", "status=2；completed_cmd_id=active_cmd_id"],
-      ["F3", "Network", "正式送 DONE；測試版先跳過"],
-      ["F4", "Wait for", "等待 100 ms"],
-      ["F5", "Set", "清 status/robot_state/action"],
-      ["Goto", "Goto", "測試可 Stop；正式回 Listen1"],
-    ],
-  },
-  {
-    key: "G",
-    title: "G 後續正式化",
-    tone: "red",
-    nodes: [
-      ["IF", "If", "重建 B6/B7/B8，No 先接 Stop"],
-      ["NET", "Network", "Python 9001 開啟後加回 A5/B3/B5/F3"],
-      ["LISTEN", "Listen", "確認 Listen1 收命令欄位"],
-      ["Z", "Move", "加入 pick_z/place_z/drop_z"],
-      ["IO", "Set", "確認 DO 後才做吸盤 ON/OFF"],
-      ["ERR", "Set/Stop", "最後補 G 區錯誤流程"],
-    ],
-  },
-];
-
-function esc(value) {
-  return String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
+function trace(choices) {
+  const route = [];
+  let id = "B1";
+  while (!["L1", "G1"].includes(id)) {
+    assert(route.length < nodes.length, "Command route must terminate");
+    route.push(id);
+    const node = nodes.find((item) => item.id === id);
+    id = node.next[choices[id] || "next"];
+    assert(id, `Missing branch choice at ${node.id}`);
+  }
+  return { route, terminal: id };
+}
+const scan = trace({ B1: "yes", B3: "no" });
+const move = trace({ B1: "yes", B3: "yes" });
+const rejected = trace({ B1: "no" });
+assert.equal(nodes.length, 23, "Minimal design has 23 nodes including Start and Stop");
+assert.equal(nodes.filter(n => n.type === "Vision").length, 1);
+assert.equal(nodes.filter(n => n.type === "Network").length, 1);
+assert.equal(nodes.filter(n => n.type === "If").length, 2);
+assert.deepEqual(scan.route, ["B1", "B2", "B3", "M12", "S1", "S2", "S3", "F1"]);
+assert.deepEqual(move.route, ["B1", "B2", "B3",
+  ...Array.from({ length: 12 }, (_, i) => `M${i + 1}`), "S1", "S2", "S3", "F1"]);
+for (const result of [scan, move]) {
+  assert.equal(result.terminal, "L1");
+  assert.equal(result.route.filter(id => nodes.find(n => n.id === id).type === "Vision").length, 1);
+  assert(result.route.indexOf("S3") < result.route.indexOf("F1"), "Image precedes DONE");
+}
+assert.deepEqual(rejected, { route: ["B1"], terminal: "G1" });
+assert.deepEqual(nodes.find(n => n.id === "G1").next, {});
+assert.deepEqual(["M2", "M3", "M6", "M7", "M8", "M11"].map(id => nodes.find(n => n.id === id).point),
+  ["P_SRC_ABOVE", "P_SRC_PICK", "P_SRC_ABOVE", "P_DST_ABOVE", "P_DST_PLACE", "P_DST_ABOVE"],
+  "Pick/place must lift before transfer and before leaving destination");
+assert.equal(nodes.find(n => n.id === "M5").type, "Wait for");
+assert.equal(nodes.find(n => n.id === "M10").type, "Wait for");
+for (const id of ["S3", "F1"]) {
+  const failed = trace({ B1: "yes", B3: "yes", [id]: "failure" });
+  assert.equal(failed.terminal, "G1");
+  if (id === "S3") assert(!failed.route.includes("F1"), "Failed upload cannot report DONE");
 }
 
-function units(text) {
-  return Array.from(String(text)).reduce((sum, char) => {
-    if (/[\u3000-\u9fff\uff00-\uffef]/u.test(char)) return sum + 1.8;
-    if (/[A-Z0-9_./:=-]/.test(char)) return sum + 1.12;
-    return sum + 0.95;
-  }, 0);
-}
+const escape = (value) => String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;")
+  .replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+const labels = { next: "下一步", failure: "失敗", pass: "Pass", yes: "是", no: "否", scan: "拍攝", move: "移子", capture: "吃子", normal: "一般" };
+const nextText = (node) => Object.entries(node.next).map(([key, value]) => `${labels[key]}: ${value}`).join(" / ") || "停止";
 
-function wrap(text, maxUnits) {
-  const chars = Array.from(String(text));
+function wrap(value, maxWidth, fontSize) {
   const lines = [];
-  let current = "";
-  for (const char of chars) {
-    const candidate = current + char;
-    if (current && units(candidate) > maxUnits) {
-      lines.push(current);
-      current = char;
-    } else {
-      current = candidate;
+  let line = "";
+  let width = 0;
+  for (const char of String(value)) {
+    const advance = char.codePointAt(0) > 255 ? fontSize : fontSize * 0.61;
+    if (width + advance > maxWidth && line) {
+      lines.push(line);
+      line = "";
+      width = 0;
+    }
+    line += char;
+    width += advance;
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
+function textLines(value, x, y, width, size = 17, color = "#263238") {
+  return wrap(value, width, size).map((line, i) => `<text x="${x}" y="${y + i * (size + 7)}" font-size="${size}" fill="${color}">${escape(line)}</text>`).join("");
+}
+
+function svg(width, height, title, body) {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escape(title)}"><style>text{font-family:Microsoft JhengHei,Arial,sans-serif;letter-spacing:0}</style><rect width="100%" height="100%" fill="#f6f8f9"/>${textLines(title, 28, 42, width - 56, 25)}${textLines(`v${model.version} / ${model.date} / 設計規格，尚未整合實機執行`, 28, 74, width - 56, 15, "#526167")}${body}</svg>`;
+}
+
+function groupDiagram(groups, title) {
+  const columnWidth = 610;
+  const columns = Math.min(groups.length, 3);
+  const positions = [];
+  let top = 108;
+  for (let i = 0; i < groups.length; i += columns) {
+    const row = groups.slice(i, i + columns);
+    const heights = row.map((group) => 65 + group.nodes.reduce((height, node) => height + 54 + wrap(node.task, columnWidth - 66, 17).length * 24 + wrap(nextText(node), columnWidth - 66, 14).length * 21, 0));
+    row.forEach((group, j) => positions.push({ group, x: 20 + j * columnWidth, y: top, height: heights[j] }));
+    top += Math.max(...heights) + 24;
+  }
+  let body = "";
+  for (const { group, x, y } of positions) {
+    body += `<rect x="${x}" y="${y}" width="${columnWidth - 18}" height="40" fill="${group.id === "G" ? "#9b3434" : "#24675d"}"/>`;
+    body += textLines(`${group.id}  ${group.title}`, x + 14, y + 28, columnWidth - 50, 20, "#ffffff");
+    let cursor = y + 54;
+    for (const node of group.nodes) {
+      const taskLines = wrap(node.task, columnWidth - 66, 17).length;
+      const nextLines = wrap(nextText(node), columnWidth - 66, 14).length;
+      const height = 43 + taskLines * 24 + nextLines * 21;
+      body += `<rect x="${x}" y="${cursor}" width="${columnWidth - 18}" height="${height}" rx="4" fill="#ffffff" stroke="#c8d0d4"/>`;
+      body += textLines(`${node.id}  |  ${node.type}`, x + 14, cursor + 25, columnWidth - 50, 18, "#0b5d52");
+      body += textLines(node.task, x + 14, cursor + 51, columnWidth - 66, 17);
+      body += textLines(nextText(node), x + 14, cursor + 53 + taskLines * 24, columnWidth - 66, 14, "#5b6269");
+      cursor += height + 11;
     }
   }
-  if (current) lines.push(current);
-  return lines.length ? lines : [""];
+  return svg(columns * columnWidth + 22, top + 16, title, body);
 }
 
-function text(lines, x, y, options = {}) {
-  const { className = "body", lineHeight = 26, anchor = "start", weight = "" } = options;
-  const attrs = [
-    `class="${className}"`,
-    `text-anchor="${anchor}"`,
-    weight ? `font-weight="${weight}"` : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
-  return `<text ${attrs}>${lines
-    .map((line, index) => `<tspan x="${x}" y="${y + index * lineHeight}">${esc(line)}</tspan>`)
-    .join("")}</text>`;
+function overview() {
+  return createReadableTmflowDiagram(model);
 }
 
-function marker(id, color) {
-  return `<marker id="${id}" markerWidth="14" markerHeight="14" refX="11" refY="7" orient="auto" markerUnits="strokeWidth"><path d="M 2 2 L 12 7 L 2 12 Z" fill="${color}" /></marker>`;
+function exchange() {
+  const rows = [
+    ["PC → Listen", "5890 / TMSCT：kind、cmd_id、4 個 Point.Value；完整寫入成功後才 ScriptExit()。"],
+    ["TMflow 取放", "SCAN 跳過取放；MOVE 共用來源到目的的流程。吃子由 PC 排兩筆 MOVE。"],
+    ["Vision → PC", "JOB_BOARD 只拍一張；HTTP POST /api/vision/tmvision/classify，成功回 frame_received。"],
+    ["Network → PC", "沿用 telemetry 接收埠（範例 9001），JSON line 帶 completed_command_id；行尾 CRLF。"],
+    ["PC → 下一筆", "收到本筆 DONE 且流程回 Listen 後再派令。逾時結果未知，不自動重送 MOVE。"]
+  ];
+  const body = rows.map(([title, desc], i) => {
+    const y = 112 + i * 130;
+    return `<rect x="28" y="${y}" width="1080" height="106" rx="4" fill="#ffffff" stroke="#c8d0d4"/>${textLines(title, 44, y + 30, 250, 20, "#0b5d52")}${textLines(desc, 310, y + 30, 775, 18)}`;
+  }).join("");
+  return svg(1136, 800, "Python / TMflow / 單張影像資料交換", body);
 }
 
-function arrow(x1, y1, x2, y2, options = {}) {
-  const { color = "#32455f", dashed = false, label = "", id = "arrow" } = options;
-  const mx = (x1 + x2) / 2;
-  const my = (y1 + y2) / 2;
-  return `<g><path d="M ${x1} ${y1} L ${x2} ${y2}" fill="none" stroke="${color}" stroke-width="4" marker-end="url(#${id})" ${dashed ? 'stroke-dasharray="14 10"' : ""}/>${label ? `<rect class="label-bg" x="${mx - 120}" y="${my - 26}" width="240" height="34" rx="17"/>${text([label], mx, my - 3, { className: "edge-label", anchor: "middle" })}` : ""}</g>`;
-}
-
-function node({ x, y, w, h, id, type, body, tone = "blue" }) {
-  const bodyLines = wrap(body, Math.max(12, Math.floor(w / 18)));
-  return `<g class="node ${tone}">
-    <rect class="node-box" x="${x}" y="${y}" width="${w}" height="${h}" rx="12"/>
-    <rect class="node-strip" x="${x}" y="${y}" width="12" height="${h}" rx="6"/>
-    ${text([id], x + 24, y + 38, { className: "node-id", weight: "600" })}
-    <rect class="type-pill" x="${x + w - 138}" y="${y + 15}" width="116" height="30" rx="15"/>
-    ${text([type], x + w - 80, y + 37, { className: "type-text", anchor: "middle" })}
-    ${text(bodyLines, x + 24, y + 72, { className: "node-body", lineHeight: 24 })}
-  </g>`;
-}
-
-function lane({ x, y, w, h, title, tone }) {
-  return `<g class="lane ${tone}">
-    <rect class="lane-box" x="${x}" y="${y}" width="${w}" height="${h}" rx="16"/>
-    <rect class="lane-head" x="${x}" y="${y}" width="${w}" height="68" rx="16"/>
-    <path class="lane-head-cover" d="M ${x} ${y + 50} H ${x + w} V ${y + 68} H ${x} Z"/>
-    ${text([title], x + 22, y + 42, { className: "lane-title", weight: "600" })}
-  </g>`;
-}
-
-function baseSvg(width, height, title, subtitle, content) {
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-labelledby="title desc">
-  <title id="title">${esc(title)}</title>
-  <desc id="desc">${esc(subtitle)}</desc>
-  <defs>
-    ${marker("arrow", "#32455f")}
-    ${marker("arrow-green", "#158a4d")}
-    ${marker("arrow-red", "#cf3030")}
-    <filter id="shadow" x="-8%" y="-8%" width="116%" height="124%"><feDropShadow dx="0" dy="6" stdDeviation="6" flood-color="#10223f" flood-opacity="0.11"/></filter>
-  </defs>
-  <style>
-    :root{--bg:#f5f7fb;--ink:#142033;--muted:#5b6b83;--border:#c6d3e5;--blue:#2f7cf6;--blue-soft:#e7f1ff;--cyan:#0891b2;--cyan-soft:#e7fbff;--green:#169b55;--green-soft:#e8f8ef;--orange:#ef7b22;--orange-soft:#fff3e3;--red:#d43b3b;--red-soft:#ffe9e9;--purple:#7c3aed;--purple-soft:#f1eaff;--yellow:#c99400;--yellow-soft:#fff7d1}
-    .bg{fill:var(--bg)} .title{fill:var(--ink);font:600 44px "Microsoft JhengHei","Noto Sans TC",Arial,sans-serif}.subtitle{fill:var(--muted);font:400 24px "Microsoft JhengHei","Noto Sans TC",Arial,sans-serif}.body{fill:var(--ink);font:400 21px "Microsoft JhengHei","Noto Sans TC",Arial,sans-serif}.small{fill:var(--muted);font:400 18px "Microsoft JhengHei","Noto Sans TC",Arial,sans-serif}
-    .lane-box,.node-box,.panel{fill:#fff;stroke:var(--border);stroke-width:2.2;filter:url(#shadow)}.lane-head,.lane-head-cover{fill:var(--blue-soft)}.lane.orange .lane-head,.lane.orange .lane-head-cover{fill:var(--orange-soft)}.lane.green .lane-head,.lane.green .lane-head-cover{fill:var(--green-soft)}.lane.cyan .lane-head,.lane.cyan .lane-head-cover{fill:var(--cyan-soft)}.lane.red .lane-head,.lane.red .lane-head-cover{fill:var(--red-soft)}.lane-title{fill:var(--ink);font:600 24px "Microsoft JhengHei","Noto Sans TC",Arial,sans-serif}
-    .node-id{fill:var(--ink);font:600 24px "Microsoft JhengHei","Noto Sans TC",Arial,sans-serif}.node-body{fill:#273853;font:400 19px "Microsoft JhengHei","Noto Sans TC",Arial,sans-serif}.node-strip{fill:var(--blue)}.node.orange .node-strip{fill:var(--orange)}.node.green .node-strip{fill:var(--green)}.node.cyan .node-strip{fill:var(--cyan)}.node.red .node-strip{fill:var(--red)}.type-pill{fill:#edf3fa;stroke:#d8e2ee;stroke-width:1}.type-text{fill:var(--muted);font:600 15px "Microsoft JhengHei","Noto Sans TC",Arial,sans-serif}
-    .label-bg{fill:var(--bg);stroke:#c7d3e4;stroke-width:1.2}.edge-label{fill:#40506a;font:600 17px "Microsoft JhengHei","Noto Sans TC",Arial,sans-serif}.warn{fill:#b91c1c;font:600 21px "Microsoft JhengHei","Noto Sans TC",Arial,sans-serif}.ok{fill:#166534;font:600 21px "Microsoft JhengHei","Noto Sans TC",Arial,sans-serif}
-  </style>
-  <rect class="bg" width="${width}" height="${height}"/>
-  ${text([title], 60, 70, { className: "title", weight: "600" })}
-  ${text([subtitle], 60, 110, { className: "subtitle" })}
-  ${content}
-</svg>`;
-}
-
-function expandedDiagram() {
-  const width = 3900;
-  const height = 2450;
-  const laneW = 610;
-  const gap = 28;
-  const top = 190;
-  const content = [
-    text(["節點名稱只填 A1、A2...；用途寫在手冊，不寫進 TMflow 名稱。"], 60, 155, { className: "warn" }),
-    ...columns.map((col, index) => {
-      const x = 60 + index * (laneW + gap);
-      const nodeH = col.nodes.length > 8 ? 104 : 128;
-      const nodeGap = 18;
-      const body = col.nodes
-        .map(([id, type, desc], i) => node({ x: x + 24, y: top + 92 + i * (nodeH + nodeGap), w: laneW - 48, h: nodeH, id, type, body: desc, tone: col.tone }))
-        .join("");
-      return `${lane({ x, y: top, w: laneW, h: 2060, title: col.title, tone: col.tone })}${body}`;
-    }),
-    arrow(670, 720, 698, 720, { label: "測試：A4 -> B1" }),
-    arrow(1308, 1510, 1336, 520, { color: "#158a4d", id: "arrow-green", dashed: true, label: "action=0" }),
-    arrow(1308, 1510, 1974, 520, { color: "#158a4d", id: "arrow-green", dashed: true, label: "action=1" }),
-    arrow(2584, 990, 1336, 520, { color: "#158a4d", id: "arrow-green", dashed: true, label: "C 後回 B11" }),
-    arrow(1946, 1040, 2612, 520, { label: "完成" }),
-    arrow(3222, 1050, 380, 2310, { dashed: true, label: "正式回 Listen1" }),
-    arrow(1420, 500, 3250, 500, { color: "#cf3030", id: "arrow-red", dashed: true, label: "防呆/錯誤最後補" }),
-    node({ x: 760, y: 2275, w: 2420, h: 110, id: "測試規則", type: "Rule", tone: "red", body: "先跳過 A5/Listen1/B3/B5/B6/B7/B8/F3；安全假流程跑通後再逐一加回。" }),
-  ].join("");
-  return baseSvg(width, height, "TMflow 1.82.51 現場修正版節點展開圖", "依照 2026-09-02 現場卡關結果：先測安全假流程，再加回 If、Network、Listen、真取放。", content);
-}
-
-function simpleFlowDiagram() {
-  const width = 3000;
-  const height = 1900;
+function captureReuse() {
   const steps = [
-    ["1 初始化", "Start/Set", ["A1 開始", "A2 歸零", "A3 關吸盤"]],
-    ["2 安全就位", "Point", ["A4 到 P_READY_SAFE", "跳過通訊與等待"]],
-    ["3 測試命令", "Set", ["B1 心跳", "B2 ready", "B4 固定 action"]],
-    ["4 安全假移動", "If/Move", ["B10 分支", "B11-B14 搬移", "C1-C5 吃子"]],
-    ["5 完成收尾", "Point/Set/Wait", ["F1 回安全點", "F2 完成", "F4/F5 清狀態"]],
-    ["6 逐一加回", "If/Net/IO", ["重建 B7", "加回通訊", "最後補 Z/吸盤"]],
+    ["第一筆 MOVE", "來源＝被吃棋；目的＝死棋盒。共用 M1–M12，拍一張並回 DONE。"],
+    ["PC 等待", "確認第一筆 DONE 且已回 Listen。中間照片只供觀察，不發布正式棋局。"],
+    ["第二筆 MOVE", "來源＝己方棋；目的＝剛清空的棋格。再用 M1–M12，拍一張並回 DONE。"],
+    ["結果", "最終照片用於整手複驗；TMflow 不增加吃子專用節點。PC 分組排程仍待接入。"]
   ];
-  const boxW = 430;
-  const gap = 42;
-  const top = 300;
-  const boxes = steps
-    .map(([title, type, items], index) => {
-      const x = 90 + index * (boxW + gap);
-      return node({ x, y: top, w: boxW, h: 240, id: title, type, tone: index < 2 ? "blue" : index === 2 ? "orange" : index === 3 ? "green" : index === 4 ? "cyan" : "red", body: items.join(" / ") });
-    })
-    .join("");
-  const arrows = steps.slice(0, -1).map((_, i) => arrow(90 + i * (boxW + gap) + boxW, top + 120, 90 + (i + 1) * (boxW + gap), top + 120)).join("");
-  const lists = [
-    node({ x: 110, y: 720, w: 780, h: 360, id: "可用流程節點", type: "Allowed", tone: "green", body: "左側可拖進流程：設定、點位、移動、判斷、等待、跳轉、通訊、停止。" }),
-    node({ x: 970, y: 720, w: 870, h: 360, id: "不能當流程節點", type: "Right panel", tone: "red", body: "右側工具只作參數設定；不要把 ModbusDev、作業空間、計時、序列埠當節點。" }),
-    node({ x: 1920, y: 720, w: 900, h: 360, id: "目前先跳過", type: "Test", tone: "cyan", body: "A5、Listen1、B3、B5、B6、B7、B8、F3 先不放在主測試線。" }),
-    node({ x: 110, y: 1220, w: 1280, h: 250, id: "卡關處理", type: "B7", tone: "blue", body: "active_to=1 理應通過；先跳過 B7，主線跑通後刪掉重建 If，再從 ==1 測起。" }),
-    node({ x: 1530, y: 1220, w: 1290, h: 250, id: "後續順序", type: "Safe", tone: "orange", body: "先 Move，再 If，再通訊與 Listen，最後才加入下降 Z 與吸盤 ON/OFF。" }),
-  ].join("");
-  return baseSvg(width, height, "TMflow 1.82.51 清楚流程圖（現場修正版）", "先用安全高度假流程排除問題；右側工具仍只作設定。", `${boxes}${arrows}${lists}`);
+  return svg(1136, 650, "吃子：兩筆命令重用同一取放段", steps.map(([title, desc], i) => {
+    const y = 112 + i * 130;
+    return `<rect x="28" y="${y}" width="1080" height="108" fill="#ffffff" stroke="#c8d0d4"/>${textLines(title, 44, y + 30, 230, 20, "#0b5d52")}${textLines(desc, 290, y + 30, 790, 18)}`;
+  }).join(""));
 }
 
-function exchangeDiagram() {
-  const width = 3000;
-  const height = 1600;
-  const boxes = [
-    ["網站", "UI", "玩家按我已下棋"],
-    ["Python", "Vision/AI", "YOLO/Pikafish 算出 from/to/action"],
-    ["TMflow", "Listen", "Listen1 接收外部命令"],
-    ["TMflow", "Motion", "B/C/F 執行，後續補 G"],
-    ["Python", "Network 9001", "收 READY/BUSY/DONE/ERR"],
+function guide() {
+  const lines = [
+    `# ${model.title}：逐節點設定表`, "",
+    `版本 ${model.version}；更新 ${model.date}。共 ${nodes.length} 個節點（含 Start / Stop）；設計規格，尚未實機驗證。`, "",
+    "本表與圖由同一份 `tmflow_v3_nodes.json` 產生。執行 `scripts/generate_tmflow_left_palette_diagrams.mjs` 同步；`--check` 驗證結構與產物一致性。", "",
+    "接線／命令／回報格式見 [設計書](TMFLOW_1_82_51_FULL_NODE_DESIGN.md)，現場填寫見 [操作表](TMFLOW_1_82_51_FIELD_OPERATION_MANUAL.md)。", "",
+    "## 共通設定", "", ...model.assumptions.map(item => `- ${item}`),
+    "- 所有 Point 精準到位、不混合；Point 的 PTP/Line 是運動模式，不另加 Move 節點。",
+    "- Point 系統警報由控制器停止，不假設存在 Fail 接腳；只連現場實際提供的 Listen/Vision/Network Fail 到 G1。",
+    "- G1 不保證維持吸附：Stop/Error 的 DO3 行為依控制器設定，需在初始設定記錄。",
+    "- 一個 Set 可放多項設定；A2 合併啟動變數與 DO3，B2 合併保存編號與清旗標。", "",
+    "## 全流程圖", "", "![單張拍攝與共用取放](tmflow_1_82_51_full_node_design.png)", "",
+    "[開啟向量圖](tmflow_1_82_51_full_node_design.svg)。SCAN：B3 否 → M12 → S1；MOVE：B3 是 → M1–M12 → S1；兩者均 S1–S3 → F1 → L1。", ""
   ];
-  const content = boxes
-    .map(([id, type, body], i) => node({ x: 120 + i * 560, y: 320, w: 470, h: 210, id, type, body, tone: i === 2 || i === 3 ? "green" : "cyan" }))
-    .join("") +
-    boxes.slice(0, -1).map((_, i) => arrow(590 + i * 560, 425, 680 + i * 560, 425)).join("") +
-    node({ x: 180, y: 760, w: 1200, h: 220, id: "命令方向", type: "Listen", tone: "blue", body: "正式版 Python -> TMflow Listen1。安全假流程測試時先跳過 Listen1，直接從 A4 接 B1。" }) +
-    node({ x: 1620, y: 760, w: 1200, h: 220, id: "狀態方向", type: "Network", tone: "cyan", body: "TMflow -> Python 9001。先用純文字 READY、HB、BUSY、DONE，確認後再串 cmd_id。" }) +
-    text(["此版本不把 ModbusDev 當節點；Network/Listen 等 Python 端確認後才加回主線。"], 180, 1180, { className: "warn" });
-  return baseSvg(width, height, "Python 與 TMflow 資料交換（現場修正版）", "目前測 Move 時先跳過通訊；正式版仍使用 Listen 與 Network。", content);
-}
-
-function detailedDiagram() {
-  const width = 4300;
-  const height = 3550;
-  const left = node({ x: 70, y: 220, w: 980, h: 520, id: "初始變數", type: "先建", tone: "blue", body: "status/error_code/completed_cmd_id/heartbeat/robot_state=0；flow_ok=true；has_piece=false；active_to=1；安全測試座標先用目前安全點。" }) +
-    node({ x: 70, y: 790, w: 980, h: 430, id: "已知座標", type: "現場", tone: "green", body: "安全點 X363.30 Y13.18 Z532.27 RX-176.41 RY0.69 RZ83.93；死棋盒 X124.04 Y-202.49。" }) +
-    node({ x: 70, y: 1270, w: 980, h: 430, id: "卡關處理", type: "B7", tone: "red", body: "B7 在 active_to=1 仍不過，先跳過 B6/B7/B8；主線通過後刪掉 B7 重新拖 If。" }) +
-    node({ x: 70, y: 1750, w: 980, h: 520, id: "Network / Listen", type: "後補", tone: "cyan", body: "A5/B3/B5/F3 等 Python 9001 開啟後再測；Listen1 沒資料會停住，正式版才接回。" });
-  const laneW = 510;
-  const gap = 24;
-  const main = columns
-    .map((col, index) => {
-      const x = 1120 + index * (laneW + gap);
-      const nodeH = col.nodes.length > 8 ? 82 : 108;
-      const nodeGap = 14;
-      return `${lane({ x, y: 220, w: laneW, h: 2910, title: col.title, tone: col.tone })}${col.nodes
-        .map(([id, type, desc], i) => node({ x: x + 18, y: 315 + i * (nodeH + nodeGap), w: laneW - 36, h: nodeH, id, type, body: desc, tone: col.tone }))
-        .join("")}`;
-    })
-    .join("");
-  return baseSvg(width, height, "TMflow 1.82.51 節點設定工程版（現場修正版）", "左側列當前問題與參數；右側列安全假流程、跳過項目與後續加回順序。", left + main + text(["節點名稱能改才輸入 A1、A2...；不能改名的 Listen/Move/Point 以畫面位置對照手冊。"], 70, 3300, { className: "warn" }));
-}
-
-function writeSvg(name, svg) {
-  const svgPath = path.join(docsDir, name);
-  fs.writeFileSync(svgPath, svg, "utf8");
-  return svgPath;
-}
-
-async function render(svgPath, pngName, clip = null) {
-  const svg = fs.readFileSync(svgPath, "utf8");
-  const match = svg.match(/<svg[^>]*width="(\d+)" height="(\d+)"/);
-  if (!match) throw new Error(`Cannot read SVG size: ${svgPath}`);
-  const width = Number(match[1]);
-  const height = Number(match[2]);
-  const htmlPath = path.join(docsDir, `${path.basename(svgPath)}.preview.html`);
-  fs.writeFileSync(htmlPath, `<!doctype html><meta charset="utf-8"><style>html,body{margin:0;width:${width}px;height:${height}px;background:#f5f7fb}img{display:block;width:${width}px;height:${height}px}</style><img src="${path.basename(svgPath)}">`, "utf8");
-  const browser = await chromium.launch({ headless: true });
-  try {
-    const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 1 });
-    await page.goto(`file://${htmlPath.replaceAll("\\", "/")}`);
-    await page.screenshot({ path: path.join(docsDir, pngName), fullPage: !clip, clip: clip || undefined });
-  } finally {
-    await browser.close();
-    fs.unlinkSync(htmlPath);
+  for (const group of model.groups) {
+    lines.push(`## ${group.id}：${group.title}`, "", "| 節點 | 類型 | 設定與動作 | 出口 |", "| --- | --- | --- | --- |");
+    for (const node of group.nodes) lines.push(`| ${node.id} | ${node.type} | ${node.task.replaceAll("|", "&#124;")} | ${nextText(node)} |`);
+    lines.push("");
   }
+  lines.push("## 先接這三條資料路徑", "",
+    "1. PC → L1：TMSCT 寫 4 個動態點與命令，成功後 ScriptExit()；TCP 連上本身不代表命令已接受。",
+    "2. S3 → PC：JOB_BOARD 每次重新取像，HTTP 上傳單張，收到 frame_received 才通過。",
+    "3. F1 → PC：傳送 JSON line 的 completed_command_id；保留現場金鑰，行尾 CRLF；成功出口回 L1。", "",
+    "DONE 表示本筆取放／拍攝流程已走完且影像接收成功，不代表辨識成功或棋局已更新。此版只發 DONE；失敗走 Stop，PC 以逾時或斷線偵測，沒有另外的 ERR 回報節點。", "",
+    "## 共用吃子流程", "",
+    "PC 依序送兩筆不同 cmd_id 的 MOVE：目標棋 → 死棋盒；己方棋 → 目標格。每筆各拍一張，第一筆照片不作正式棋局更新。這是共用流程的取捨；棋局分組與正式 Listen 發送器尚待接入。", "");
+  return lines.join("\n");
+}
+
+function buildDiagrams() {
+  return [
+    ["tmflow_1_82_51_full_node_design", overview()],
+    ["tmflow_python_exchange_flowchart", exchange()],
+    ["tmflow_1_82_51_full_node_expanded_ag", groupDiagram(model.groups, "23 個節點與每個出口")],
+    ["tmflow_1_82_51_detailed_node_setup", groupDiagram(model.groups, "TMflow v3.1 單張最小流程")],
+    ["tmflow_1_82_51_node_setup_params", groupDiagram(model.groups.filter(g => ["A", "B"].includes(g.id)), "啟動與接令")],
+    ["tmflow_1_82_51_node_setup_main_abc", groupDiagram(model.groups.filter(g => ["A", "B", "S"].includes(g.id)), "接令與單張拍攝")],
+    ["tmflow_1_82_51_node_setup_capture", captureReuse()],
+    ["tmflow_1_82_51_node_setup_move", groupDiagram(model.groups.filter(g => g.id === "M"), "共用取放路徑")],
+    ["tmflow_1_82_51_node_setup_done_error", groupDiagram(model.groups.filter(g => ["F", "G"].includes(g.id)), "DONE 回報與停止")]
+  ];
 }
 
 export async function generateTmflowLeftPaletteDiagrams() {
-  const outputs = [
-    ["tmflow_1_82_51_node_design.svg", simpleFlowDiagram(), "tmflow_1_82_51_node_design.png"],
-    ["tmflow_python_exchange_flowchart.svg", exchangeDiagram(), "tmflow_python_exchange_flowchart.png"],
-    ["tmflow_full_python_exchange_flowchart.svg", exchangeDiagram(), "tmflow_full_python_exchange_flowchart.png"],
-    ["tmflow_1_82_51_full_node_design.svg", simpleFlowDiagram(), "tmflow_1_82_51_full_node_design.png"],
-    ["tmflow_1_82_51_full_node_expanded_ag.svg", expandedDiagram(), "tmflow_1_82_51_full_node_expanded_ag.png"],
-    ["tmflow_1_82_51_detailed_node_setup.svg", detailedDiagram(), "tmflow_1_82_51_detailed_node_setup.png"],
-    ["tmflow_1_82_51_clear_node_flow.svg", simpleFlowDiagram(), "tmflow_1_82_51_clear_node_flow.png"],
-  ];
-  for (const [svgName, svg, pngName] of outputs) {
-    const svgPath = writeSvg(svgName, svg);
-    await render(svgPath, pngName);
-    console.log(`Wrote docs/${svgName}`);
-    console.log(`Wrote docs/${pngName}`);
+  const diagrams = buildDiagrams();
+  if (process.argv.includes("--check")) {
+    assert.equal(fs.readFileSync(path.join(docs, "TMFLOW_1_82_51_NODE_SETUP_GUIDE.md"), "utf8"), guide(),
+      "Generated guide is stale; regenerate diagrams and guide");
+    for (const [name, content] of diagrams) assert.equal(fs.readFileSync(path.join(docs, `${name}.svg`), "utf8"), content, `Stale diagram: ${name}`);
+    console.log(`Validated ${nodes.length} nodes, SCAN/MOVE/reject and failure paths, guide and ${diagrams.length} SVGs.`);
+    return;
   }
-  const detailedPath = path.join(docsDir, "tmflow_1_82_51_detailed_node_setup.svg");
-  await render(detailedPath, "tmflow_1_82_51_node_setup_params.png", { x: 40, y: 170, width: 1050, height: 2200 });
-  await render(detailedPath, "tmflow_1_82_51_node_setup_main_abc.png", { x: 1100, y: 170, width: 1650, height: 1900 });
-  await render(detailedPath, "tmflow_1_82_51_node_setup_capture.png", { x: 2150, y: 170, width: 1120, height: 1750 });
-  await render(detailedPath, "tmflow_1_82_51_node_setup_move.png", { x: 2680, y: 170, width: 1120, height: 1950 });
-  await render(detailedPath, "tmflow_1_82_51_node_setup_done_error.png", { x: 3220, y: 170, width: 1080, height: 1600 });
+  fs.writeFileSync(path.join(docs, "TMFLOW_1_82_51_NODE_SETUP_GUIDE.md"), guide(), "utf8");
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage({ deviceScaleFactor: 1 });
+    for (const [name, content] of diagrams) {
+      fs.writeFileSync(path.join(docs, `${name}.svg`), content, "utf8");
+      const [, width, height] = content.match(/width="(\d+)" height="(\d+)"/);
+      await page.setViewportSize({ width: Number(width), height: Number(height) });
+      await page.setContent(`<!doctype html><meta charset="utf-8"><style>body{margin:0}svg{display:block}</style>${content}`);
+      await page.evaluate(() => document.fonts.ready);
+      const overflow = await page.evaluate(() => [...document.querySelectorAll("text")].some((element) => {
+        const box = element.getBBox();
+        const view = element.ownerSVGElement.viewBox.baseVal;
+        return box.x < 0 || box.y < 0 || box.x + box.width > view.width || box.y + box.height > view.height;
+      }));
+      if (overflow) throw new Error(`Text extends outside diagram: ${name}`);
+      const overwide = await page.evaluate(() => [...document.querySelectorAll("text[data-max-width]")]
+        .filter((element) => element.getBBox().width > Number(element.dataset.maxWidth))
+        .map((element) => element.textContent));
+      if (overwide.length) throw new Error(`Text exceeds reserved width: ${overwide.join("; ")}`);
+      await page.screenshot({ path: path.join(docs, `${name}.png`), fullPage: true });
+      console.log(`Generated ${name}`);
+    }
+  } finally {
+    await browser.close();
+  }
+  console.log(`Validated ${nodes.length} nodes and regenerated guide and ${diagrams.length} diagrams.`);
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
-  await generateTmflowLeftPaletteDiagrams();
-}
+if (process.argv[1] && path.resolve(process.argv[1]) === filename) await generateTmflowLeftPaletteDiagrams();

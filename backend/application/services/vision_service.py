@@ -8,6 +8,16 @@ from backend.events.event_types import EventType
 from backend.events.bus.event_bus import bus
 from backend.observability.error_reporter import publish_error_diagnostic
 from backend.infrastructure.vision.capture_session import vision_capture_session
+from backend.infrastructure.vision.confidence_estimator import ConfidenceEstimator
+from backend.utils.fen.parser import (
+    BLACK_PIECES,
+    RED_PIECES,
+    count_board_piece_types,
+    count_fen_piece_types,
+    count_fen_pieces,
+    validate_piece_count,
+    validate_piece_types,
+)
 
 class VisionService:
     """
@@ -46,17 +56,44 @@ class VisionService:
         return status
 
     def on_ui_action(self, event: BaseEvent):
-        """Handles manual UI triggers like vision sync."""
+        """Handles manual UI triggers like vision sync and emergency force sync."""
         payload = event.payload or {}
         action = payload.get("action")
 
-        if action == "SYNC_VISION":
+        if action in ("SYNC_VISION", "FORCE_SYNC"):
             try:
-                fen, confidence = self.get_current_fen()
-                board_state = self.get_board_state()
-                logger.info(f"[VisionService] Manual sync requested. FEN: {fen}")
+                # 1. Reset temporal validator history so stale frames do not pollute
+                if hasattr(self._vision, "validator") and hasattr(self._vision.validator, "reset"):
+                    self._vision.validator.reset()
 
-                # Broadast detection event to update StateManager
+                fen = ""
+                confidence = 0.95
+                board_state = {}
+                from backend.infrastructure.vision.camera.frame_buffer import frame_buffer
+
+                frame = frame_buffer.peek_latest_raw()
+                if frame is None:
+                    frame = frame_buffer.get_latest_raw(timeout=0.2)
+                if frame is not None and hasattr(self._vision, "worker") and hasattr(self._vision.worker, "process_frame"):
+                    detection_payload = self._vision.worker.process_frame(frame, publish=False)
+                    raw_items = detection_payload.get("detections", [])
+                    normalized = [self._normalize_detection(d) for d in raw_items]
+                    detections = [d for d in normalized if d is not None]
+                    board_state = self._vision.mapper.map_detections(detections)
+                    turn = self._turn_from_payload(allow_state_fallback=True)
+                    fen = self._generate_fen(board_state, turn=turn)
+                    if hasattr(self._vision, "validator"):
+                        self._vision.validator.last_stable_state = dict(board_state)
+                        self._vision.validator.last_confidence = confidence
+                else:
+                    fen, confidence = self.get_current_fen()
+                    board_state = self.get_board_state()
+
+                turn_val = self._turn_from_payload(allow_state_fallback=True)
+                piece_eval = self._evaluate_detected_pieces(board_state, turn=turn_val)
+                logger.info(f"[VisionService] Force sync requested. FEN: {fen} | Piece count: {piece_eval.get('total')}/{piece_eval.get('expected')} | {piece_eval.get('summary_message')}")
+
+                # Broadcast detection event to update StateManager
                 bus.publish(BaseEvent.create(
                     event_type=EventType.VISION_MOVE_DETECTED,
                     payload={
@@ -65,21 +102,31 @@ class VisionService:
                         "ucci_position": f"position fen {fen}",
                         "board_state": board_state,
                         "detections": [],
-                        "detections_count": 0,
+                        "detections_count": piece_eval.get("total", len(board_state)),
                         "avg_confidence": confidence,
                         "min_confidence": confidence,
                         "confidence": confidence,
                         "latency_ms": 0.0,
                         "fps": 0.0,
                         "timestamp": time.time(),
+                        "piece_counts": piece_eval,
+                        "force_sync": True,
                     },
                     source="vision_service"
                 ))
 
                 # Feedback to UI
+                summary_text = piece_eval.get("summary_message", "")
+                if piece_eval.get("valid", True):
+                    toast_text = f"緊急棋局校正完成：{summary_text}" if summary_text else f"緊急棋局校正完成：共 {piece_eval.get('total')}/{piece_eval.get('expected')} 顆棋子，棋局已校準。"
+                    toast_level = "success"
+                else:
+                    toast_text = f"緊急棋局校正提示：{summary_text}" if summary_text else f"緊急棋局校正提示：棋子數量不符（預期 {piece_eval.get('expected')}，目前 {piece_eval.get('total')} 顆），請檢查棋盤。"
+                    toast_level = "warning"
+
                 bus.publish(BaseEvent.create(
                     event_type=EventType.UI_TOAST,
-                    payload={"text": "視覺同步完成。", "level": "success"},
+                    payload={"text": toast_text, "level": toast_level},
                     source="vision_service"
                 ))
             except Exception as e:
@@ -119,6 +166,23 @@ class VisionService:
         board_state = self._vision.mapper.map_detections(detections)
         turn = self._turn_from_payload(result, allow_state_fallback=True)
 
+        # 1b. Evaluate piece counts and types against game expectation
+        piece_eval = self._evaluate_detected_pieces(board_state, detections=detections, turn=turn)
+        if not piece_eval.get("valid", True):
+            publish_error_diagnostic(
+                source="vision_service",
+                module="vision",
+                code="piece_count_mismatch",
+                message=piece_eval.get("summary_message") or (
+                    f"棋子種類或數量不符：預期 {piece_eval['expected']} 顆（吃子則為 {piece_eval['expected']-1} 顆），"
+                    f"目前辨識到 {piece_eval['total']} 顆（紅 {piece_eval['red']} / 黑 {piece_eval['black']}）。"
+                ),
+                severity="warning",
+                status="warning",
+                recoverable=True,
+                details=piece_eval,
+            )
+
         # 2. Temporal validation (smoothing/stability)
         stable_state = self._vision.validator.validate(board_state, turn=turn)
         reconciliation = self._validator_reconciliation()
@@ -128,7 +192,13 @@ class VisionService:
         stable_payload = None
         if stable_state:
             from backend.observability.tracing.trace_manager import TraceManager
-            trace_id = getattr(event, "trace_id", None) or TraceManager.create_trace_id()
+            capture_session = vision_capture_session.snapshot()
+            capture_trace_id = (
+                capture_session.get("trace_id")
+                if capture_session.get("active")
+                else None
+            )
+            trace_id = capture_trace_id or getattr(event, "trace_id", None) or TraceManager.create_trace_id()
             fen = self._generate_fen(stable_state, turn=turn)
             fen_valid = self._fen_valid(fen)
             source_timestamp = self._coerce_timestamp(result.get("timestamp"), fallback=event.timestamp)
@@ -153,6 +223,7 @@ class VisionService:
                 "latency_ms": latency_ms,
                 "fps": self._fps_from_latency(latency_ms),
                 "reconciliation": reconciliation,
+                "piece_counts": piece_eval,
             }
             if reconciliation.get("accepted") and reconciliation.get("move"):
                 stable_payload.update({
@@ -160,7 +231,7 @@ class VisionService:
                     "inferred_move": True,
                     "is_capture": bool(reconciliation.get("is_capture")),
                 })
-            logger.info(f"[VisionService] New stable FEN: {fen} | Trace: {trace_id}")
+            logger.info(f"[VisionService] New stable FEN: {fen} | Trace: {trace_id} | Pieces: {piece_eval.get('total')}/{piece_eval.get('expected')}")
 
             bus.publish(BaseEvent.create(
                 event_type=EventType.VISION_MOVE_DETECTED,
@@ -178,6 +249,7 @@ class VisionService:
                         "detections_count": len(serialized_detections),
                         "latency_ms": latency_ms,
                         "reconciliation": reconciliation,
+                        "piece_counts": piece_eval,
                     },
                 )
                 vision_capture_session.publish_status(source="vision_service")
@@ -206,6 +278,7 @@ class VisionService:
                 "confidence": avg_confidence,
                 "stable": stable_payload is not None,
                 "reconciliation": reconciliation,
+                "piece_counts": piece_eval,
             }
         ))
 
@@ -356,3 +429,38 @@ class VisionService:
             return normalize_fen_turn((snapshot.get("game") or {}).get("current_turn"))
         except Exception:
             return "w"
+
+    def _get_expected_fen(self) -> str:
+        try:
+            from backend.state.store.state_store import state_store
+
+            fen = getattr(getattr(state_store.current, "game", None), "fen", "")
+            if fen and isinstance(fen, str) and fen.strip():
+                return fen.strip()
+        except Exception:
+            pass
+        return "rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w - - 0 1"
+
+    def _get_expected_piece_count(self) -> int:
+        fen = self._get_expected_fen()
+        counted = count_fen_pieces(fen).get("total", 32)
+        return int(counted) if counted > 0 else 32
+
+    def _evaluate_detected_pieces(self, board_state: dict, detections=None, turn: str = "w") -> dict:
+        expected_fen = self._get_expected_fen()
+        expected_types = count_fen_piece_types(expected_fen)
+        actual_types = count_board_piece_types(board_state)
+
+        eval_result = validate_piece_types(
+            actual_types,
+            expected_types,
+            moving_side=turn,
+            allow_capture=True,
+        )
+        count_conf = ConfidenceEstimator.estimate(
+            detections if detections is not None else eval_result["total"],
+            expected_count=eval_result["expected"],
+            allow_capture=True,
+        )
+        eval_result["confidence"] = count_conf
+        return eval_result

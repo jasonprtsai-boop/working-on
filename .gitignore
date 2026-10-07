@@ -6,6 +6,7 @@ __pycache__/
 .venv.broken-*/
 .env
 .env.local
+.env.*.local
 .env.development
 .env.production
 dist/
@@ -15,6 +16,9 @@ test_output.txt
 
 # Reports & Logs
 _archive/
+.agents/
+tmp/
+scratch/
 reports/
 analysis_artifacts/
 docx_work/

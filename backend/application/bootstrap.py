@@ -289,11 +289,27 @@ def bootstrap_system():
 
 
 def _robot_connection_failure_message(config_module) -> str:
-    adapter = str(getattr(config_module, "ROBOT_ADAPTER", "unknown") or "unknown")
+    adapter = str(getattr(config_module, "ROBOT_ADAPTER", "unknown") or "unknown").strip().lower()
     host = str(getattr(config_module, "ROBOT_IP", "unknown") or "unknown")
     port = str(getattr(config_module, "ROBOT_PORT", "unknown") or "unknown")
     pc_ip = str(getattr(config_module, "ROBOT_PC_IP", "") or "").strip()
     pc_hint = f" PC IP is configured as {pc_ip};" if pc_ip else ""
+    if adapter == "modbus":
+        role = str(getattr(config_module, "ROBOT_MODBUS_ROLE", "client") or "client").strip().lower()
+        if role == "server":
+            server_host = str(
+                getattr(config_module, "ROBOT_MODBUS_SERVER_HOST", pc_ip or "unknown") or "unknown"
+            )
+            server_port = str(
+                getattr(config_module, "ROBOT_MODBUS_SERVER_PORT", port) or "unknown"
+            )
+            return (
+                "Robot connection failed in real hardware mode "
+                f"(adapter=modbus, role=server, server_endpoint={server_host}:{server_port})."
+                f"{pc_hint} verify this PC owns ROBOT_MODBUS_SERVER_HOST and that TMflow polls this endpoint "
+                "before enabling motion."
+                f" Robot target is configured as {host}:{port}."
+            )
     return (
         "Robot connection failed in real hardware mode "
         f"(adapter={adapter}, endpoint={host}:{port})."

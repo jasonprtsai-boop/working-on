@@ -168,6 +168,7 @@ export const Normalizer = {
             safe_mode: data.safe_mode ?? data.safeMode ?? undefined,
             calibration: data.calibration || {},
             calibrated: data.calibrated ?? data.calibration?.calibrated ?? undefined,
+            piece_counts: data.piece_counts || {},
             calibration_quality: data.calibration_quality || data.calibrationQuality || data.calibration?.quality || {},
             calibration_source: data.calibration_source || data.calibrationSource || data.calibration?.source || "",
             timestamp,

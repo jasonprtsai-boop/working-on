@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Any, Mapping
 
 from flask import jsonify, request
@@ -49,6 +50,10 @@ def _apply_runtime_settings(settings: Mapping[str, Any]) -> list[str]:
     config.VISION_SOURCE = str(_get(settings, "vision.source", "opencv")).strip().lower()
     config.CAMERA_INDEX = int(_get(settings, "vision.camera_index"))
     config.VISION_RESULT_MAX_AGE_SEC = float(_get(settings, "vision.result_max_age_sec"))
+    if _get(settings, "vision.user_capture_interval_sec") is not None:
+        config.VISION_USER_CAPTURE_INTERVAL_SEC = float(_get(settings, "vision.user_capture_interval_sec"))
+    if _get(settings, "vision.user_capture_timeout_sec") is not None:
+        config.VISION_USER_CAPTURE_TIMEOUT_SEC = float(_get(settings, "vision.user_capture_timeout_sec"))
     config.VISION_OPENCV_SOURCE = str(_get(settings, "vision.opencv.source", "") or "").strip()
     config.VISION_CAPTURE_WIDTH = int(_get(settings, "vision.opencv.width", 0) or 0)
     config.VISION_CAPTURE_HEIGHT = int(_get(settings, "vision.opencv.height", 0) or 0)
@@ -62,6 +67,10 @@ def _apply_runtime_settings(settings: Mapping[str, Any]) -> list[str]:
     config.VISION_TMFLOW_IMAGE_TIMEOUT_SEC = float(_get(settings, "vision.tmflow_json.timeout_sec"))
     config.VISION_TMFLOW_IMAGE_MAX_MESSAGE_BYTES = int(_get(settings, "vision.tmflow_json.max_message_bytes"))
     config.VISION_TMFLOW_IMAGE_FPS_LIMIT = float(_get(settings, "vision.tmflow_json.fps_limit"))
+    config.VISION_TMFLOW_DETECT_URL = str(_get(settings, "vision.tmvision_http.detect_url") or "").strip()
+    config.VISION_TMFLOW_SAVE_IMAGES = bool(_get(settings, "vision.tmvision_http.save_images"))
+    config.VISION_TMFLOW_SAVE_DIR = os.path.abspath(str(_get(settings, "vision.tmvision_http.save_dir")))
+    config.VISION_TMFLOW_MAX_SAVED_IMAGES = int(_get(settings, "vision.tmvision_http.max_saved_images"))
     config.FAKE_ROBOT = bool(_get(settings, "robot.runtime.fake_robot"))
     config.AUTO_EXECUTE_ROBOT = bool(_get(settings, "robot.runtime.auto_execute_robot"))
     config.ROBOT_ADAPTER = str(_get(settings, "robot.connection.adapter")).strip().lower()

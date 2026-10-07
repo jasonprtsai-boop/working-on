@@ -96,7 +96,7 @@ function Resolve-ProjectPython {
     $candidates += New-PythonCandidate "environment override" $envPython
   }
   $candidates += New-PythonCandidate "project virtualenv" (Join-Path $root ".venv\Scripts\python.exe")
-  foreach ($version in @("3.11", "3.12", "3.10", "3.9")) {
+  foreach ($version in @("3.10", "3.11", "3.12", "3.9")) {
     $candidates += New-PythonCandidate "Python launcher $version" "py.exe" @("-$version")
   }
   $candidates += New-PythonCandidate "python on PATH" "python.exe"
@@ -116,7 +116,7 @@ function Resolve-ProjectPython {
   foreach ($attempt in $attempts) {
     Write-Host "- $($attempt.Label): $($attempt.Detail)"
   }
-  Write-Host "Fix: run setup_env.ps1 after installing Python 3.11, or set SMART_CHESS_PYTHON to a working python.exe." -ForegroundColor Yellow
+  Write-Host "Fix: run setup_env.ps1 after installing Python 3.10.x, or set SMART_CHESS_PYTHON to a working python.exe." -ForegroundColor Yellow
   exit 1
 }
 

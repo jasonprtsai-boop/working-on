@@ -14,9 +14,9 @@ if (Test-Path ".\\.venv\\Scripts\\python.exe") {
     Write-Host "[run_dev] Warning: .venv python is not functioning properly: $_" -ForegroundColor Yellow
   }
 } else {
-  Write-Host "Missing .venv. Creating venv with Python 3.11 preferred..." -ForegroundColor Yellow
+  Write-Host "Missing .venv. Creating venv with Python 3.10 preferred..." -ForegroundColor Yellow
   $created = $false
-  foreach ($ver in @("3.11", "3.12", "3.10", "3.9")) {
+  foreach ($ver in @("3.10", "3.11", "3.12", "3.9")) {
     try {
       py -$ver -m venv .venv
       $created = $true
@@ -24,7 +24,7 @@ if (Test-Path ".\\.venv\\Scripts\\python.exe") {
     } catch { }
   }
   if (-not $created) {
-    throw "Python 3.11 recommended, or Python 3.9, 3.10, or 3.12, was not found."
+    throw "Python 3.10.x is recommended, and no supported Python 3.9-3.12 runtime was found."
   }
 }
 

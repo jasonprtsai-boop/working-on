@@ -278,7 +278,7 @@ def video_status():
 def issue_vision_stream_token():
     from backend.utils.auth import create_scoped_jwt
 
-    ttl_seconds = 300
+    ttl_seconds = max(60, int(getattr(config, "VISION_STREAM_TOKEN_TTL_SEC", 300) or 300))
     return jsonify({
         "ok": True,
         "stream_token": create_scoped_jwt(
@@ -363,9 +363,10 @@ def _start_vision_capture(payload: dict, *, source: str) -> dict:
         interval_sec=payload.get("interval_sec"),
         timeout_sec=payload.get("timeout_sec"),
     )
+    interval_display = capture_session.get("interval_sec", 2.0)
     vision_capture_session.publish_status(
         source=source,
-        toast="影像辨識已啟動，每 2 秒擷取一次最新畫面。",
+        toast=f"影像辨識已啟動，每 {interval_display:g} 秒擷取一次最新畫面。",
         level="info",
     )
     return {
@@ -536,7 +537,7 @@ def ingest_tmvision_classification_frame():
     return jsonify(payload)
 
 
-@api_bp.route("/vision/tmvision/detect", methods=["POST"])
+@api_bp.route("/vision/tmvision/detect", methods=["GET", "POST"])
 def ingest_tmvision_detection_frame():
     """Receive TMvision External Detection image POSTs from the EIH camera."""
     if not _tmflow_frame_ingest_authorized():
@@ -545,6 +546,12 @@ def ingest_tmvision_detection_frame():
             "TMvision frame ingest requires a valid ingest key or trusted lab robot IP.",
             401,
         )
+
+    if request.method == "GET":
+        return jsonify({
+            "message": "success",
+            "result": "tmvision_detection_ready",
+        })
 
     result = _ingest_tmvision_image_request()
     if not result.get("ok"):

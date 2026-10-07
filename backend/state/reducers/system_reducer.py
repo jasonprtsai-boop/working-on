@@ -51,6 +51,7 @@ class SystemReducer:
                     mode=vision_payload.get("mode", state.vision.mode),
                     simulation=bool(vision_payload.get("simulation", state.vision.simulation)),
                     fps=vision_payload.get("fps", state.vision.fps),
+                    piece_counts=vision_payload.get("piece_counts", state.vision.piece_counts) if isinstance(vision_payload.get("piece_counts"), dict) else state.vision.piece_counts,
                 )
             # Update root health fields
             return dataclasses.replace(

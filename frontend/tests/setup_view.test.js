@@ -68,6 +68,25 @@ test('setup view separates essential settings from live data', () => {
   expect(setupTemplate).toContain('class="setup-section setup-section-essential"');
   expect(setupTemplate).toContain('class="setup-section setup-section-secondary"');
   expect(setupTemplate).toContain('class="setup-live-detail setup-channel-diagnostics"');
+
+  [
+    'vision.result_max_age_sec',
+    'vision.user_capture_interval_sec',
+    'vision.user_capture_timeout_sec',
+  ].forEach((path) => {
+    expect(countText(`data-setup-field="${path}"`)).toBe(1);
+  });
+});
+
+test('setup view shows a scannable map of adjustable controls', () => {
+  expect(setupTemplate).toContain('class="setup-control-map"');
+  expect(setupTemplate).toContain('id="setup-control-map-title"');
+  expect(countText('class="setup-control-card"')).toBe(4);
+  expect(setupTemplate).toContain('啟動與安全');
+  expect(setupTemplate).toContain('相機與辨識來源');
+  expect(setupTemplate).toContain('棋盤與 Z 軸');
+  expect(setupTemplate).toContain('通訊與暫存器');
+  expect(setupTemplate).toContain('setup-toolbar-meta');
 });
 
 test('setup hardware tests keep common actions visible and advanced actions collapsed', () => {

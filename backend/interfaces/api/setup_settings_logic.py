@@ -30,6 +30,18 @@ def _bounded_int(value: Any, field_name: str, minimum: int, maximum: int) -> int
     return number
 
 
+def _bounded_float(value: Any, field_name: str, minimum: float, maximum: float) -> float:
+    number = _finite_float(value, field_name)
+    if number < minimum or number > maximum:
+        raise ValueError(f"{field_name} must be between {minimum} and {maximum}.")
+    return number
+
+
+def _within_bounds(value: float, minimum: float, maximum: float, *, tolerance: float = 1e-6) -> bool:
+    """Accept negligible floating-point drift at an inclusive physical limit."""
+    return minimum - tolerance <= value <= maximum + tolerance
+
+
 def _text(value: Any, field_name: str, *, max_length: int = 128) -> str:
     text = str(value or "").strip()
     if not text:
@@ -80,6 +92,8 @@ def current_setup_settings() -> dict[str, Any]:
             "source": str(getattr(config, "VISION_SOURCE", "opencv")),
             "camera_index": int(getattr(config, "CAMERA_INDEX", 0) or 0),
             "result_max_age_sec": float(getattr(config, "VISION_RESULT_MAX_AGE_SEC", 3.0)),
+            "user_capture_interval_sec": float(getattr(config, "VISION_USER_CAPTURE_INTERVAL_SEC", 2.0)),
+            "user_capture_timeout_sec": float(getattr(config, "VISION_USER_CAPTURE_TIMEOUT_SEC", 30.0)),
             "opencv": {
                 "source": str(getattr(config, "VISION_OPENCV_SOURCE", "")),
                 "width": int(getattr(config, "VISION_CAPTURE_WIDTH", 0) or 0),
@@ -96,6 +110,13 @@ def current_setup_settings() -> dict[str, Any]:
                 "timeout_sec": float(getattr(config, "VISION_TMFLOW_IMAGE_TIMEOUT_SEC", 2.0)),
                 "max_message_bytes": int(getattr(config, "VISION_TMFLOW_IMAGE_MAX_MESSAGE_BYTES", 1_048_576)),
                 "fps_limit": float(getattr(config, "VISION_TMFLOW_IMAGE_FPS_LIMIT", 2.0)),
+            },
+            "tmvision_http": {
+                "detect_url": str(getattr(config, "VISION_TMFLOW_DETECT_URL", "")),
+                "ingest_key_env": "VISION_TMFLOW_INGEST_KEY",
+                "save_images": bool(getattr(config, "VISION_TMFLOW_SAVE_IMAGES", False)),
+                "save_dir": str(getattr(config, "VISION_TMFLOW_SAVE_DIR", "data/tmvision_captures")),
+                "max_saved_images": int(getattr(config, "VISION_TMFLOW_MAX_SAVED_IMAGES", 500)),
             },
             "calibration": vision_calibration,
         },
@@ -242,6 +263,16 @@ def normalize_setup_settings(payload: Mapping[str, Any], base: Mapping[str, Any]
     _set(merged, "vision.source", vision_source)
     _set(merged, "vision.camera_index", _bounded_int(_get(merged, "vision.camera_index", 0), "vision.camera_index", 0, 15))
     _set(merged, "vision.result_max_age_sec", _finite_float(_get(merged, "vision.result_max_age_sec", 3.0), "vision.result_max_age_sec"))
+    _set(
+        merged,
+        "vision.user_capture_interval_sec",
+        _bounded_float(_get(merged, "vision.user_capture_interval_sec", 2.0), "vision.user_capture_interval_sec", 0.25, 30.0),
+    )
+    _set(
+        merged,
+        "vision.user_capture_timeout_sec",
+        _bounded_float(_get(merged, "vision.user_capture_timeout_sec", 30.0), "vision.user_capture_timeout_sec", 2.0, 300.0),
+    )
     _set(merged, "vision.opencv.source", str(_get(merged, "vision.opencv.source", "") or "").strip())
     _set(merged, "vision.opencv.width", _bounded_int(_get(merged, "vision.opencv.width", 0), "vision.opencv.width", 0, 7680))
     _set(merged, "vision.opencv.height", _bounded_int(_get(merged, "vision.opencv.height", 0), "vision.opencv.height", 0, 4320))
@@ -262,6 +293,15 @@ def normalize_setup_settings(payload: Mapping[str, Any], base: Mapping[str, Any]
         _bounded_int(_get(merged, "vision.tmflow_json.max_message_bytes", 1_048_576), "vision.tmflow_json.max_message_bytes", 65_536, 10_485_760),
     )
     _set(merged, "vision.tmflow_json.fps_limit", _finite_float(_get(merged, "vision.tmflow_json.fps_limit", 2.0), "vision.tmflow_json.fps_limit"))
+    _set(merged, "vision.tmvision_http.detect_url", _text(_get(merged, "vision.tmvision_http.detect_url", ""), "vision.tmvision_http.detect_url"))
+    _set(merged, "vision.tmvision_http.ingest_key_env", "VISION_TMFLOW_INGEST_KEY")
+    _set(merged, "vision.tmvision_http.save_images", _bool(_get(merged, "vision.tmvision_http.save_images", False), "vision.tmvision_http.save_images"))
+    _set(merged, "vision.tmvision_http.save_dir", _text(_get(merged, "vision.tmvision_http.save_dir", "data/tmvision_captures"), "vision.tmvision_http.save_dir"))
+    _set(
+        merged,
+        "vision.tmvision_http.max_saved_images",
+        _bounded_int(_get(merged, "vision.tmvision_http.max_saved_images", 500), "vision.tmvision_http.max_saved_images", 1, 100000),
+    )
     _set(merged, "robot.runtime.fake_robot", _bool(_get(merged, "robot.runtime.fake_robot", True), "robot.runtime.fake_robot"))
     _set(merged, "robot.runtime.auto_execute_robot", _bool(_get(merged, "robot.runtime.auto_execute_robot", False), "robot.runtime.auto_execute_robot"))
     adapter = _text(_get(merged, "robot.connection.adapter", "tmflow_json"), "robot.connection.adapter").strip().lower()
@@ -625,7 +665,10 @@ def _validate_setup_settings(settings: Mapping[str, Any]) -> None:
                 invalid_squares.append(f"{file_char}{rank}: mapping failed")
                 continue
             x, y = xy
-            if not (float(limits["min_x"]) <= x <= float(limits["max_x"]) and float(limits["min_y"]) <= y <= float(limits["max_y"])):
+            if not (
+                _within_bounds(x, float(limits["min_x"]), float(limits["max_x"]))
+                and _within_bounds(y, float(limits["min_y"]), float(limits["max_y"]))
+            ):
                 invalid_squares.append(f"{file_char}{rank}: ({x:.2f}, {y:.2f})")
             if len(invalid_squares) >= 3:
                 break
@@ -642,10 +685,10 @@ def _validate_setup_settings(settings: Mapping[str, Any]) -> None:
     if dz_w <= 0 or dz_h <= 0:
         raise ValueError("robot.calibration.dead_zone width and height must be positive.")
     if not (
-        float(limits["min_x"]) <= dz_x <= float(limits["max_x"])
-        and float(limits["min_x"]) <= dz_x + dz_w <= float(limits["max_x"])
-        and float(limits["min_y"]) <= dz_y <= float(limits["max_y"])
-        and float(limits["min_y"]) <= dz_y + dz_h <= float(limits["max_y"])
+        _within_bounds(dz_x, float(limits["min_x"]), float(limits["max_x"]))
+        and _within_bounds(dz_x + dz_w, float(limits["min_x"]), float(limits["max_x"]))
+        and _within_bounds(dz_y, float(limits["min_y"]), float(limits["max_y"]))
+        and _within_bounds(dz_y + dz_h, float(limits["min_y"]), float(limits["max_y"]))
     ):
         raise ValueError("robot.calibration.dead_zone range exceeds XY soft limits.")
 
